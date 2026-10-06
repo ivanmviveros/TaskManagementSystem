@@ -1,6 +1,7 @@
 """Settings shared by every environment. Reads configuration from the environment only."""
 
 import os
+from datetime import timedelta
 from pathlib import Path
 
 from django.core.exceptions import ImproperlyConfigured
@@ -147,6 +148,22 @@ REST_FRAMEWORK = {
     },
     "UNAUTHENTICATED_USER": None,
 }
+
+SIMPLE_JWT = {
+    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=15),
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
+    "ROTATE_REFRESH_TOKENS": True,
+    "BLACKLIST_AFTER_ROTATION": True,
+    "AUTH_HEADER_TYPES": ("Bearer",),
+    # The default is "id" already, but the claim now carries a UUID *string*, so
+    # nothing downstream may assume an integer.
+    "USER_ID_FIELD": "id",
+    "USER_ID_CLAIM": "user_id",
+}
+
+REFRESH_COOKIE_NAME = "refresh_token"
+REFRESH_COOKIE_PATH = "/api/v1/auth/"
+REFRESH_COOKIE_SECURE = env_bool("REFRESH_COOKIE_SECURE", False)  # True in production.py
 
 LOGGING = {
     "version": 1,

@@ -229,6 +229,7 @@ millisecond **by the same process**; across processes, ordering is millisecond-g
 | Django 6.0 is a security-fix-only branch (D1) | Same as above — D1 is gated on D3. |
 | `ruff format` rewrites Python code blocks embedded in Markdown, which would edit the read-only `AGENTS.md` briefs | `AGENTS.md` is in `extend-exclude` in `backend/pyproject.toml`. Remove it only if ruff gains a narrower setting for embedded code. |
 | **`auth.E003` is silenced** in `SILENCED_SYSTEM_CHECKS` — see below | Django's `Options.total_unique_constraints` learns to count partial constraints. Until then the check cannot be satisfied, only silenced. |
+| **The SPA and the API must be deployed same-site.** The refresh cookie is `SameSite=Strict`, so a cross-site request does not carry it at all — token refresh would silently stop working, with no CORS error to explain why | Serve both behind one origin (or sibling subdomains of one registrable domain). Relaxing to `SameSite=Lax`/`None` means taking on an explicit CSRF defence for `/api/v1/auth/refresh/`, which `Strict` currently provides for free. |
 
 ### Why `auth.E003` is silenced
 

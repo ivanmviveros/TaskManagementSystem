@@ -11,6 +11,24 @@ from rest_framework.test import APIClient
 from apps.users.tests.factories import AdminFactory, OperatorFactory, SupervisorFactory
 
 
+@pytest.fixture(autouse=True)
+def _clear_throttle_counters():
+    """Clear BOTH caches. The scoped login/refresh throttles use caches["throttle"],
+    but DRF's AnonRateThrottle and UserRateThrottle use caches["default"] — and a
+    LocMemCache lives for the whole pytest process, so an uncleared anon counter
+    leaks across tests and surfaces as a mystery 429 in an unrelated module.
+    Task 32's matrix suite fires 13 consecutive anonymous requests against a
+    20/min limit, which is close enough to matter.
+    """
+    from django.core.cache import caches
+
+    for alias in ("default", "throttle"):
+        caches[alias].clear()
+    yield
+    for alias in ("default", "throttle"):
+        caches[alias].clear()
+
+
 @pytest.fixture
 def api_client() -> APIClient:
     return APIClient()
