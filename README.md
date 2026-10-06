@@ -133,6 +133,37 @@ serves a Swagger UI at `/api/v1/schema/swagger-ui/` alongside ReDoc.
 `pyproject.toml` plus a committed `uv.lock`. Required by the brief; `backend §44a` permits
 uv or Poetry, used consistently.
 
+### D10 — a shared `apps/core/` app, with every module named for one responsibility
+
+A shared app is unavoidable: the soft-delete base model, pagination, the exception handler
+and the permission matrix belong to no single feature. `backend §49` forbids `utils.py`,
+`common.py` and `helpers.py` dumping grounds, so the rule is satisfied not by avoiding a
+shared app but by refusing to give it a catch-all module. Each file owns one thing:
+`models.py` the abstract bases, `managers.py` the soft-delete manager, `roles.py` the role
+choices, `pagination.py`, `ordering.py`, `throttling.py`, `constants.py`, `exceptions.py`,
+and `permissions/` the matrix and the classes that read it.
+
+`Role` lives in `core` rather than in `users` for a structural reason: the permission
+matrix needs it, and a shared app importing a feature app inverts the dependency direction
+that D10 exists to protect.
+
+### D11 — the permission matrix is declarative data
+
+`apps/core/permissions/matrix.py` maps `(resource, action)` to the set of roles that may
+reach it. One table is read by two consumers — `RolePermission` at request time and a
+parametrized test suite — so the rules and their enforcement cannot drift apart.
+
+What it buys concretely: D13's strongest claim, that **an Admin has no task surface at
+all**, is asserted against the data itself before any view exists, and it stays asserted
+for every task action that is ever added. Lookups fail closed — `MATRIX.get(key,
+frozenset())` means a new viewset action with no matrix row is denied rather than silently
+allowed.
+
+Its scope is deliberately narrow: endpoint reachability only. The one object-level rule
+(D27, an Operator may delete only a task they created) lives in `IsTaskCreator`, not in the
+matrix, because encoding one row-dependent outcome would require a richer value type for
+every other row.
+
 ## Deliberate overrides of AGENTS.md
 
 | Override | AGENTS.md says | This project does | Why |
