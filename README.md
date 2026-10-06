@@ -402,7 +402,19 @@ not complete — the retry can then finish the job. One email per key still hold
 `OVERDUE` keys on the **date** instead of a history id, because there is no change to
 anchor to. The cadence and the dedupe window are deliberately different granularities:
 the sweep runs **hourly** so a task going overdue at 09:15 is emailed by 10:00, while the
-date in the key caps delivery at **one email per task per recipient per day**.
+date in the key caps delivery at **one email per task per recipient per day**. Running the
+sweep twice in a day therefore sends nothing the second time, which is tested.
+
+The sweep reads `overdue_candidates()` — a selector, not the ORM — which returns
+`values_list(...).iterator()`, so a large backlog never materialises as model instances,
+and it is served by the `("status", "due_date")` partial index. That selector joins
+`created_by__role` specifically so the D26 read-access gate applies to the sweep as well
+as to the API path: there is no model instance to read the role from, and without it an
+Operator creator who no longer holds the task would be emailed.
+
+The schedule is one fixed `crontab(minute=0)` entry in `config/celery.py`.
+**django-celery-beat is deliberately not used** — a database-backed editable schedule would
+mean another dependency plus migrations for a schedule nobody needs to edit at runtime.
 
 **3. Blind retries.** `autoretry_for` lists `SMTPException` and `ConnectionError` only —
 transport failures, which are worth retrying. A bare `Exception` is **never** retried; a

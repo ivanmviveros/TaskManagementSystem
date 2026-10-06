@@ -8,10 +8,14 @@ from uuid import UUID
 from celery import shared_task
 from django.conf import settings
 from django.core.mail import send_mail
+from django.utils import timezone
 
 from apps.notifications import emails
+from apps.notifications.models import NotificationEvent
 from apps.notifications.repositories import DjangoNotificationRepository
+from apps.notifications.services import build_dedupe_key, resolve_recipients
 from apps.tasks.repositories import DjangoTaskRepository
+from apps.tasks.selectors import overdue_candidates
 from apps.users.repositories import DjangoUserRepository
 
 logger = logging.getLogger(__name__)
@@ -65,3 +69,42 @@ def send_task_event_email(*, event: str, task_id: str, recipient_id: str, dedupe
 
     notifications.mark_sent(notification)
     logger.info("notifications.sent key=%s event=%s", dedupe_key, event)
+
+
+@shared_task(name="apps.notifications.tasks.sweep_overdue_tasks")
+def sweep_overdue_tasks() -> int:
+    """Hourly: enqueue one email per overdue task per eligible recipient.
+
+    Calls tasks.selectors.overdue_candidates() rather than touching the ORM
+    (D8; spec §16.2). The selector returns values_list(...).iterator(), so a
+    large backlog never materialises as model instances, and it is served by the
+    ("status", "due_date") partial index.
+    """
+    today = timezone.now().date().isoformat()
+    overdue = str(NotificationEvent.OVERDUE)
+    enqueued = 0
+
+    for task_id, assignee_id, created_by_id, created_by_role in overdue_candidates():
+        recipients = resolve_recipients(
+            event=overdue,
+            assignee_id=assignee_id,
+            created_by_id=created_by_id,
+            created_by_role=created_by_role,
+            actor_id=None,  # a scheduled sweep has no actor to suppress
+        )
+        for recipient_id in recipients:
+            send_task_event_email.delay(
+                event=overdue,
+                task_id=str(task_id),
+                recipient_id=str(recipient_id),
+                dedupe_key=build_dedupe_key(
+                    event=overdue,
+                    task_id=task_id,
+                    recipient_id=recipient_id,
+                    on_date=today,
+                ),
+            )
+            enqueued += 1
+
+    logger.info("notifications.sweep_complete enqueued=%s date=%s", enqueued, today)
+    return enqueued
