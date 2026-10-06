@@ -7,7 +7,7 @@ from rest_framework.response import Response
 
 from apps.core.constants import UUID_LOOKUP_REGEX
 from apps.core.ordering import TiebrokenOrderingFilter
-from apps.core.permissions.classes import RolePermission
+from apps.core.permissions.classes import IsTaskCreator, RolePermission
 from apps.core.permissions.matrix import Resource
 from apps.notifications.dispatchers import NullNotificationDispatcher
 from apps.tasks.filters import TaskFilterSet
@@ -30,6 +30,13 @@ class TaskViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.Gen
     filterset_class = TaskFilterSet
     ordering_fields = ["due_date", "created_at", "status"]
     ordering = ["-created_at", "-id"]
+
+    def get_permissions(self):
+        # Scoped to destroy deliberately: read, update and complete are unaffected,
+        # which test_that_operator_retains_every_other_operation_on_it asserts.
+        if self.action == "destroy":
+            return [RolePermission(), IsTaskCreator()]
+        return [RolePermission()]
 
     def get_queryset(self):
         # scoped_tasks owns the authorization rules; eager loading follows the

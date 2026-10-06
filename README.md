@@ -278,6 +278,39 @@ Operator, never an Admin" is a cross-table assertion and not expressible as a
 `CheckConstraint`, so it is enforced in the serializer *and* re-checked in the service, with
 tests at both levels.
 
+### D27 — an Operator may delete only a task they created
+
+An Operator can read, update and complete any task **assigned** to them, but may delete one
+only if they **created** it as well. Deleting an assigned task they did not create is a
+**403**.
+
+This closed a previously accepted risk. Without it an Operator could soft-delete
+Supervisor-assigned work, and since D20 provides no restore endpoint, that work would be
+irrecoverable through the API. An Operator can still decline work by other means — change
+the status, or ask a Supervisor — but cannot make someone else's task disappear. A
+Supervisor retains delete on every task.
+
+Two structural points worth keeping straight:
+
+- **Queryset scoping cannot express this rule.** The row must stay *visible* while becoming
+  *undeletable*, which is exactly what object-level permissions are for. So `IsTaskCreator`
+  is applied to the `destroy` action only, and a test asserts read, update and complete
+  stay unaffected — delete is narrower than read, not a general loss of access.
+- **This is the only rule in the design where `created_by` affects authorization**, which
+  is why D14 is explicit that `created_by` is not merely an audit column even though it
+  grants no visibility.
+
+### Why that refusal is 403 and not 404
+
+Elsewhere the API withholds existence: a task outside your scope is a 404, because
+answering 403 would confirm that a task with that id exists. Here nothing is being
+withheld — the task is *already* in the Operator's queryset and they can `GET` it. So a 404
+would be a lie about a row the client can already see, and 403 is the honest answer.
+
+The code is `delete_requires_creator`, and `IsTaskCreator` **raises**
+`PermissionDenied(code=...)` rather than returning `False` — returning `False` would yield
+DRF's generic `permission_denied` code and lose the distinction the frontend branches on.
+
 ### Indexing: every index is partial, and `created_by` has none
 
 All task indexes carry `WHERE deleted_at IS NULL`, so they cover only live rows — the only

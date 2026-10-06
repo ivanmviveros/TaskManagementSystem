@@ -1,9 +1,11 @@
 """Permission classes. RolePermission answers endpoint reachability from the
-matrix; IsTaskCreator (Task 31) answers the one object-level rule."""
+matrix; IsTaskCreator answers the one object-level rule."""
 
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.permissions import BasePermission
 
 from apps.core.permissions.matrix import is_allowed
+from apps.core.roles import Role
 
 
 class RolePermission(BasePermission):
@@ -27,3 +29,26 @@ class RolePermission(BasePermission):
                 f"{view.__class__.__name__} must declare permission_resource to use RolePermission"
             )
         return is_allowed(user.role, resource, view.action)
+
+
+class IsTaskCreator(BasePermission):
+    """D27: an Operator may delete a task only if they created it as well as
+    holding it. Without this an Operator could soft-delete Supervisor-assigned
+    work — and D20 provides no restore endpoint, so it would be irrecoverable
+    through the API.
+
+    Scoping alone cannot express this, because the row must stay VISIBLE while
+    becoming UNDELETABLE — which is precisely what object permissions are for.
+    """
+
+    def has_object_permission(self, request, view, obj) -> bool:
+        if request.user.role != Role.OPERATOR:
+            return True
+        if obj.created_by_id == request.user.pk:
+            return True
+        # RAISED, not returned: returning False yields DRF's generic
+        # permission_denied code, and spec §8.7 specifies this one.
+        raise PermissionDenied(
+            detail="Only the creator of a task may delete it.",
+            code="delete_requires_creator",
+        )
