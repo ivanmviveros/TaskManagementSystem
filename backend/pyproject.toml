@@ -1,0 +1,61 @@
+[project]
+name = "task-management-backend"
+version = "0.1.0"
+description = "Role-based task management API"
+requires-python = ">=3.14"
+dependencies = [
+    "django>=6.0,<6.1",
+    "djangorestframework==3.18.1",
+    "djangorestframework-simplejwt",
+    "drf-spectacular==0.30.0",
+    "django-simple-history==3.13.0",
+    "django-filter==26.2",
+    "django-cors-headers",
+    "celery[redis]>=5.4",
+    "redis>=5",
+    "psycopg[binary]>=3.2",
+]
+
+[dependency-groups]
+dev = [
+    "pytest",
+    "pytest-django",
+    "pytest-cov",
+    "factory-boy",
+    "ruff",
+    "mypy",
+]
+
+# D3: PyPI simplejwt 5.5.1 predates PR #959 (Django 6.0 + Python 3.14 support).
+# uv.lock captures this SHA, so builds stay reproducible.
+# Exit criterion: drop this block once a release containing #959 ships.
+[tool.uv.sources]
+djangorestframework-simplejwt = { git = "https://github.com/jazzband/djangorestframework-simplejwt.git", rev = "a7cb077ea0809f78cc6a99cb6825ab7594eae627" }
+
+[tool.uv]
+package = false
+
+[tool.ruff]
+line-length = 100
+target-version = "py314"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "DJ", "C4", "SIM", "RUF"]
+
+[tool.ruff.lint.per-file-ignores]
+"*/migrations/*" = ["E501", "RUF012"]
+"config/settings/*" = ["F403", "F405"]
+
+[tool.mypy]
+python_version = "3.14"
+ignore_missing_imports = true
+files = ["apps"]
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "config.settings.test"
+python_files = ["test_*.py"]
+addopts = "--strict-markers --cov=apps --cov-report=term-missing"
+
+[tool.coverage.run]
+source = ["apps"]
+omit = ["*/migrations/*", "*/tests/*", "*/__init__.py"]
