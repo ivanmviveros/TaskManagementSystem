@@ -24,9 +24,9 @@ changes the architecture established in the first iteration.
 Investigation changed the shape of concern 3 and the cause of concern 5. Both corrections are
 recorded here because acting on the original framing would have produced the wrong work.
 
-**Concern 3 — most of the console output is not this application.** Of the 347 captured lines,
-roughly 85% originate from `chrome-extension://nkbihfbeogaeaoehlefnkodbefgpgknn`, which is
-**MetaMask**. Its `MaxListenersExceededWarning: Possible EventEmitter memory leak` and
+**Concern 3 — most of the console output is not this application.** 202 of the 346 captured
+lines (about 58%) originate from `chrome-extension://nkbihfbeogaeaoehlefnkodbefgpgknn`, which
+is **MetaMask**. Its `MaxListenersExceededWarning: Possible EventEmitter memory leak` and
 `ObjectMultiplex - orphaned data for stream "app-init-liveness"` entries are its content script
 talking to itself, and appear on any page in that browser profile. No change to this codebase
 can affect them.
@@ -76,7 +76,7 @@ Continues the numbering of the first iteration, which ended at D28.
 | D30 | **A DTO validation failure is a programming error, surfaced as 500 — never mapped to 400.** | The serializer already accepted the payload. A `ValidationError` at DTO construction means the view and the service disagree about the contract. Translating it to a user-facing 400 would hide a defect and duplicate the error contract. |
 | D31 | **Input DTOs carry already-resolved model instances (`assignee: User \| None`) via `arbitrary_types_allowed`.** | `PrimaryKeyRelatedField` has already proven the row exists and is live. Carrying ids instead would add a `UserRepository` dependency to `TaskService` and a second query to re-fetch a validated object. |
 | D32 | **Partial updates key off `model_fields_set`, not truthiness or `None`.** | PATCH semantics require distinguishing "absent" from "explicitly null" — `assignee: null` unassigns a task, while omitting `assignee` leaves it alone. A DTO with defaults erases that distinction unless the set of supplied fields is consulted. |
-| D33 | **Seeding flags are additive and top-up, defaulting to today's dataset.** | `--users 0 --tasks 45` reproduces the current output byte for byte, so the documented quick start does not change. Top-up keeps the command idempotent while letting a larger number add the difference. |
+| D33 | **Seeding flags are additive and top-up, and the defaults keep today's shape — but not its exact rows.** | `--users 0 --tasks 45` keeps the same counts, the same five fixed accounts, the same `Demo task NN` titles, the same status cycle and the same due-date spread. It does **not** reproduce today's rows exactly: §5.1 deliberately changes who tasks are assigned to and created by, so the delete rule is demonstrable. "Byte for byte" was claimed in an earlier draft and is withdrawn — it contradicted the randomised `created_by` in the same spec. |
 | D34 | **Random users are generated from a name list inside the command, not with factory_boy.** | `factory_boy` is in the `dev` dependency group. A management command is application code and must not import a dev-only package, or a production install breaks. |
 | D35 | **Auth bootstrap attempts a refresh first, then fetches the user.** | Probing `/users/me/` without a token is a guaranteed 401. Refresh-first is better on both paths and removes two of three failed requests. See §4. |
 | D36 | **The pre-push hook tries Compose, then local, and passes if either suite passes.** | Compose is the development default; the local path must remain usable where Docker is not. Explicitly chosen by the project owner over the stricter alternative — see §6.2 for the risk this accepts. |
@@ -109,6 +109,25 @@ silently becoming a default.
 
 `extra="forbid"` is what makes that loudness real: an unexpected key raises rather than being
 ignored.
+
+**The view constructs the DTO by splatting `validated_data`**, and that choice is what gives
+`extra="forbid"` something to do:
+
+```python
+dto = TaskCreateInput(**serializer.validated_data)
+```
+
+This must be stated, because the alternative — mapping field by field — would make
+`extra="forbid"` unreachable and §3.1's rationale hollow. Splatting works today: the
+serializer field sets already match the DTOs exactly (`TaskCreateSerializer` →
+title/description/due_date/assignee; `TaskUpdateSerializer` → plus status;
+`UserCreateSerializer` → email/password/first_name/last_name/role; `UserUpdateSerializer` →
+first_name/last_name/role/is_active/password).
+
+The consequence is recorded honestly in §6.2: because the view splats, adding a field to a
+serializer *without* adding it to the DTO produces a `500` for the first request that sends
+it, per D30. That is the intended loud failure, and it surfaces in the same test run that
+exercises the new field — not a silent no-op.
 
 ### 3.2 New module per app
 
@@ -167,8 +186,28 @@ for field in _MUTABLE_FIELDS:
 
 Getting this wrong is the single highest-risk part of the refactor: branching on truthiness or
 on `is not None` would make `assignee: null` (unassign) and an omitted `assignee` (leave alone)
-behave identically, and would silently stop an Operator from clearing a due date. §5.1 pins
+behave identically, and would silently stop an Operator from clearing a due date. §6.1 pins
 both cases with tests.
+
+**The same line change is required in the audit log, for a security reason.**
+`apps/tasks/services.py:82` currently reads:
+
+```python
+logger.info("task.updated id=%s fields=%s by=%s", task.pk, sorted(data), actor.pk)
+```
+
+On a `dict`, `sorted(data)` yields the sorted **keys** — field names only, which is what
+`backend §28` requires. A pydantic v2 model, however, iterates as `(name, value)` pairs, so
+the identical expression would start writing **task titles and descriptions into the logs**.
+It must become:
+
+```python
+logger.info("task.updated id=%s fields=%s by=%s", task.pk, sorted(data.model_fields_set), actor.pk)
+```
+
+`apps/users/services.py` is unaffected — it logs `sorted(changed)`, a locally-built list of
+names, which is why that service already documents the "field NAMES only" rule. A test
+asserting the task log line contains no submitted value is added in §6.1.
 
 ### 3.4 Output DTO
 
@@ -202,6 +241,23 @@ correctly. The dashboard contract does not move.
 
 `apps/core/tests/test_layering.py` gains an assertion that no `services.py` declares a
 `data: dict` parameter, so the old shape cannot come back unnoticed.
+
+**Existing tests that call the services must migrate too**, and the plan should budget for it —
+roughly 15 call sites pass dicts today:
+
+| Test module | Note |
+|---|---|
+| `apps/tasks/tests/test_services.py` | the bulk of the call sites |
+| `apps/users/tests/test_services.py` | including the password-rehash cases |
+| `apps/core/tests/test_error_paths.py` | **contains a direct conflict** — see below |
+| `apps/notifications/tests/test_on_commit.py` | constructs service calls for the dispatcher tests |
+
+`test_an_update_with_no_recognised_fields_writes_nothing` currently passes
+`data={"unknown_field": "ignored"}` and asserts the field **is** ignored. That is the exact
+behaviour `extra="forbid"` removes, so the test is not merely updated but **replaced** by
+§6.1's "DTO no-op" case (a DTO with no fields set writes nothing) plus the new
+`extra="forbid"` rejection test. The old assertion is not a regression being broken; it
+encoded the dict-era contract this iteration is deliberately replacing.
 
 ---
 
@@ -241,8 +297,39 @@ restoreSession():
 | Anonymous visitor | 3 failed requests | **1** failed request |
 | Returning user, post-reload | 1 failed, 2 ok | **0** failed, 2 ok |
 
-The StrictMode duplicate disappears without extra work: `api-client` already single-flights
-refresh through one shared promise, so two development invocations share one network call.
+### 4.3.1 The bootstrap refresh must be deduplicated explicitly
+
+An earlier draft of this spec claimed the StrictMode duplicate "disappears without extra work,
+because `api-client` already single-flights refresh". **That is false, and the consequence is
+severe enough to state plainly.**
+
+`refreshAccessToken()` and its `refreshInFlight` promise are module-private in
+`api-client.ts`, and are reached *only* from the 401-retry inside `request()`. Worse,
+`/auth/refresh/` is itself in `NO_REFRESH_PATHS`. So a `restoreSession()` implemented as an
+ordinary `apiClient.post("/auth/refresh/", {})` is **not** deduplicated, and StrictMode's
+double-invoked effect fires **two** refreshes.
+
+Because `base.py` sets `ROTATE_REFRESH_TOKENS: True` and `BLACKLIST_AFTER_ROTATION: True`, the
+second call presents a cookie the first has just blacklisted, receives a `401`, and the
+bootstrap's error path sets `user = null`. That logs out a returning user on reload — exactly
+the regression §4.2 exists to prevent, reintroduced by the fix for it.
+
+**Therefore:** `api-client.ts` exports a single-flighted session-restore that reuses the
+existing `refreshInFlight` promise, rather than `auth-service.ts` posting to the endpoint
+directly. Deduplication is a required part of this change, not a side benefit.
+
+```ts
+// api-client.ts — shares refreshInFlight, so concurrent callers make one request
+export async function restoreSession(): Promise<boolean> {
+    try {
+        await refreshAccessToken();   // existing single-flighted promise
+        return true;
+    } catch {
+        clearAccessToken();
+        return false;
+    }
+}
+```
 
 The remaining `401` on `/auth/refresh/` for an anonymous visitor is correct HTTP and is left
 in place. Suppressing it would mean returning `200` for "no session", which contradicts the
@@ -252,11 +339,12 @@ status the permission matrix suite asserts.
 
 | File | Change |
 |---|---|
-| `features/auth/services/auth-service.ts` | add `restoreSession()` |
+| `lib/api-client.ts` | **export** a single-flighted `restoreSession()` reusing `refreshInFlight` (§4.3.1) |
+| `features/auth/services/auth-service.ts` | add `restoreSession()` wrapper: on success, fetch the user |
 | `features/auth/AuthContext.tsx` | bootstrap calls `restoreSession()` instead of `fetchCurrentUser()` |
 | `README.md` | new short section: which console output is expected, which is a browser extension, and that a `500` on login means `migrate` has not run |
 
-`fetchCurrentUser()` is retained — `restoreSession()` calls it on the success path.
+`fetchCurrentUser()` is retained — the success path calls it.
 
 ---
 
@@ -276,11 +364,26 @@ python manage.py seed_demo_data --users 25 --tasks 300
   the difference. Neither deletes anything.
 - **`admin@demo.local` stays fixed** so you can always sign in and discover the generated
   accounts through the user list — which is the point of randomising them.
-- **Assignment is random** across all assignable users, and `created_by` is randomised too
-  rather than pinned to one Supervisor, so some tasks end up Operator-created and the D27
-  delete rule becomes visible in the UI.
-- The existing fixed `random.seed` is kept, which is what makes generated emails stable enough
-  for the top-up logic to recognise them.
+- **Assignment is random** across all assignable users (Supervisors and Operators, never an
+  Admin per D17), and `created_by` is randomised too rather than pinned to one Supervisor, so
+  some tasks end up Operator-created and the D27 delete rule becomes visible in the UI. This
+  is the one respect in which the default output differs from today's — see D33.
+- The existing fixed `random.seed` is kept, so a given `--users N` always produces the same N
+  accounts. That is what lets the top-up logic recognise them.
+
+**Generated identity format**, which the top-up logic depends on:
+
+```
+email:       user{index}@demo.local        # index is 1-based and contiguous
+first/last:  drawn from the embedded name lists
+```
+
+The **index, not the name, carries uniqueness.** Drawing from a finite name list can repeat a
+pair, so an email built from the name alone would collide and silently create fewer than N
+users — breaking the §6.1 "exactly N" test. Keying on the index also makes top-up trivial:
+the command counts existing `user{n}@demo.local` accounts and creates only the missing
+indices. Task titles continue the existing `Demo task {n:02d}` numbering the same way, so
+topping up from 45 to 60 adds `Demo task 46`–`Demo task 60`.
 - Rows are created one at a time. `bulk_create` would skip `django-simple-history` records, and
   the audit trail is a project requirement — so large values are deliberately slow, which the
   README states.
@@ -303,9 +406,22 @@ A separate `UserCard` component rather than a CSS-reflowed table: a table that r
 blocks loses its header association and reads poorly to a screen reader. `UserCard` surfaces
 name, email, role and active state, with the same Edit and Deactivate actions.
 
-Because jsdom applies no CSS, **both** presentations are in the DOM during tests. Existing
-assertions are scoped with `within(table)` and a card test is added, matching what the task
-list already does.
+**"Mirror the pattern" includes extracting the table.** `TaskListPage` delegates to a
+`TaskTable` component, while `UserListPage` holds its `<table>` inline. Both are extracted:
+
+| New component | Mirrors |
+|---|---|
+| `features/users/components/UserTable.tsx` | `features/tasks/components/TaskTable.tsx` |
+| `features/users/components/UserCard.tsx` | `features/tasks/components/TaskCard.tsx` |
+
+That keeps `UserListPage` about filters, paging and the delete dialog, and leaves the page
+file comparable in size to its tasks counterpart.
+
+Because jsdom applies no CSS, **both** presentations are in the DOM during tests. This is not
+hypothetical here: three existing assertions in `UserListPage.test.tsx` query
+`findByRole("button", { name: /deactivate operator@demo.local/i })` unscoped, and each will
+match twice once a card exists. They are scoped with `within(table)`, and a card test is
+added — the same correction the task list already carries.
 
 ### 5.3 Pre-push hook
 
@@ -325,7 +441,20 @@ sufficient**, including when Compose ran the suite and failed. The script theref
 prints which environment produced the pass, so a divergence between the two is visible in the
 push output rather than silent. §6.2 records the risk this accepts.
 
-The hook stays on `pre-push` rather than `pre-commit`, so committing remains fast.
+The hook stays on `pre-push` rather than `pre-commit`, so committing remains fast. The `mypy`
+hook deliberately stays on local `uv` and is not routed through this script: it needs no
+database, so the Compose round-trip would buy nothing.
+
+Two practical notes, since this is the repository's **first** shell script — there is no
+`scripts/` directory today:
+
+- The hook runs as `bash scripts/run-backend-tests.sh` under `language: system`. On the
+  Windows host that motivated this change, `bash` resolves to Git Bash, which is already how
+  every verification command in this project has been run. The plan's first step is to confirm
+  that the hook actually fires there, before relying on it.
+- Compose availability is probed, not assumed: `docker compose ps --status running backend`
+  returning a container id is the gate. A missing `docker` binary, a stopped stack, or a
+  failing `exec` all route to the local attempt rather than aborting.
 
 ---
 
@@ -339,6 +468,7 @@ The hook stays on `pre-push` rather than `pre-commit`, so committing remains fas
 | DTO partial update | `assignee: null` unassigns; **omitted** `assignee` leaves it unchanged (D32) |
 | DTO partial update | `due_date: null` clears the date; omitted leaves it |
 | DTO no-op | a DTO with no fields set writes nothing and returns the instance unchanged |
+| Audit log | `task.updated` logs field **names** only — no submitted title or description value appears in the record (§3.3) |
 | Layering | no `services.py` declares a `data: dict` parameter |
 | Stats | `task_stats` returns `TaskStatsOutput`; the endpoint's JSON is byte-identical to before |
 | Seeding | `--users N` creates exactly N beyond the five fixed accounts |
@@ -349,6 +479,7 @@ The hook stays on `pre-push` rather than `pre-commit`, so committing remains fas
 | Bootstrap | anonymous load makes exactly one failed request, and it is the refresh |
 | Bootstrap | a valid refresh cookie restores the session with no failed request |
 | Bootstrap | a failed refresh leaves `user = null` and routes to `/login` |
+| Bootstrap | **two concurrent bootstraps issue one refresh** — the StrictMode case from §4.3.1, which rotation plus blacklisting would otherwise turn into a spurious logout |
 | Users table | the table renders at `md`+, and a `UserCard` per user exists for narrow viewports |
 | Users table | existing assertions scoped with `within(table)` still pass |
 
@@ -360,7 +491,7 @@ numeric gate and its console guard continues to fail a test on unexpected output
 | Risk | Detail | Mitigation |
 |---|---|---|
 | **A Compose-only failure can be masked by a local pass** | D36 treats either environment passing as success, so a regression that only manifests in Compose will not block a push. | The script names the environment that passed, so the divergence is visible. CI remains the authority: its `backend` job runs one environment with no fallback. |
-| **Two validation layers could still drift** | A serializer field renamed without updating the DTO is caught by `extra="forbid"`, but a *widened* serializer field (e.g. a new optional field) is simply not passed to the service. | Acceptable: a field the service does not consume is inert. The layering test plus `extra="forbid"` cover the direction that corrupts behaviour. |
+| **A serializer widened without updating its DTO returns 500** | Because the view splats `validated_data` (§3.1), a new serializer field with no DTO counterpart makes `extra="forbid"` raise for the first request that actually sends it. An earlier draft of this spec called such a field "inert" — that was wrong, and only true of field-by-field mapping, which this design rejects. | Accepted deliberately as the loud failure D30 describes. It is caught by the same test that exercises the new field, and a rename or removal fails even faster. The alternative — silent divergence between the HTTP contract and the service contract — is the failure mode pydantic is being introduced to remove. |
 | **`arbitrary_types_allowed` means pydantic does not validate `assignee`** | D31 accepts a model instance as-is. | The serializer's `PrimaryKeyRelatedField` already proved existence and liveness; re-validating would require a redundant query. |
 | **The seed command's randomness is deterministic** | A fixed seed means "random" accounts repeat between runs. | Intentional — it is what makes the top-up logic idempotent. Names remain unknown until inspected, which is all the discovery flow needs. |
 
