@@ -1,4 +1,4 @@
-import { Link } from "@tanstack/react-router";
+import { Link, useSearch } from "@tanstack/react-router";
 import { useState } from "react";
 
 import { Button } from "../../components/Button";
@@ -17,8 +17,19 @@ const PAGE_SIZE = 20;
 
 export function TaskListPage() {
   const { user } = useAuth();
-  // Filter state is local UI state, never the Query cache and never Context.
-  const [filters, setFilters] = useState<Filters>({ page: 1, page_size: PAGE_SIZE });
+  // Seeded from the URL so the dashboard's drill-through links land on the
+  // filtered list they promise, and so a filtered view is shareable. Thereafter
+  // it is local UI state — never the Query cache and never Context.
+  const search = useSearch({ from: "/shell/tasks" });
+  const [filters, setFilters] = useState<Filters>({
+    status: search.status as Filters["status"],
+    due_date_after: search.due_date_after,
+    due_date_before: search.due_date_before,
+    overdue: search.overdue,
+    ordering: search.ordering,
+    page: search.page ?? 1,
+    page_size: PAGE_SIZE,
+  });
   const [actionError, setActionError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
 

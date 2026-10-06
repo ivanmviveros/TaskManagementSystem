@@ -10,7 +10,7 @@ import type { RouterHistory } from "@tanstack/react-router";
 import type { AuthState } from "../features/auth/AuthContext";
 import { LoginPage } from "../features/auth/LoginPage";
 import type { Role } from "../features/auth/types";
-import { DashboardPage } from "../features/tasks/DashboardPage";
+import { StatsPage } from "../features/dashboard/StatsPage";
 import { TaskDetailPage } from "../features/tasks/TaskDetailPage";
 import { TaskCreatePage, TaskEditPage } from "../features/tasks/TaskFormPage";
 import { TaskListPage } from "../features/tasks/TaskListPage";
@@ -94,15 +94,48 @@ const indexRoute = createRoute({
 const dashboardRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: "/dashboard",
-  component: DashboardPage,
+  component: StatsPage,
   beforeLoad: guard("/dashboard"),
 });
+
+/** Coerces one raw search value into a string array, tolerating a single value. */
+function asArray(value: unknown): string[] | undefined {
+  if (Array.isArray(value)) return value.map(String);
+  if (typeof value === "string" && value !== "") return [value];
+  return undefined;
+}
+
+function asString(value: unknown): string | undefined {
+  return typeof value === "string" && value !== "" ? value : undefined;
+}
+
+export interface TaskListSearch {
+  status?: string[];
+  due_date_after?: string;
+  due_date_before?: string;
+  overdue?: boolean;
+  ordering?: string;
+  page?: number;
+}
 
 const tasksRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: "/tasks",
   component: TaskListPage,
   beforeLoad: guard("/tasks"),
+  /**
+   * The list reads its filters from the URL, which is what makes the dashboard
+   * drill-through links work and makes a filtered list shareable. Without this
+   * those links would navigate and then be silently ignored.
+   */
+  validateSearch: (search: Record<string, unknown>): TaskListSearch => ({
+    status: asArray(search.status),
+    due_date_after: asString(search.due_date_after),
+    due_date_before: asString(search.due_date_before),
+    overdue: search.overdue === true || search.overdue === "true" ? true : undefined,
+    ordering: asString(search.ordering),
+    page: Number(search.page) > 0 ? Number(search.page) : undefined,
+  }),
 });
 
 const usersRoute = createRoute({
