@@ -149,6 +149,14 @@ REST_FRAMEWORK = {
     "UNAUTHENTICATED_USER": None,
 }
 
+CORS_ALLOWED_ORIGINS = env_list("CORS_ALLOWED_ORIGINS", "http://localhost:5173")
+CORS_ALLOW_CREDENTIALS = True  # so the refresh cookie flows
+CSRF_TRUSTED_ORIGINS = env_list("CSRF_TRUSTED_ORIGINS", "http://localhost:5173")
+# CORS_ALLOW_ALL_ORIGINS is never set (backend §22). Django's CSRF middleware stays
+# enabled and is never globally disabled (backend §21): every endpoint other than
+# the two auth routes authenticates via `Authorization: Bearer`, which the browser
+# never attaches automatically and which is therefore immune to CSRF.
+
 SIMPLE_JWT = {
     "ACCESS_TOKEN_LIFETIME": timedelta(minutes=15),
     "REFRESH_TOKEN_LIFETIME": timedelta(days=7),

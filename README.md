@@ -193,6 +193,54 @@ Two subtleties that are easy to get wrong and are pinned by tests:
 - `Meta.base_manager_name` is deliberately *not* set, so related-object descriptors and
   `PROTECT` keep seeing deleted rows and behave predictably.
 
+### The token flow — access in memory, refresh in an HttpOnly cookie
+
+Lifetimes: access **15 minutes**, refresh **7 days**.
+
+- The **access token lives only in frontend memory** — never `localStorage` or
+  `sessionStorage`, so an XSS payload cannot read it back out of storage.
+- The **refresh token is only ever an HttpOnly cookie** and never appears in a JSON body.
+  `POST /auth/login/` returns `{access, user}`; the refresh token leaves only as
+  `Set-Cookie`. A test asserts the body has no `refresh` key, because that is the kind of
+  thing a refactor reintroduces quietly.
+- The cookie is scoped `Path=/api/v1/auth/`, so the browser attaches it to the refresh and
+  logout endpoints and to **nothing else** — ordinary API requests never carry it.
+- `ROTATE_REFRESH_TOKENS` and `BLACKLIST_AFTER_ROTATION` are both on, so a refresh issues a
+  new token and blacklists the old one. Replaying a rotated token is a 401, and logout
+  genuinely revokes rather than just clearing the cookie client-side. Both are tested.
+- `USER_ID_FIELD = "id"` carries a **UUID string** in the claim, so nothing downstream may
+  assume an integer id (D28).
+
+The login payload also carries the current user, so the SPA can pick a landing page from
+its role in one round trip instead of two.
+
+### Rate limiting, and why the throttle cache is Redis
+
+| Scope | Rate | Applies to |
+|---|---|---|
+| `login` | **5/min**, keyed by IP | `POST /auth/login/` — brute-force defence on the most-attacked endpoint |
+| `refresh` | 30/min | `POST /auth/refresh/` |
+| `anon` | 20/min | any other unauthenticated request |
+| `user` | 120/min | authenticated traffic |
+
+Rates are centralised in `DEFAULT_THROTTLE_RATES`. The login and refresh throttles subclass
+`AnonRateThrottle` so the key is the **client IP** — an unauthenticated login attempt has no
+user to key on.
+
+**The throttle cache is Redis, not `LocMemCache`, and that is not incidental.**
+`LocMemCache` is per-process, so each gunicorn worker would keep a private counter and the
+effective limit would silently become `rate × worker_count` — a limit that does not hold
+while appearing to. Redis is already in the stack for Celery, so this costs no new service.
+A dedicated `throttle` cache alias keeps the counters out of any future application cache.
+
+In **tests only**, the throttle alias is locmem, so throttle tests need no Redis service.
+A `conftest.py` autouse fixture clears both cache aliases around every test: a `LocMemCache`
+lives for the whole pytest process, so an uncleared anon counter otherwise leaks across
+modules and surfaces as a mystery 429 somewhere unrelated.
+
+Exceeding a limit returns **429** with a `Retry-After` header. Failed logins are logged with
+IP and email — never the password.
+
 ### D24 — email stored lowercase in a plain `EmailField`
 
 Case-insensitive uniqueness without requiring the Postgres `citext` extension and its
@@ -229,7 +277,22 @@ millisecond **by the same process**; across processes, ordering is millisecond-g
 | Django 6.0 is a security-fix-only branch (D1) | Same as above — D1 is gated on D3. |
 | `ruff format` rewrites Python code blocks embedded in Markdown, which would edit the read-only `AGENTS.md` briefs | `AGENTS.md` is in `extend-exclude` in `backend/pyproject.toml`. Remove it only if ruff gains a narrower setting for embedded code. |
 | **`auth.E003` is silenced** in `SILENCED_SYSTEM_CHECKS` — see below | Django's `Options.total_unique_constraints` learns to count partial constraints. Until then the check cannot be satisfied, only silenced. |
-| **The SPA and the API must be deployed same-site.** The refresh cookie is `SameSite=Strict`, so a cross-site request does not carry it at all — token refresh would silently stop working, with no CORS error to explain why | Serve both behind one origin (or sibling subdomains of one registrable domain). Relaxing to `SameSite=Lax`/`None` means taking on an explicit CSRF defence for `/api/v1/auth/refresh/`, which `Strict` currently provides for free. |
+| **The SPA and the API must be deployed same-site** — see below | Serve both from one registrable domain (the recommendation), or move to `SameSite=Lax`/`None` and add explicit CSRF token validation on `/api/v1/auth/refresh/` and `/logout/`. |
+| drf-spectacular emits four generator warnings today (an `operationId` collision on `/users/`, no inferable serializer for `MeView`/`LogoutView`, and `UserViewSet` dropped from the schema because `get_serializer_class()` reads `request.user.role`) | These are resolved, not silenced, when the schema is wired up — `test_the_schema_generates_without_warnings` asserts the generator produces no errors at all. |
+
+### Why the SPA and the API must be same-site
+
+The refresh cookie is `SameSite=Strict`, which is the **primary CSRF defence** for the two
+cookie-authenticated endpoints: a cross-site request does not carry the cookie at all.
+
+Locally this coexists with CORS only because of a distinction that is easy to miss:
+`localhost:5173` and `localhost:8000` differ by port, which CORS treats as cross-*origin*
+but `SameSite` does not treat as cross-*site* — ports are not part of a site. So CORS must
+be configured (and is, explicitly) while the cookie still flows.
+
+A deployment that puts the SPA and the API on different **registrable domains** would
+silently stop sending the refresh cookie, and refresh would fail with no CORS error to
+explain it. That is the failure mode worth knowing about in advance.
 
 ### Why `auth.E003` is silenced
 

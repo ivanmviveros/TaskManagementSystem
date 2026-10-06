@@ -23,6 +23,22 @@ jobs:
   # set still assemble and boot at all?". Extended at Task 20 and Task 40.
   compat:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: taskmanagement
+          POSTGRES_USER: taskmanagement
+          POSTGRES_PASSWORD: taskmanagement
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      POSTGRES_HOST: localhost
+      POSTGRES_DB: taskmanagement
+      POSTGRES_USER: taskmanagement
+      POSTGRES_PASSWORD: taskmanagement
+      DJANGO_SECRET_KEY: ci-only-not-a-real-secret
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
@@ -42,6 +58,10 @@ jobs:
           "import rest_framework_simplejwt, drf_spectacular"
       - name: Django boots
         run: uv run --directory backend python manage.py check
+      # Stage 2: the git-pinned simplejwt actually issues and verifies a token
+      # on Django 6.0 — the single most load-bearing claim in D3.
+      - name: Login round-trip against the cookie auth views
+        run: uv run --directory backend pytest apps/users/tests/test_api_auth.py -q
 
   backend:
     runs-on: ubuntu-latest
