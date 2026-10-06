@@ -66,18 +66,23 @@ services:
       redis:
         condition: service_started
 
-  # Uncommented in Task 41, once frontend/package-lock.json exists.
-  # frontend:
-  #   build:
-  #     context: ./frontend
-  #   command: npm run dev -- --host 0.0.0.0
-  #   volumes:
-  #     - ./frontend:/app
-  #     - /app/node_modules
-  #   ports:
-  #     - "5173:5173"
-  #   env_file:
-  #     - .env
+  # The service exists so `docker compose up` brings the whole stack up at
+  # localhost:5173. Day-to-day frontend work still runs `npm run dev` natively,
+  # because Vite's HMR is noticeably faster against the native filesystem than
+  # through a bind-mounted node_modules — especially on Windows. The anonymous
+  # node_modules volume is what keeps the container's install from being
+  # shadowed by the bind mount.
+  frontend:
+    build:
+      context: ./frontend
+    command: npm run dev -- --host 0.0.0.0
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    ports:
+      - "5173:5173"
+    env_file:
+      - .env
 
 volumes:
   postgres_data:
