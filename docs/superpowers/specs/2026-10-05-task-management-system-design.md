@@ -54,7 +54,7 @@ Every non-obvious decision, with its rationale. This section is the basis for th
 | # | Decision | Rationale |
 |---|---|---|
 | D1 | **Django `>=6.0,<6.1`** | The newest Django that *every* dependency actually tests against. DRF 3.18.1, django-simple-history 3.13.0 and django-filter 26.2 cover 6.0 and 6.1, but simplejwt@master and drf-spectacular 0.30.0 stop at 6.0. Pinning 6.0 leaves zero untested combinations while satisfying the "Django 6+" requirement. Trade-off: 6.0 left mainstream support when 6.1 shipped (Aug 2026), so it is a security-fix-only branch. |
-| D2 | **Python floor `>=3.12`, Docker image `python:3.13-slim`** | Django 6.0 supports 3.12–3.14; 3.13 is in simplejwt's tox matrix and is current. |
+| D2 | **Python `>=3.14`, Docker image `python:3.14-slim`** | Django 6.0 officially supports 3.12, 3.13 and 3.14. **3.14 is a hard floor, not a preference: `uuid.uuid7()` entered the standard library in 3.14** (D28), so anything lower would need a third-party UUIDv7 package. The whole pinned stack covers it — drf-spectacular 0.30.0 classifies 3.14, and the simplejwt commit pinned in D3 is the very commit that added Python 3.14 support. |
 | D3 | **simplejwt installed from git, pinned to commit `a7cb077ea0809f78cc6a99cb6825ab7594eae627`** | PyPI 5.5.1 (Jul 2025) predates PR #959 ("feat: add django 6.0 and python 3.14 support", merged 9 Feb 2026), which adds the Django 6.0 test matrix and replaces deprecated `pkg_resources` with `importlib.metadata`. Master therefore supports Django 6.0; the released package does not. |
 | D4 | **drf-spectacular 0.30.0 instead of drf-yasg** | drf-yasg 1.21.17 still caps its classifiers at Django 5.2 and emits OpenAPI 2.0 only. drf-spectacular classifies Django 6.0, emits OpenAPI 3.0.3/3.1/3.2, and is actively maintained. Sanctioned by `backend §35`, which names either tool. Overrides the original brief's nomination of drf-yasg. |
 | D5 | **uv as package manager**, `pyproject.toml` + committed `uv.lock` | Required by the brief; `backend §44a` permits uv or Poetry, one consistently. |
@@ -77,8 +77,10 @@ djangorestframework-simplejwt = { git = "https://github.com/jazzband/djangorestf
 
 | # | Decision | Rationale |
 |---|---|---|
-| D8 | **Views + serializers + services + selectors. No repositories.** | Services own writes that genuinely orchestrate (assignment, completion, status change, soft delete, notification enqueue); selectors own role-scoped reads and dashboard aggregation. Repositories here would wrap `Model.objects.get()` without adding a boundary — `backend §7` and `§50` both forbid that. |
-| D9 | **Plain CRUD stays in the serializer**; only orchestration moves to a service | `backend §14`: services are for multi-model work, transactions, external systems. A simple field update does not qualify. |
+| D8 | **Views + serializers + services + repositories + selectors** — the full layering of `backend §1` and `§2` | Adopted for consistency with the project's documented architecture and with the service layer, rather than omitting a layer per feature. The split is defined in §5.2: **repositories** own persistence of a single entity (fetch by identity, row locking, write, soft delete, dedupe insert); **selectors** own reusable or complex reads (role-scoped querysets, dashboard aggregation). Services depend on repositories, never on the ORM directly. |
+| D9 | **Serializers never persist.** No serializer implements `create()` or `update()`; every write goes view -> service -> repository. | Keeps one write path per operation, which is what makes the §7.3 enforcement layers and the audit trail trustworthy. A serializer that also saves would be a second, untested way to mutate a `Task` — bypassing transition validation (D18/D19), notification enqueue (§10.2), and `select_for_update` (§12.3). Serializers keep validation and representation only. |
+
+**On `backend §7`'s warning about trivial repositories.** `§7` cautions against repositories that only wrap `Model.objects.get(...)`. That caution is respected not by dropping the layer but by giving each repository real persistence behavior it owns outright — see §5.2 for the method inventory. `TaskRepository.get_for_update()` encapsulates row locking, `NotificationRepository.create_if_absent()` encapsulates unique-violation handling for the dedupe insert (§10.3b), and `UserRepository.get_by_email()` encapsulates email normalization (D24). None of those are passthroughs.
 | D10 | **Shared app named `apps/core/`** with explicitly-named modules | `backend §49` forbids `utils.py`/`common.py` dumping grounds. A shared app is unavoidable (soft-delete base model, pagination, exception handler, permission matrix); the rule is satisfied by giving every module inside it one named responsibility. |
 | D11 | **Permission matrix as declarative data** in `apps/core/permissions/matrix.py` | Read by both the permission classes and a parametrized test suite, so the rules and their enforcement cannot drift. This is how "Admin cannot reach `/tasks/`" is actually proven. |
 | D12 | **No `django-guardian`** | The rules are role-derived, not per-object. Guardian would add a permissions table and a join for what is expressible as `Q(assignee=user)`. |
@@ -88,8 +90,8 @@ djangorestframework-simplejwt = { git = "https://github.com/jazzband/djangorestf
 | # | Decision | Rationale |
 |---|---|---|
 | D13 | **Strict role separation.** Admin manages users only and has **no task access at all**. Supervisor manages all tasks and has **read-only, minimal-field** access to the user list. Operator manages only tasks **assigned to them**. | The brief's literal reading. Supervisor's user read is the one addition, needed to populate an assignee picker and to display who holds a task. |
-| D14 | **Operator scope is `assignee = me` only.** `created_by` grants **no** access. | A Supervisor reassigning or unassigning a task revokes the original Operator's access immediately. `created_by` survives purely as an audit field. |
-| D15 | **Operator has full CRUD on assigned tasks but cannot change `assignee`** | "Tasks management for owned tasks", minus the ability to hand work off, which belongs to a Supervisor. See the accepted risk in §16.1. |
+| D14 | **Operator *visibility* is `assignee = me` only.** `created_by` grants no read access. | A Supervisor reassigning or unassigning a task revokes the original Operator's ability to see it immediately. `created_by` is **not** purely an audit field, though: it is load-bearing for the delete rule in D27 and for notification recipients in D26. It grants no visibility; it does gate one operation. |
+| D15 | **Operator may read, update and complete any assigned task, but cannot change `assignee`** | "Tasks management for owned tasks", minus the ability to hand work off, which belongs to a Supervisor. Deletion is narrower still — see D27. |
 | D16 | **On create, an Operator's task is always `assignee = self`** | Precisely: if an Operator **omits** `assignee`, it defaults to self; if an Operator **supplies a different user**, the request is rejected with 400 `assignee_immutable` (§8.7). Defaulting is a convenience; silently coercing a value the client explicitly sent would hide a client bug, so the explicit-mismatch case is an error, not a coercion. |
 | D17 | **`assignee` must be a Supervisor or Operator, never an Admin** | Assigning to an Admin would create a task nobody can open, given D13. **Not expressible as a DB `CheckConstraint`** — it is a cross-table assertion — so it is enforced in the serializer *and* re-checked in the service, with tests at both levels. |
 | D18 | **`POST /tasks/{id}/complete/` is the only path to `COMPLETED`.** `PATCH status=COMPLETED` returns 400. | One audited path for the state transition, per `backend §34`. Guarantees `completed_at` is always set alongside it. |
@@ -101,6 +103,8 @@ djangorestframework-simplejwt = { git = "https://github.com/jazzband/djangorestf
 | D24 | **Email stored lowercase-normalized in a plain `EmailField`** | Avoids requiring the Postgres `citext` extension and its migration, while still giving case-insensitive uniqueness. Normalization happens in the user manager and the serializer. |
 | D25 | **`on_delete=PROTECT` on both task FKs** | Nothing is ever hard-deleted, so this should never fire; if it does, it must fail loudly rather than silently null an audit record. |
 | D26 | **Notification recipients are gated by current read access** | A creator who is an Operator and no longer the assignee stops receiving that task's emails. Emailing someone about a task they cannot open is confusing and leaks information. Falls out of D14. |
+| D27 | **An Operator may delete a task only if `created_by = self` as well as `assignee = self`.** Deleting an assigned task they did not create returns **403**. | Closes what was previously an accepted risk. Without it, an Operator could soft-delete Supervisor-assigned work — and since D20 provides no restore endpoint, that work would be irrecoverable through the API. An Operator can still decline work by other means (status, or asking a Supervisor); they cannot make someone else's task disappear. A Supervisor retains delete on every task. This is the **only** rule in the design where `created_by` affects authorization, which is why D14 is explicit that it is not merely an audit column. |
+| D28 | **All primary keys are UUIDv7**, via `uuid.uuid7()` from the Python 3.14 standard library | Non-sequential ids remove resource enumeration from the API surface, and UUIDv7's 48-bit big-endian timestamp prefix keeps inserts append-ordered, so B-tree index locality stays close to a sequential integer's rather than fragmenting the way UUIDv4 would. CPython's implementation adds a 42-bit counter guaranteeing **strict monotonicity within a millisecond** (RFC 9562 §5.7), so ordering is total, not just millisecond-granular. Costs no new dependency (D2). See §6.6 for the mechanics and the two honest caveats. |
 
 ### 3.4 Deliberate overrides of `AGENTS.md`
 
@@ -116,7 +120,7 @@ djangorestframework-simplejwt = { git = "https://github.com/jazzband/djangorestf
 
 | Layer | Choice | Version |
 |---|---|---|
-| Language | Python | floor `>=3.12`, image `3.13-slim` |
+| Language | Python | **`>=3.14`** (hard floor — stdlib `uuid.uuid7`), image `3.14-slim` |
 | Framework | Django | `>=6.0,<6.1` |
 | API | Django REST Framework | 3.18.1 |
 | Auth | djangorestframework-simplejwt | git `a7cb077` (see D3) |
@@ -173,13 +177,35 @@ The frontend and backend communicate only over the HTTP API (root §3). Redis se
 
 ### 5.2 Backend request flow
 
-Per `backend §1`:
+Per `backend §1`, with the full layering of D8:
 
 ```
-HTTP Request -> DRF ViewSet -> Serializer -> Application Service -> Selector -> ORM -> PostgreSQL
+Write:  HTTP Request -> ViewSet -> Serializer (validate) -> Service -> Repository -> ORM -> PostgreSQL
+Read:   HTTP Request -> ViewSet -> Selector -> ORM -> PostgreSQL -> Serializer (represent)
 ```
 
-Reads bypass the service layer and go view -> selector, since there is nothing to orchestrate. Writes that involve a transaction, a state transition, or a notification go through a service.
+Dependency direction is strictly downward. A service never touches the ORM directly; a repository never contains a business workflow; neither knows about `request`, HTTP status codes or DRF `Response` (`backend §8`).
+
+**Repository vs selector** — the distinction that keeps both layers meaningful:
+
+| | Repository | Selector |
+|---|---|---|
+| Returns | one entity, or nothing | a queryset |
+| Answers | "fetch this exact row / write this row" | "which rows, under what rules" |
+| Called by | services only | views (via `get_queryset`) and services |
+| Owns | identity lookup, row locking, writes, soft delete, dedupe insert | role scoping, filtering, aggregation |
+
+Reads still bypass the service layer and go view -> selector, because there is nothing to orchestrate. What changed from an earlier draft is that **writes no longer bypass anything**: there is exactly one path to mutating a row (D9).
+
+**Method inventory**, so no repository is a `Model.objects.get()` passthrough (`backend §7`):
+
+| Repository | Methods | Non-trivial behaviour it owns |
+|---|---|---|
+| `TaskRepository` | `get(id)`, `get_for_update(id)`, `add(task)`, `save(task)`, `soft_delete(task, by)` | `get_for_update` wraps `select_for_update()` — the concurrency guard `complete_task` depends on (§12.3). `soft_delete` sets `deleted_at` and `deleted_by` together. |
+| `UserRepository` | `get(id)`, `get_by_email(email)`, `add(user)`, `save(user)`, `soft_delete(user, by)` | `get_by_email` applies D24's lowercase normalization, so no caller can accidentally do a case-sensitive lookup. `add` hashes the password. |
+| `NotificationRepository` | `create_if_absent(dedupe_key, ...)`, `mark_sent(n)`, `mark_failed(n, error)` | `create_if_absent` encapsulates the `IntegrityError` catch on the unique `dedupe_key` and returns `None` when the row already exists — the whole idempotency mechanism of §10.3b lives here, in one tested place. |
+
+Selectors: `tasks.selectors` holds `scoped_tasks(user)` (the D13/D14 role scoping), `overdue_candidates()` and `task_stats(user)`; `users.selectors` holds `scoped_users(user)` and `assignable_users()` (D17's Supervisor-or-Operator filter).
 
 ### 5.3 Backend layout
 
@@ -201,7 +227,7 @@ backend/
 │   └── asgi.py
 └── apps/
     ├── core/
-    │   ├── models.py               # TimeStampedModel, SoftDeleteModel
+    │   ├── models.py               # UUIDPrimaryKeyModel, TimeStampedModel, SoftDeleteModel
     │   ├── managers.py             # SoftDeleteManager
     │   ├── roles.py                # Role TextChoices (see §6.2)
     │   ├── pagination.py           # DefaultPageNumberPagination
@@ -209,14 +235,15 @@ backend/
     │   ├── throttling.py           # scoped throttle classes
     │   ├── permissions/
     │   │   ├── matrix.py           # DECLARATIVE SOURCE OF TRUTH (D11)
-    │   │   └── classes.py          # RolePermission
+    │   │   └── classes.py          # RolePermission, IsTaskCreator (D27)
     │   └── tests/
     ├── users/
     │   ├── models.py               # User (AbstractBaseUser), UserManager
     │   ├── serializers.py          # UserSerializer, UserCreate/Update, UserMinimal
     │   ├── views.py                # UserViewSet, MeView, auth views
     │   ├── services.py             # create_user, update_user, soft_delete_user
-    │   ├── selectors.py
+    │   ├── repositories.py         # UserRepository
+    │   ├── selectors.py            # scoped_users, assignable_users
     │   ├── filters.py              # UserFilterSet
     │   ├── admin.py
     │   ├── urls.py
@@ -229,7 +256,8 @@ backend/
     │   ├── views.py                # TaskViewSet (+ complete, stats actions)
     │   ├── filters.py              # TaskFilterSet
     │   ├── services.py             # create/update/assign/complete/change_status/soft_delete
-    │   ├── selectors.py            # scoped querysets + stats aggregation
+    │   ├── repositories.py         # TaskRepository
+    │   ├── selectors.py            # scoped_tasks, overdue_candidates, task_stats
     │   ├── exceptions.py
     │   ├── urls.py
     │   ├── migrations/
@@ -238,6 +266,7 @@ backend/
         ├── models.py               # Notification, NotificationEvent
         ├── tasks.py                # Celery tasks
         ├── services.py             # recipient resolution, dedupe key construction
+        ├── repositories.py         # NotificationRepository (create_if_absent)
         ├── emails.py               # subject/body rendering
         ├── templates/
         ├── migrations/
@@ -264,7 +293,7 @@ erDiagram
     TASK ||--o{ HISTORICALTASK : "versions"
 
     USER {
-        bigint id PK
+        uuid id PK "UUIDv7"
         varchar email "lowercase; UNIQUE WHERE deleted_at IS NULL"
         varchar password
         varchar role "ADMIN SUPERVISOR OPERATOR; indexed"
@@ -276,30 +305,30 @@ erDiagram
         datetime date_joined
         datetime last_login
         datetime deleted_at "soft-delete marker; indexed"
-        bigint deleted_by FK "SET_NULL"
+        uuid deleted_by FK "SET_NULL"
     }
 
     TASK {
-        bigint id PK
+        uuid id PK "UUIDv7"
         varchar title
         text description
         varchar status "PENDING IN_PROGRESS COMPLETED CANCELLED"
         datetime due_date "nullable, UTC"
-        bigint assignee FK "nullable, PROTECT"
-        bigint created_by FK "PROTECT, not null"
+        uuid assignee FK "nullable, PROTECT - grants visibility"
+        uuid created_by FK "PROTECT, not null - gates delete per D27"
         datetime completed_at "nullable"
         datetime created_at
         datetime updated_at
         datetime deleted_at
-        bigint deleted_by FK "SET_NULL"
+        uuid deleted_by FK "SET_NULL"
     }
 
     NOTIFICATION {
-        bigint id PK
-        bigint task FK "CASCADE"
-        bigint recipient FK "CASCADE"
+        uuid id PK "UUIDv7"
+        uuid task FK "CASCADE"
+        uuid recipient FK "CASCADE"
         varchar event "ASSIGNED STATUS_CHANGED DUE_DATE_CHANGED OVERDUE"
-        varchar dedupe_key "UNIQUE"
+        varchar dedupe_key "UNIQUE, max_length 160"
         varchar status "PENDING SENT FAILED"
         datetime created_at
         datetime sent_at "nullable"
@@ -307,19 +336,21 @@ erDiagram
     }
 
     HISTORICALUSER {
-        bigint history_id PK
+        bigint history_id PK "stays integer - see below"
         datetime history_date
         varchar history_type "plus tilde minus"
-        bigint history_user FK
+        uuid history_user FK
     }
 
     HISTORICALTASK {
-        bigint history_id PK
+        bigint history_id PK "stays integer - see below"
         datetime history_date
         varchar history_type "plus tilde minus"
-        bigint history_user FK
+        uuid history_user FK
     }
 ```
+
+**`history_id` stays a `BigAutoField`.** `SIMPLE_HISTORY_HISTORY_ID_USE_UUID` is left at its default of `False`, deliberately: the history id is never exposed through the API, so it gains nothing from being non-enumerable, and §10.3b composes it into `Notification.dedupe_key` — an integer keeps that key compact where a fifth UUID would push it past 150 characters for no benefit.
 
 `User` and `Task` each declare `history = HistoricalRecords()`. Because deletion is soft, `simple-history` records it as an ordinary update (`history_type='~'`), so the audit trail remains continuous and the deleted row's final state is preserved.
 
@@ -327,7 +358,7 @@ erDiagram
 
 ### 6.2 `User`
 
-Custom model on `AbstractBaseUser` + `PermissionsMixin`, with `USERNAME_FIELD = "email"` and `REQUIRED_FIELDS = ["first_name", "last_name"]`.
+Custom model on `UUIDPrimaryKeyModel` + `SoftDeleteModel` + `AbstractBaseUser` + `PermissionsMixin`, with `USERNAME_FIELD = "email"` and `REQUIRED_FIELDS = ["first_name", "last_name"]`. Primary key is UUIDv7 per D28 (§6.6).
 
 ```python
 # apps/core/roles.py
@@ -361,8 +392,9 @@ class TaskStatus(models.TextChoices):
     CANCELLED   = "CANCELLED",   "Cancelled"
 ```
 
-Fields:
+Fields (`Task` inherits `UUIDPrimaryKeyModel`, `TimeStampedModel` and `SoftDeleteModel`):
 
+- `id` — UUIDv7 primary key (§6.6).
 - `title` — `CharField(max_length=200)`, required, non-blank.
 - `description` — `TextField(blank=True, default="")`.
 - `status` — `CharField(choices=TaskStatus.choices, default=PENDING)`.
@@ -397,7 +429,7 @@ The "assignee is not an Admin" rule (D17) is **deliberately absent** from this t
 | `("due_date",)` | due-date-only range queries and ordering |
 | `("deleted_at",)` | soft-delete filtering |
 
-There is **no index on `created_by`**: after D14 nothing filters or scopes by it, and `backend §30` requires evidence-driven optimisation. If a "created by" filter is added later, the index is added with it.
+There is still **no index on `created_by`**, even though D27 makes it load-bearing for authorization. The reason is that D27's check is `task.created_by_id == user.id` on a row the request has *already* fetched through the `(assignee, status)` index — a single in-memory attribute comparison, not a query. No `WHERE created_by = ...` is ever issued: nothing filters, scopes or joins on it, so `backend §30`'s evidence-driven rule still says no index. If a "created by" **filter** is added later, the index comes with it.
 
 `Meta.ordering` is **not** set; ordering is applied explicitly per queryset so pagination determinism is a conscious choice (§8.3).
 
@@ -422,7 +454,7 @@ The transition map lives as a module-level dict in `apps/tasks/models.py` and is
 
 ### 6.5 Soft delete (D20)
 
-`apps/core/models.SoftDeleteModel` is an abstract base providing:
+`apps/core/models.SoftDeleteModel` is an abstract base inheriting `UUIDPrimaryKeyModel` (§6.6), providing:
 
 - `deleted_at` — `DateTimeField(null=True, db_index=True)`
 - `deleted_by` — `FK(settings.AUTH_USER_MODEL, null=True, on_delete=SET_NULL, related_name="+")`
@@ -435,6 +467,43 @@ The transition map lives as a module-level dict in `apps/tasks/models.py` and is
 `Meta.base_manager_name` is **not** set to the soft-delete manager, so related-object descriptors continue to use a plain manager and `PROTECT` behaves predictably.
 
 Because the default manager filters deleted rows, no viewset needs its own `deleted_at` filter — which removes the single most likely place for a data leak (`backend §5`).
+
+### 6.6 UUIDv7 primary keys (D28)
+
+```python
+# apps/core/models.py
+import uuid
+from django.db import models
+
+class UUIDPrimaryKeyModel(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid7, editable=False)
+
+    class Meta:
+        abstract = True
+```
+
+`uuid.uuid7` is passed as a **reference, not a call**, and is a stdlib function, so Django serializes it into migrations the same way `uuid.uuid4` has always been serialized. No helper module and no third-party package are needed (D2).
+
+Every model inherits it: `SoftDeleteModel` extends it (so `User` and `Task` get it), and `Notification` inherits it directly. `Notification` gains nothing security-wise — it is never API-exposed — but a schema with two different primary-key types is a maintenance trap, and exposing it later would then require a key migration.
+
+**Why v7 and not v4.** On PostgreSQL both store as the native 16-byte `uuid` type, so the difference is purely index behaviour. A UUIDv4 primary key writes to a uniformly random point in the B-tree on every insert, which spreads writes across the whole index, inflates it through page splits, and destroys cache locality. UUIDv7 puts a 48-bit big-endian millisecond timestamp in the high bits, so inserts land at the right-hand edge of the index exactly as a sequential integer does. CPython's implementation additionally spends 42 bits on a counter that guarantees strict monotonicity within a millisecond, so the ordering is total rather than ms-granular.
+
+**Two honest caveats**, both recorded in §16:
+
+1. **A UUIDv7 is not a secret.** It defeats *enumeration* — nobody can walk `/tasks/1`, `/tasks/2` — which is the real weakness of integer keys on an API. It is not unguessable the way a token is: of its 122 non-variant bits, 48 are a timestamp and 42 are a counter, leaving roughly 32 random bits per millisecond. Guessing a specific id remains impractical, but **ids must never be treated as capability tokens.** Authorization still carries all the weight: §7.3's queryset scoping and 404-for-non-participants are what actually protect a row, exactly as they would with integer keys.
+2. **A UUIDv7 leaks its creation time** to anyone who can read the id. That is acceptable here because `created_at` is already in every task and user representation (§8.2) — the id reveals nothing the API does not already return.
+
+**Costs accepted:** keys are 16 bytes rather than 8, so indexes are roughly twice the key size, and every foreign key widens correspondingly. On a dataset of this scale the trade is comfortably worth non-enumerable ids.
+
+**Knock-on effects elsewhere in the design:**
+
+| Area | Effect |
+|---|---|
+| §8.1 URLs | path parameters are UUID strings. The viewsets set `lookup_value_regex` to the UUID-4-form pattern so a malformed id yields a clean 404 instead of reaching the database |
+| §8.3 pagination | `-id` remains a valid unique tiebreaker *and* becomes time-correlated, since v7 sorts by creation. With v4 it would still be unique — so pagination would still be stable — but the ordering would carry no meaning |
+| §10.3b | `dedupe_key` is now `{uuid}:{EVENT}:{uuid}:{history_id}`, around 100 characters; the field is `max_length=160` with its unique index |
+| §11 frontend | every `id` in `types.ts` is `string`, never `number` |
+| drf-spectacular | ids are documented as `string($uuid)` in the OpenAPI 3 schema automatically |
 
 ---
 
@@ -459,7 +528,7 @@ The authoritative, machine-readable version lives in `apps/core/permissions/matr
 | `POST /tasks/` | **403** | allowed (any valid assignee) | allowed (**self-assigned only**) | 401 |
 | `GET /tasks/{id}/` | **403** | allowed | own, else **404** | 401 |
 | `PATCH /tasks/{id}/` | **403** | allowed (incl. `assignee`) | own, **`assignee` immutable** | 401 |
-| `DELETE /tasks/{id}/` | **403** | allowed (soft) | own (soft) | 401 |
+| `DELETE /tasks/{id}/` | **403** | allowed (soft) | **only if `created_by = me` too** (soft), else **403** | 401 |
 | `POST /tasks/{id}/complete/` | **403** | allowed | own | 401 |
 | `GET /tasks/stats/` | **403** | allowed (global) | allowed (own) | 401 |
 
@@ -471,24 +540,32 @@ The authoritative, machine-readable version lives in `apps/core/permissions/matr
 4. **Operator scope is `assignee = me`** (D14). `created_by` is irrelevant to access.
 5. **A non-participant detail request returns 404, not 403** (`backend §38`) — 403 would confirm the row exists. This is implemented by queryset scoping, so list and detail cannot disagree.
 6. **403 vs 404 is role-dependent and deliberate.** An Admin hitting `/tasks/{id}/` gets **403**, because the role has no business with that resource type at all. An Operator hitting another Operator's task gets **404**, because the resource type is theirs but that instance is not.
+7. **An Operator's delete is narrower than their read (D27).** Deletion requires `created_by = me` *in addition to* `assignee = me`, so an Operator cannot soft-delete work a Supervisor assigned to them — which, given D20 has no restore endpoint, would otherwise be irrecoverable through the API. This is the single place in the design where `created_by` affects authorization.
+
+   The response is **403, not 404**, and that is consistent with rule 5 rather than an exception to it: the task *is* in the Operator's queryset, so they can already see it. Hiding it at this point would be incoherent — the refusal is "you may not do this to it", not "it does not exist for you". It is also an object-level permission check (`IsTaskCreator.has_object_permission`), which keeps 403 the permission layer's exclusive output per §7.3.
 
 ### 7.3 Enforcement layers
 
 Three independent mechanisms, per `backend §15`:
 
-| Layer | Responsibility |
-|---|---|
-| **Permission class** (`RolePermission`) | reads the matrix and answers "may this role call this endpoint at all?" -> 403 |
-| **Queryset scoping** (`get_queryset` -> selector) | restricts which rows exist from this user's perspective -> 404 on out-of-scope detail, and correct list contents |
-| **Serializer / service validation** | field-level rules: Operator cannot set `assignee`, assignee cannot be an Admin, status transitions -> 400/409 |
+| Layer | Responsibility | Output |
+|---|---|---|
+| **Permission class** (`RolePermission`) | reads the matrix and answers "may this role call this endpoint at all?" | 403 |
+| **Object permission** (`IsTaskCreator`, D27) | "may this role do *this* to *this row*?" — currently only the Operator delete rule | 403 |
+| **Queryset scoping** (`get_queryset` -> selector) | restricts which rows exist from this user's perspective: correct list contents, and 404 on out-of-scope detail | 404 |
+| **Serializer / service validation** | field-level rules: Operator cannot choose an assignee, assignee cannot be an Admin, status transitions | 400 / 409 |
 
-Queryset scoping is what makes list visibility correct; an object-level permission check alone would not filter a list (`backend §15`).
+403 is produced only by the two permission layers, 404 only by scoping, and 400/409 only by validation — so the response code alone tells you which layer refused the request.
+
+Queryset scoping is what makes list visibility correct; an object-level permission check alone would not filter a list (`backend §15`). Conversely, scoping alone cannot express D27, because the row must stay *visible* while becoming *undeletable* — which is precisely the case object-level permissions exist for.
 
 ---
 
 ## 8. API surface
 
 Base path `/api/v1/`. Trailing slashes. Plural resource nouns. State transitions as named sub-resources (`backend §34`).
+
+Every `{id}` below is a **UUIDv7** string, not an integer (D28). Viewsets constrain `lookup_value_regex` to the canonical UUID form, so a malformed id returns 404 without reaching the database.
 
 ### 8.1 Endpoints
 
@@ -534,7 +611,7 @@ Input and output contracts are separate (`backend §13`); no serializer uses `fi
 | `TaskCreateSerializer` | `title, description, due_date, assignee` |
 | `TaskUpdateSerializer` | `title, description, due_date, assignee, status` |
 
-`TaskCreateSerializer` and `TaskUpdateSerializer` receive the request user through serializer context and apply D15/D16/D17 in `validate()`.
+`TaskCreateSerializer` and `TaskUpdateSerializer` receive the request user through serializer context and apply D15/D16/D17 in `validate()`. **None of these serializers implements `create()` or `update()`** (D9): the view calls `serializer.is_valid(raise_exception=True)`, hands `validated_data` plus the actor to a service, and renders the result with the matching read serializer.
 
 ### 8.3 Pagination
 
@@ -634,6 +711,12 @@ Application errors subclass `ApplicationError` with a `code` and a `status_code`
 |---|---|---|
 | `assignee_not_assignable` | *that user* cannot hold tasks | any role assigns to an **Admin** (D17) |
 | `assignee_immutable` | *your role* cannot choose an assignee at all | an **Operator** supplies a different assignee on create (D16) or any assignee on update (D15) |
+
+The object-permission layer adds one more, raised as a DRF `PermissionDenied` rather than an `ApplicationError`:
+
+| Code | Status | Raised when |
+|---|---|---|
+| `delete_requires_creator` | **403** | an **Operator** deletes an assigned task they did not create (D27) |
 
 `AssigneeImmutableForRole` is deliberately **400, not 403.** Two reasons: the Operator create-side case is already a 400, so the same rule on update must not return a different **status**; and §7.3 reserves 403 as the permission class's exclusive output, which keeps the three enforcement layers distinguishable from the response code alone. The request is refused because one field in the payload is not writable by this role — a field-level validation failure, which is what 400 means here.
 
@@ -759,7 +842,7 @@ sequenceDiagram
 
 **(a) Enqueueing inside a transaction.** Calling `.delay()` inside `transaction.atomic()` can deliver the message to a worker *before* the transaction commits, so the worker reads a row that does not yet exist — or reads a pre-update version. **Every** enqueue therefore goes through `transaction.on_commit(...)`. Services perform the enqueue; views never do (`backend §32`).
 
-**(b) Retries double-send.** `Notification.dedupe_key` is `UNIQUE`, and the worker inserts the row **before** sending. A retry of an already-sent event hits the constraint and exits without sending. The key is built from the **`simple-history` record id**, which ties each email to the exact audited change that caused it:
+**(b) Retries double-send.** `Notification.dedupe_key` is `UNIQUE` (`max_length=160`, sized for two UUIDv7s plus the event name and history id — §6.6), and the worker inserts the row **before** sending, through `NotificationRepository.create_if_absent()`. That method owns the `IntegrityError` catch and returns `None` when the key already exists, so a retry of an already-sent event exits without sending. The key is built from the **`simple-history` record id**, which ties each email to the exact audited change that caused it:
 
 | Event | `dedupe_key` |
 |---|---|
@@ -884,7 +967,7 @@ Server data is never copied into `useState` or Context. Query keys are structure
   | due next 7 days | `/tasks?due_date_after=<now>&due_date_before=<+7d>&status=PENDING&status=IN_PROGRESS` |
 
   The due-soon link is the one that needs care. `due_next_7_days` excludes nulls **and terminal statuses** (§8.4), so linking on `due_date_before` alone would also pull in every past-due task and every completed task with a due date — a list visibly larger than the tile. No new backend filter is required; the existing params compose to the right set.
-- **Task list** — paginated table with filters for status (multi-select), due-date range and overdue; sortable columns; inline complete action; a "New task" action routing to `/tasks/new`. The assignee column is Supervisor-only.
+- **Task list** — paginated table with filters for status (multi-select), due-date range and overdue; sortable columns; inline complete action; a "New task" action routing to `/tasks/new`. The assignee column is Supervisor-only. **The delete control is hidden for an Operator on any task they did not create** — the UX mirror of D27, so a user is never offered an action the backend will refuse with 403. As always this is presentation only; the object permission is what enforces it.
 - **Task create and edit** — one form component serving `/tasks/new` and `/tasks/:id`, in two modes. The **`assignee` field renders only for Supervisors**, populated from `GET /users/` (minimal serializer); for an Operator it is omitted entirely, because on create the backend defaults it to self (D16) and on update it is immutable (D15). Two mode-specific rules:
   - **The status select renders in edit mode only.** `TaskCreateSerializer` (§8.2) accepts no `status` field — a new task is always `PENDING` — so rendering the select on create would offer a choice the API silently discards.
   - **`COMPLETED` is absent from the status select entirely.** Completion is a distinct button hitting `/complete/`, never a dropdown value, mirroring D18's single audited path.
@@ -939,6 +1022,13 @@ Beyond the matrix, these behaviours are tested individually (`backend §37`, `§
 - an Operator updating `assignee` on an assigned task receives 400 `assignee_immutable` (D15, §8.7)
 - the two assignee errors do not collide: a **Supervisor** assigning to an Admin receives `assignee_not_assignable`, while an **Operator** choosing any assignee receives `assignee_immutable` (§8.7)
 - an Admin receives 403 on every task endpoint
+
+**The D27 delete rule** — four cases, since this closed a risk and must not silently regress:
+
+- an Operator deleting a task they created **and** are assigned receives 204, and the row is soft-deleted
+- an Operator deleting a task **a Supervisor created** and assigned to them receives **403 `delete_requires_creator`**, and the row is **still present** afterwards
+- that same Operator can still `GET` and `PATCH` that task, and can still complete it — delete is narrower than read, not a general loss of access
+- a Supervisor can delete it, including tasks they did not create
 - a Supervisor receives 200 from `GET /users/` and the response contains **no** `is_staff` or `last_login` — the direct test of the minimal serializer
 
 **Task rules**
@@ -961,6 +1051,13 @@ Beyond the matrix, these behaviours are tested individually (`backend §37`, `§
 
 - the `completed_at`/`status` check constraint rejects a direct ORM write that violates it
 - `PROTECT` prevents hard-deleting a user who holds tasks
+
+**UUIDv7 primary keys** (D28, §6.6)
+
+- a created `Task` and `User` both receive a v7 id — `uuid.UUID(...).version == 7`
+- **ids generated in sequence sort in creation order**, which is the property the index locality argument rests on, and the one a silent fall-back to `uuid4` would break without any other test failing
+- a malformed id in a detail URL returns 404 from `lookup_value_regex` without reaching the database
+- `HistoricalTask.history_id` is an integer, not a UUID (so `dedupe_key` stays within `max_length`)
 
 **Notifications**
 
@@ -1025,7 +1122,7 @@ It is **built in three stages**, because its later checks depend on code that do
 
 | Stage | Phase | Check | Services needed |
 |---|---|---|---|
-| 1 | **1** | `uv sync` resolves the git pin; assert the installed Django is 6.0.x; `import rest_framework_simplejwt` and `import drf_spectacular` succeed; `manage.py check` passes | none |
+| 1 | **1** | `uv sync` resolves the git pin; assert the installed Python is 3.14+ **and `uuid.uuid7` is importable** (D2/D28); assert the installed Django is 6.0.x; `import rest_framework_simplejwt` and `import drf_spectacular` succeed; `manage.py check` passes | none |
 | 2 | **4** | one real login round-trip against the cookie-based auth views | **`postgres:16`** |
 | 3 | **8** | `manage.py spectacular --validate` generates a valid OpenAPI 3 schema | `postgres:16` |
 
@@ -1074,7 +1171,7 @@ Per root § Local Development, the `frontend` service exists so `docker compose 
 
 ### 14.2 Backend image
 
-`python:3.13-slim`, with **`git` installed** (required by D3 so uv can resolve the pinned commit) and uv installed. `uv sync --frozen` runs from `pyproject.toml` and `uv.lock` in its own layer ahead of the source copy, so dependency layers cache. Changing `pyproject.toml` requires `docker compose build backend`.
+`python:3.14-slim` (D2 — the floor is hard, since `uuid.uuid7` is a 3.14 stdlib addition), with **`git` installed** (required by D3 so uv can resolve the pinned commit) and uv installed. `uv sync --frozen` runs from `pyproject.toml` and `uv.lock` in its own layer ahead of the source copy, so dependency layers cache. Changing `pyproject.toml` requires `docker compose build backend`.
 
 ### 14.3 Demo data
 
@@ -1096,12 +1193,12 @@ A dependency-driven sequence for the implementation plan. `apps.users` must come
 | Phase | Deliverable |
 |---|---|
 | 1 | Scaffold: `pyproject.toml` with the git pin, settings split, Compose, Dockerfiles, ruff, pre-commit, the `lint` CI job, **and `compat` stage 1 — proving the Django 6.0 dependency set imports and boots** (§13) |
-| 2 | `apps.core`: soft-delete base and manager, `roles.py`, pagination, exception handler, throttles, permission matrix module |
-| 3 | `apps.users`: custom user, partial unique index, serializers, Admin CRUD, `/users/me/`, simple-history; the `backend` CI job (coverage reported, not yet gated) |
+| 2 | `apps.core`: **`UUIDPrimaryKeyModel`** (D28), soft-delete base and manager, `roles.py`, pagination, exception handler, throttles, permission matrix module |
+| 3 | `apps.users`: custom user, partial unique index, serializers, `UserRepository`, selectors, Admin CRUD, `/users/me/`, simple-history; the `backend` CI job (coverage reported, not yet gated) |
 | 4 | Auth: cookie-based login/refresh/logout, blacklist, throttling, security settings; **`compat` stage 2** (login round-trip) |
-| 5 | `apps.tasks`: model, check constraint, partial indexes, **simple-history on `Task`** (phase 7's `dedupe_key` depends on `HistoricalTask.history_id`), serializers, viewset, filters, services, selectors, `complete/`, `stats/` |
-| 6 | Permission matrix enforcement plus the parametrized matrix test suite |
-| 7 | `apps.notifications`: model, recipient resolution, Celery tasks with dedupe, `on_commit` enqueue, overdue sweep, beat schedule |
+| 5 | `apps.tasks`: model, check constraint, partial indexes, **simple-history on `Task`** (phase 7's `dedupe_key` depends on `HistoricalTask.history_id`), serializers, `TaskRepository`, selectors, services, viewset, filters, `complete/`, `stats/` |
+| 6 | Permission matrix enforcement, **`IsTaskCreator` for D27**, plus the parametrized matrix test suite |
+| 7 | `apps.notifications`: model, `NotificationRepository.create_if_absent`, recipient resolution, Celery tasks with dedupe, `on_commit` enqueue, overdue sweep, beat schedule |
 | 8 | `seed_demo_data` and drf-spectacular wiring; **`compat` stage 3** (`spectacular --validate`) |
 | 9 | Frontend: API client, auth context, router and guards, login; **the login tests** (so the new `frontend` CI job has something real to run — §13) |
 | 10 | Frontend: task list/detail/create forms, user CRUD, dashboard |
@@ -1122,7 +1219,9 @@ Two ordering constraints that are not obvious from the phase names:
 
 | Risk | Detail | Mitigation available |
 |---|---|---|
-| **An Operator can delete assigned work** | D15 grants DELETE on assigned tasks and D20 provides no restore endpoint, so an Operator can make Supervisor-assigned work vanish from the API. It remains traceable via `simple-history` and `deleted_by`, but is recoverable only at the database level. **Accepted deliberately.** | Either restrict Operator DELETE to self-created tasks, or add a Supervisor-only restore endpoint. Both are a change to the matrix plus, in the second case, one endpoint. |
+| **No recovery path for a soft-deleted row** | D20 provides no restore endpoint, so any deletion is irrecoverable through the API, recoverable only at the database level. The blast radius is now small: D27 means an Operator can only delete tasks they created themselves, so the worst case is a user destroying their own work. A Supervisor can still delete any task. | Add a Supervisor-only restore endpoint: one endpoint plus one matrix row, since `all_objects` already exposes deleted rows (§6.5). |
+| **A UUIDv7 is not a secret** | It defeats enumeration but is not unguessable: 48 timestamp bits plus a 42-bit counter leave roughly 32 random bits per millisecond (§6.6). An id must never be treated as a capability token. | None needed — authorization does not depend on id secrecy anywhere. §7.3's scoping and 404-for-non-participants protect rows exactly as they would with integer keys, and the §12.2 matrix suite proves it. |
+| **A UUIDv7 leaks its creation time** | The timestamp prefix is readable by anyone holding the id. | Accepted, because `created_at` is already in every representation (§8.2) — the id discloses nothing the API withholds. |
 | **Two dependencies are untested above Django 6.0** | simplejwt@master's tox matrix and drf-spectacular's classifiers both stop at 6.0, which is why D1 pins 6.0. | The `compat` CI job verifies the combination on every push. |
 | **A git-pinned dependency sits outside advisory tooling** | `pip-audit` and Dependabot cannot track a git SHA, and this is the **authentication** library. | Documented exit criterion in `README.md`; the `compat` job signals when a PyPI release can replace it. |
 | **Django 6.0 is a security-fix-only branch** | 6.0 left mainstream support when 6.1 shipped in Aug 2026. | The same exit criterion: move to 6.1 once both laggards catch up. |
@@ -1132,14 +1231,18 @@ Two ordering constraints that are not obvious from the phase names:
 - **`on_commit` is easy to regress.** A later contributor adding a notification with a bare `.delay()` reintroduces §10.3(a). The rollback test in §12.3 is the guard.
 - **Soft delete and `PROTECT` interact.** Because `delete()` is deliberately not overridden, a hard delete in a data migration can hit `PROTECT`. That is the intended loud failure (D25), but anyone writing such a migration needs to know it.
 - **The minimal user serializer is a privilege boundary.** Adding a field to `UserMinimalSerializer` widens what a Supervisor can see. It carries an explicit field-list test for that reason.
+- **A silent fall-back from `uuid7` to `uuid4` would break nothing visibly.** Ids would still be unique, every functional test would still pass, and only index locality — the entire reason for D28 — would be lost. The ordering assertion in §12.3 is the guard, and it is the only test that would catch it.
+- **The repository layer is only worth its cost if services honour it.** D8 and D9 mean a service reaching for `Task.objects` directly, or a serializer regaining a `create()`, quietly reintroduces a second write path and bypasses transition validation, notification enqueue and row locking. Code review should treat an ORM call inside `services.py` as a defect.
 
 ---
 
 ## 17. Deliverables
 
-- [ ] Backend: Django 6.0 and DRF, four apps, migrations, at least 80% coverage
+- [ ] Backend: Python 3.14, Django 6.0 and DRF, four apps, migrations, at least 80% coverage
+- [ ] **UUIDv7 primary keys on every model** via stdlib `uuid.uuid7`, with the ordering test that proves it
+- [ ] **Full layering: views, serializers, services, repositories, selectors** — no serializer persists (D8/D9)
 - [ ] JWT auth with in-memory access token and HttpOnly refresh cookie, blacklist, throttling
-- [ ] Strict three-role permission matrix with a matrix-driven test suite
+- [ ] Strict three-role permission matrix with a matrix-driven test suite, **including D27's Operator delete restriction**
 - [ ] Task CRUD, assignment, `complete/`, filtering by status and due date, pagination, `stats/`
 - [ ] `django-simple-history` on `User` and `Task`
 - [ ] Soft delete on `User` and `Task` (`Notification` exempt per D20), with a partial unique index and partial indexes
