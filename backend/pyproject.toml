@@ -49,10 +49,14 @@ select = ["E", "F", "I", "UP", "B", "DJ", "C4", "SIM", "RUF"]
 [tool.ruff.lint.per-file-ignores]
 "*/migrations/*" = ["E501", "RUF012"]
 "config/settings/*" = ["F403", "F405"]
-# RUF012 guards against mutable class attributes shared between instances. Django's
-# REQUIRED_FIELDS and Meta.constraints/indexes are read once at class creation and
-# never mutated, so the hazard does not apply — same reason migrations ignore it.
+# RUF012 guards against mutable class attributes shared between instances. The
+# framework-declared lists in these modules — Django's REQUIRED_FIELDS and
+# Meta.constraints/indexes, DRF's and django-filter's Meta.fields — are read once at
+# class creation and never mutated, so the hazard does not apply. Same reason
+# migrations ignore it. Service and repository classes are still checked.
 "apps/*/models.py" = ["RUF012"]
+"apps/*/serializers.py" = ["RUF012"]
+"apps/*/filters.py" = ["RUF012"]
 
 [tool.mypy]
 python_version = "3.14"
