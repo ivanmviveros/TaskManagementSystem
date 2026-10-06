@@ -38,6 +38,10 @@ package = false
 [tool.ruff]
 line-length = 100
 target-version = "py314"
+# AGENTS.md is a read-only brief. ruff formats Python code blocks embedded in
+# Markdown, which rewrites its examples; excluding it keeps the CLI and the
+# pre-commit ruff hooks off a file neither is allowed to change.
+extend-exclude = ["AGENTS.md"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "DJ", "C4", "SIM", "RUF"]
