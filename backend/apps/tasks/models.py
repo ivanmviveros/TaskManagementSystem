@@ -4,8 +4,6 @@ TRANSITIONS is module-level data consumed by BOTH the service and its tests, so
 the rule and its enforcement cannot drift.
 """
 
-from typing import Final, cast
-
 from django.conf import settings
 from django.db import models
 from django.db.models import Q
@@ -22,29 +20,24 @@ class TaskStatus(models.TextChoices):
     CANCELLED = "CANCELLED", "Cancelled"
 
 
-# Typed aliases, used only to build the vocabulary below. A TextChoices member IS a
-# str at runtime, but mypy without django-stubs reads it as the `tuple[str, str]`
-# literal in the class body, so the annotated collections below would all be
-# rejected. Casting once here keeps those annotations honest; TaskStatus stays the
-# public vocabulary, and these stay module-private.
-_PENDING: Final[str] = cast(str, TaskStatus.PENDING)
-_IN_PROGRESS: Final[str] = cast(str, TaskStatus.IN_PROGRESS)
-_COMPLETED: Final[str] = cast(str, TaskStatus.COMPLETED)
-_CANCELLED: Final[str] = cast(str, TaskStatus.CANCELLED)
-
+# str(TaskStatus.X) is the status value — Django's Choices.__str__ returns it. Written
+# that way rather than bare member references because, without django-stubs, mypy reads
+# a TextChoices member as the `tuple[str, str]` literal in the class body and would
+# reject every annotation below. The members themselves ARE strs at runtime, so this
+# changes nothing but the inferred type.
 #: Statuses a task can still move out of, and which count toward "overdue".
-OPEN_STATUSES: tuple[str, ...] = (_PENDING, _IN_PROGRESS)
+OPEN_STATUSES: tuple[str, ...] = (str(TaskStatus.PENDING), str(TaskStatus.IN_PROGRESS))
 #: Terminal statuses (D19). Reopening is a documented future extension.
-TERMINAL_STATUSES: tuple[str, ...] = (_COMPLETED, _CANCELLED)
+TERMINAL_STATUSES: tuple[str, ...] = (str(TaskStatus.COMPLETED), str(TaskStatus.CANCELLED))
 
 #: Transitions reachable by PATCH. COMPLETED is absent from every value on
 #: purpose: POST /tasks/{id}/complete/ is the only path to it (D18), which is
 #: what guarantees completed_at is always set alongside the status.
 TRANSITIONS: dict[str, frozenset[str]] = {
-    _PENDING: frozenset({_IN_PROGRESS, _CANCELLED}),
-    _IN_PROGRESS: frozenset({_PENDING, _CANCELLED}),
-    _COMPLETED: frozenset(),
-    _CANCELLED: frozenset(),
+    str(TaskStatus.PENDING): frozenset({str(TaskStatus.IN_PROGRESS), str(TaskStatus.CANCELLED)}),
+    str(TaskStatus.IN_PROGRESS): frozenset({str(TaskStatus.PENDING), str(TaskStatus.CANCELLED)}),
+    str(TaskStatus.COMPLETED): frozenset(),
+    str(TaskStatus.CANCELLED): frozenset(),
 }
 
 
