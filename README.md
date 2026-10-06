@@ -222,6 +222,26 @@ maintained. `backend §35` permits either tool. This overrides the original brie
 nomination of drf-yasg, and costs nothing to anyone expecting Swagger — drf-spectacular
 serves a Swagger UI at `/api/v1/schema/swagger-ui/` alongside ReDoc.
 
+### The `compat` CI job, and when to delete it
+
+CI runs four jobs: `lint`, `compat`, `backend` and `frontend`. Three of them ask "is my code
+right?"; **`compat` asks whether this dependency set still assembles and boots at all**, and
+it exists only because of the unusual combination D1–D4 chose. It has three stages:
+
+1. Resolve the pinned set including the git source, assert Python ≥ 3.14 with a working
+   `uuid.uuid7()`, assert Django is 6.0.x, import the two at-risk packages, and boot Django.
+2. Run the login round-trip, which is the single most load-bearing claim in D3 — that the
+   git-pinned simplejwt actually issues and verifies a token on Django 6.0.
+3. Generate and validate the OpenAPI document, which is the equivalent claim for D4.
+
+This job is **deliberately temporary and risk-specific**. When a simplejwt release
+containing PR #959 ships, D3's exit criterion is taken, D1 relaxes toward Django 6.1, and
+**this job can be deleted** — its whole purpose is to keep an assumption under continuous
+verification until the assumption is no longer needed.
+
+The generated `schema.yaml` is **gitignored**: it is a build artifact, and committing it
+would create a second source of truth that silently goes stale.
+
 ### D5 — uv as package manager
 
 `pyproject.toml` plus a committed `uv.lock`. Required by the brief; `backend §44a` permits
@@ -531,7 +551,7 @@ millisecond **by the same process**; across processes, ordering is millisecond-g
 | `ruff format` rewrites Python code blocks embedded in Markdown, which would edit the read-only `AGENTS.md` briefs | `AGENTS.md` is in `extend-exclude` in `backend/pyproject.toml`. Remove it only if ruff gains a narrower setting for embedded code. |
 | **`auth.E003` is silenced** in `SILENCED_SYSTEM_CHECKS` — see below | Django's `Options.total_unique_constraints` learns to count partial constraints. Until then the check cannot be satisfied, only silenced. |
 | **The SPA and the API must be deployed same-site** — see below | Serve both from one registrable domain (the recommendation), or move to `SameSite=Lax`/`None` and add explicit CSRF token validation on `/api/v1/auth/refresh/` and `/logout/`. |
-| drf-spectacular emits four generator warnings today (an `operationId` collision on `/users/`, no inferable serializer for `MeView`/`LogoutView`, and `UserViewSet` dropped from the schema because `get_serializer_class()` reads `request.user.role`) | These are resolved, not silenced, when the schema is wired up — `test_the_schema_generates_without_warnings` asserts the generator produces no errors at all. |
+| ~~drf-spectacular generator warnings~~ — **resolved.** `get_serializer_class()` and `get_queryset()` now tolerate the request-less schema pass, and the hand-written actions carry `@extend_schema`. `spectacular --validate` reports 0 warnings and 0 errors. | — |
 
 ### Why the SPA and the API must be same-site
 

@@ -1,7 +1,12 @@
 """Task HTTP surface. The composition root for TaskService lives here."""
 
 from django_filters.rest_framework import DjangoFilterBackend
-from rest_framework import mixins, status, viewsets
+from drf_spectacular.utils import (
+    OpenApiResponse,
+    extend_schema,
+    inline_serializer,
+)
+from rest_framework import mixins, serializers, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
@@ -11,6 +16,7 @@ from apps.core.permissions.classes import IsTaskCreator, RolePermission
 from apps.core.permissions.matrix import Resource
 from apps.notifications.dispatchers import CeleryNotificationDispatcher
 from apps.tasks.filters import TaskFilterSet
+from apps.tasks.models import Task
 from apps.tasks.repositories import DjangoTaskRepository
 from apps.tasks.selectors import scoped_tasks, task_stats
 from apps.tasks.serializers import (
@@ -39,9 +45,15 @@ class TaskViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.Gen
         return [RolePermission()]
 
     def get_queryset(self):
+        # Schema generation calls this with no request, and scoped_tasks reads
+        # user.role; an empty queryset still tells the generator the model. Without
+        # this the generator cannot resolve Task and warns on every task path.
+        user = getattr(self.request, "user", None)
+        if user is None:
+            return Task.objects.none()
         # scoped_tasks owns the authorization rules; eager loading follows the
         # SERIALIZER in use, so it is chained here per action (spec §8.6).
-        queryset = scoped_tasks(self.request.user)
+        queryset = scoped_tasks(user)
         if self.action == "list":
             # assignee only: TaskListSerializer does not render created_by, so
             # joining it would fetch a column nobody reads.
@@ -62,12 +74,33 @@ class TaskViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.Gen
             notifications=CeleryNotificationDispatcher(),
         )
 
+    @extend_schema(
+        request=TaskCreateSerializer,
+        responses={
+            201: TaskDetailSerializer,
+            400: OpenApiResponse(
+                description="Validation failed, or an assignee rule was violated "
+                "(assignee_immutable / assignee_not_assignable)."
+            ),
+        },
+    )
     def create(self, request, *args, **kwargs):
         serializer = TaskCreateSerializer(data=request.data, context={"request": request})
         serializer.is_valid(raise_exception=True)
         task = self.get_service().create(data=serializer.validated_data, actor=request.user)
         return Response(TaskDetailSerializer(task).data, status=status.HTTP_201_CREATED)
 
+    @extend_schema(
+        request=TaskUpdateSerializer,
+        responses={
+            200: TaskDetailSerializer,
+            400: OpenApiResponse(
+                description="Validation failed, an assignee rule was violated, or "
+                "status=COMPLETED was requested (use_complete_action)."
+            ),
+            409: OpenApiResponse(description="The status transition is not allowed."),
+        },
+    )
     def partial_update(self, request, *args, **kwargs):
         task = self.get_object()
         serializer = TaskUpdateSerializer(
@@ -85,6 +118,13 @@ class TaskViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.Gen
         self.get_service().delete(task=task, actor=request.user)
         return Response(status=status.HTTP_204_NO_CONTENT)
 
+    @extend_schema(
+        request=None,
+        responses={
+            200: TaskDetailSerializer,
+            409: OpenApiResponse(description="The task is already in a terminal status."),
+        },
+    )
     @action(detail=True, methods=["post"], url_path="complete")
     def complete(self, request, *args, **kwargs):
         """The ONLY path to COMPLETED (D18), which is what guarantees
@@ -93,6 +133,17 @@ class TaskViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.Gen
         completed = self.get_service().complete(task_id=task.pk, actor=request.user)
         return Response(TaskDetailSerializer(completed).data)
 
+    @extend_schema(
+        responses=inline_serializer(
+            name="TaskStats",
+            fields={
+                "total": serializers.IntegerField(),
+                "by_status": serializers.DictField(child=serializers.IntegerField()),
+                "overdue": serializers.IntegerField(),
+                "due_next_7_days": serializers.IntegerField(),
+            },
+        )
+    )
     @action(detail=False, methods=["get"], url_path="stats")
     def stats(self, request, *args, **kwargs):
         return Response(task_stats(request.user))

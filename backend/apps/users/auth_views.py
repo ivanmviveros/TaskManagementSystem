@@ -3,7 +3,8 @@
 import logging
 
 from django.conf import settings
-from rest_framework import status
+from drf_spectacular.utils import OpenApiResponse, extend_schema, inline_serializer
+from rest_framework import serializers, status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -15,6 +16,7 @@ from apps.core.exceptions import ApplicationError
 from apps.core.throttling import LoginRateThrottle, RefreshRateThrottle
 from apps.users.auth_serializers import LoginSerializer
 from apps.users.cookies import clear_refresh_cookie, set_refresh_cookie
+from apps.users.serializers import UserMinimalSerializer
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +34,31 @@ class LoginView(TokenObtainPairView):
     # DRF only iterates it. Login must stay reachable without authentication.
     permission_classes = ()
 
+    @extend_schema(
+        request=inline_serializer(
+            name="LoginRequest",
+            fields={
+                "email": serializers.EmailField(),
+                "password": serializers.CharField(write_only=True),
+            },
+        ),
+        responses={
+            200: inline_serializer(
+                name="LoginResponse",
+                fields={
+                    "access": serializers.CharField(),
+                    "user": UserMinimalSerializer(),
+                },
+            ),
+            401: OpenApiResponse(
+                description="Invalid credentials, or the account is inactive or deleted."
+            ),
+            429: OpenApiResponse(description="Throttled: 5 attempts per minute per IP."),
+        },
+        description="Returns an access token and the current user. The refresh token is "
+        "set as an HttpOnly cookie scoped to /api/v1/auth/ and never appears "
+        "in the response body.",
+    )
     def post(self, request, *args, **kwargs):
         response = super().post(request, *args, **kwargs)
         refresh = response.data.pop("refresh", None)
@@ -60,6 +87,21 @@ class RefreshView(TokenRefreshView):
     throttle_classes = [RefreshRateThrottle]
     permission_classes = ()
 
+    @extend_schema(
+        request=None,
+        responses={
+            200: inline_serializer(
+                name="RefreshResponse",
+                fields={"access": serializers.CharField()},
+            ),
+            401: OpenApiResponse(
+                description="No refresh cookie was presented "
+                "(refresh_cookie_missing), or it is expired or blacklisted."
+            ),
+        },
+        description="Reads the refresh token from the HttpOnly cookie, never from the "
+        "request body, and rotates it.",
+    )
     def post(self, request, *args, **kwargs):
         token = request.COOKIES.get(settings.REFRESH_COOKIE_NAME)
         if not token:
@@ -83,6 +125,11 @@ class LogoutView(APIView):
 
     permission_classes = [IsAuthenticated]
 
+    @extend_schema(
+        request=None,
+        responses={204: OpenApiResponse(description="Logged out; the cookie is cleared.")},
+        description="Blacklists the presented refresh token, so logout genuinely revokes.",
+    )
     def post(self, request):
         response = Response(status=status.HTTP_204_NO_CONTENT)
         token = request.COOKIES.get(settings.REFRESH_COOKIE_NAME)

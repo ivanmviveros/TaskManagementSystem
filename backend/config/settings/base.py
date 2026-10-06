@@ -149,6 +149,15 @@ REST_FRAMEWORK = {
     "UNAUTHENTICATED_USER": None,
 }
 
+SPECTACULAR_SETTINGS = {
+    "TITLE": "Task Management API",
+    "DESCRIPTION": "Role-based task management. Three roles with strictly separated capabilities.",
+    "VERSION": "1.0.0",
+    "SERVE_INCLUDE_SCHEMA": False,
+    "SCHEMA_PATH_PREFIX": "/api/v1",
+    "COMPONENT_SPLIT_REQUEST": True,
+}
+
 CELERY_BROKER_URL = env("CELERY_BROKER_URL", REDIS_URL)
 CELERY_RESULT_BACKEND = None  # nothing reads a task result
 CELERY_TASK_ACKS_LATE = True

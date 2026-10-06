@@ -1,6 +1,7 @@
 """User HTTP surface. The composition root for UserService lives here."""
 
 from django_filters.rest_framework import DjangoFilterBackend
+from drf_spectacular.utils import OpenApiResponse, extend_schema
 from rest_framework import mixins, status, viewsets
 from rest_framework.filters import SearchFilter
 from rest_framework.permissions import IsAuthenticated
@@ -45,21 +46,34 @@ class UserViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.Gen
             return UserCreateSerializer
         if self.action == "partial_update":
             return UserUpdateSerializer
-        # Spec §7.2 rule 2: a Supervisor gets a different SERIALIZER, not a flag.
-        if self.request.user.role == Role.ADMIN:
+        # Schema generation calls this with no request, and an unauthenticated
+        # request has user None. Falling back to the Admin serializer documents the
+        # widest shape; without this guard drf-spectacular drops the whole viewset
+        # from the schema with "'NoneType' object has no attribute 'role'".
+        user = getattr(self.request, "user", None)
+        if user is None or user.role == Role.ADMIN:
             return UserSerializer
+        # Spec §7.2 rule 2: a Supervisor gets a different SERIALIZER, not a flag.
         return UserMinimalSerializer
 
     def get_service(self) -> UserService:
         """The composition root: the only place a concrete repository is named."""
         return UserService(users=DjangoUserRepository())
 
+    @extend_schema(
+        request=UserCreateSerializer,
+        responses={
+            201: UserSerializer,
+            400: OpenApiResponse(description="Validation failed, or the email is in use."),
+        },
+    )
     def create(self, request, *args, **kwargs):
         serializer = UserCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         user = self.get_service().create(data=serializer.validated_data, actor=request.user)
         return Response(UserSerializer(user).data, status=status.HTTP_201_CREATED)
 
+    @extend_schema(request=UserUpdateSerializer, responses={200: UserSerializer})
     def partial_update(self, request, *args, **kwargs):
         user = self.get_object()
         serializer = UserUpdateSerializer(data=request.data, partial=True)
@@ -80,5 +94,6 @@ class MeView(APIView):
 
     permission_classes = [IsAuthenticated]
 
+    @extend_schema(responses={200: UserMinimalSerializer})
     def get(self, request):
         return Response(UserMinimalSerializer(request.user).data)
