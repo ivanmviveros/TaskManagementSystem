@@ -1,0 +1,11 @@
+Hello {{ recipient.first_name }},
+
+A task has been assigned to you.
+
+  Task:     {{ task.title }}
+  Status:   {{ task.get_status_display }}
+  Due date: {% if task.due_date %}{{ task.due_date }}{% else %}no deadline{% endif %}
+
+Open it here: {{ task_url }}
+
+You are receiving this because you are the assignee.
