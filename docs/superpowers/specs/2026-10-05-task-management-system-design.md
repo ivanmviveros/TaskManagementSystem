@@ -92,6 +92,7 @@ djangorestframework-simplejwt = { git = "https://github.com/jazzband/djangorestf
 | # | Decision | Rationale |
 |---|---|---|
 | D8 | **Views + serializers + services + repositories + selectors** — the full layering of `backend §1` and `§2` | Adopted for consistency with the project's documented architecture and with the service layer, rather than omitting a layer per feature. The split is defined in §5.2: **repositories** own persistence of a single entity (fetch by identity, row locking, write, soft delete, dedupe insert); **selectors** own reusable or complex reads (role-scoped querysets, dashboard aggregation). Services depend on repositories, never on the ORM directly. |
+| D8a | **Each repository is a `Protocol`, and services depend on the Protocol rather than the implementation** | Makes "independence of components" structural instead of conventional: `services.py` imports `TaskRepository` and never `DjangoTaskRepository`, so the import graph itself enforces the dependency rule and a reviewer can check it by reading the imports. Protocols are `@runtime_checkable` with `@abstractmethod` members, implementations inherit them explicitly, and the view is the composition root — the full rationale, including why a module-level default dependency was rejected, is in §5.2.1 and §5.2.2. Scoped to repositories only; selectors get no abstraction. |
 | D9 | **Serializers never persist.** Every write goes view -> service -> repository; no view calls `serializer.save()`. | Keeps one write path per operation, which is what makes the §7.3 enforcement layers and the audit trail trustworthy. A serializer that also saves would be a second, untested way to mutate a `Task` — bypassing transition validation (D18/D19), notification enqueue (§10.2), and `select_for_update` (§12.3). Serializers keep validation and representation only. Made structurally enforceable rather than conventional — see the note below the table. |
 
 | D10 | **Shared app named `apps/core/`** with explicitly-named modules | `backend §49` forbids `utils.py`/`common.py` dumping grounds. A shared app is unavoidable (soft-delete base model, pagination, exception handler, permission matrix); the rule is satisfied by giving every module inside it one named responsibility. |
@@ -149,6 +150,7 @@ djangorestframework-simplejwt = { git = "https://github.com/jazzband/djangorestf
 | Database | PostgreSQL | 16 |
 | Package manager | uv | latest |
 | Lint/format | ruff | pinned, identical in pre-commit and CI |
+| Type checking | mypy | signature-drift guard on the repository contracts (D8a) |
 | Backend tests | pytest, pytest-django, pytest-cov, factory_boy | latest |
 | Frontend | React + TypeScript + Vite | React 19, Vite 7 |
 | Routing | TanStack Router | latest |
@@ -224,6 +226,115 @@ Reads still bypass the service layer and go view -> selector, because there is n
 
 Selectors: `tasks.selectors` holds `scoped_tasks(user)` (the D13/D14 role scoping), `overdue_candidates()` and `task_stats(user)`; `users.selectors` holds `scoped_users(user)` and `assignable_users()` (D17's Supervisor-or-Operator filter).
 
+**Selectors get no Protocol.** They return querysets, which are irreducibly Django, so abstracting them would be ceremony with nothing behind it. Exactly one layer is abstract — the persistence boundary — which is what keeps this from reading as architecture for its own sake.
+
+### 5.2.1 The repository contract (D8a)
+
+Each repository is a `Protocol` **co-located with its implementation in the same `repositories.py`** — contract at the top, implementation below. No `interfaces/` package: a reader never has to ask where the real code is.
+
+```python
+# apps/tasks/repositories.py
+"""Persistence boundary for Task — the only module in this app that touches the ORM."""
+
+from abc import abstractmethod
+from typing import Protocol, runtime_checkable
+from uuid import UUID
+
+from apps.tasks.models import Task
+from apps.users.models import User
+
+
+@runtime_checkable
+class TaskRepository(Protocol):
+    """What a service may ask of task storage."""
+
+    @abstractmethod
+    def get(self, task_id: UUID) -> Task | None: ...
+
+    @abstractmethod
+    def get_for_update(self, task_id: UUID) -> Task | None:
+        """Row-locked fetch, for transitions that must not interleave."""
+
+    @abstractmethod
+    def add(self, task: Task) -> Task: ...
+
+    @abstractmethod
+    def save(self, task: Task) -> Task: ...
+
+    @abstractmethod
+    def soft_delete(self, task: Task, *, by: User) -> None: ...
+
+
+class DjangoTaskRepository(TaskRepository):
+    """ORM-backed TaskRepository."""
+
+    def get(self, task_id: UUID) -> Task | None:
+        return Task.objects.filter(pk=task_id).first()
+
+    def get_for_update(self, task_id: UUID) -> Task | None:
+        return Task.objects.select_for_update().filter(pk=task_id).first()
+
+    # ... add / save / soft_delete
+```
+
+Four rules, each with a reason:
+
+| Rule | Why |
+|---|---|
+| **The implementation inherits the Protocol explicitly** | The relationship is visible on the class line instead of being inferred. Python allows this (PEP 544 explicit subclassing); conformance is still structural for anything that *doesn't* inherit. |
+| **Every Protocol member is `@abstractmethod`** | **Without it, explicit inheritance is actively dangerous.** A Protocol's `...` bodies are real method bodies, so a subclass that omits a method inherits one returning `None` and instantiates happily — a class line that *claims* conformance nothing checks. With `@abstractmethod`, the omission is a `TypeError` at instantiation naming the missing method. Verified on Python 3.13. |
+| **The Protocol is `@runtime_checkable`** | `isinstance` against a non-runtime-checkable Protocol raises `TypeError` **even for explicit subclasses**, so this is what makes the §12.3 conformance tests possible — in particular the one guarding test fakes, which do not inherit and which nothing else would catch drifting. |
+| **The abstraction takes the plain name; the implementation is qualified by its technology** | `tasks: TaskRepository` reads better than `tasks: TaskRepositoryProtocol`, and `DjangoTaskRepository` tells a reader at a glance which one is infrastructure. |
+
+**Why `Protocol` rather than a plain `ABC`**, given the explicit inheritance and `@abstractmethod` make it look like one: a test fake conforms **without inheriting**. `isinstance(FakeTaskRepository(), TaskRepository)` is `True` for a structurally complete fake and `False` for an incomplete one, with no base class and no `register()` call. `Protocol` gives nominal clarity where it helps — the production class declares itself — and structural freedom where it helps, in tests.
+
+### 5.2.2 Injection and the composition root
+
+Services are **classes with required constructor dependencies**, per `backend §50`'s `OrderService(repository=..., payment_service=...)` example. A class rather than module-level functions because the task use cases need two collaborators (the repository *and* the notification dispatcher), and threading two parameters through six functions is more repetition than one constructor.
+
+```python
+# apps/tasks/services.py
+"""Task use cases. Imports the TaskRepository Protocol — never a concrete repository."""
+
+from apps.tasks.repositories import TaskRepository      # the Protocol, and that is all
+
+
+class TaskService:
+    def __init__(self, *, tasks: TaskRepository, notifications: NotificationDispatcher):
+        self._tasks = tasks
+        self._notifications = notifications
+
+    def complete(self, task_id: UUID, *, actor: User) -> Task:
+        with transaction.atomic():
+            task = self._tasks.get_for_update(task_id)
+            ...
+            self._tasks.save(task)
+            transaction.on_commit(lambda: self._notifications.task_completed(task, actor))
+        return task
+```
+
+```python
+# apps/tasks/views.py — the composition root, and the only place a concrete repository is named
+from apps.tasks.repositories import DjangoTaskRepository
+from apps.tasks.services import TaskService
+
+
+class TaskViewSet(viewsets.GenericViewSet):
+    def get_service(self) -> TaskService:
+        return TaskService(
+            tasks=DjangoTaskRepository(),
+            notifications=CeleryNotificationDispatcher(),
+        )
+```
+
+**There is no default dependency.** An earlier draft gave services a module-level `default_task_repository` as a default argument; that was wrong, and not merely stylistically. To *name* such a default, `services.py` must import the module defining `DjangoTaskRepository` — so the import graph still ran service → concrete infrastructure and the inversion was cosmetic. (A default argument is also bound once at function-definition time, so monkeypatching it in a test would not take effect.) Dependencies are therefore required, and the view supplies them.
+
+**The rule this reduces to, and the one to enforce in review:**
+
+> `services.py` may import the Protocol. It may never import a concrete repository. The only module that names `Django*Repository` is the view that runs it.
+
+`get_service()` sits beside `get_serializer_class()` and `get_queryset()`, so composition reads as ordinary Django rather than imported DI machinery. Nothing else needs wiring: service unit tests construct `TaskService(tasks=FakeTaskRepository([...]), notifications=RecordingDispatcher())` directly, and API tests go through the view and get the real stack — so there is no container, no registry and no settings hook. Per-request instantiation is free, since a repository holds no fields, no connection and no cache.
+
 ### 5.3 Backend layout
 
 ```
@@ -257,9 +368,9 @@ backend/
     ├── users/
     │   ├── models.py               # User (AbstractBaseUser), UserManager
     │   ├── serializers.py          # UserSerializer, UserCreate/Update, UserMinimal
-    │   ├── views.py                # UserViewSet, MeView, auth views
-    │   ├── services.py             # create_user, update_user, soft_delete_user
-    │   ├── repositories.py         # UserRepository
+    │   ├── views.py                # UserViewSet, MeView, auth views; get_service()
+    │   ├── services.py             # UserService — imports the Protocol only
+    │   ├── repositories.py         # UserRepository (Protocol) + DjangoUserRepository
     │   ├── selectors.py            # scoped_users, assignable_users
     │   ├── filters.py              # UserFilterSet
     │   ├── admin.py
@@ -270,10 +381,10 @@ backend/
     ├── tasks/
     │   ├── models.py               # Task, TaskStatus, TRANSITIONS
     │   ├── serializers.py
-    │   ├── views.py                # TaskViewSet (+ complete, stats actions)
+    │   ├── views.py                # TaskViewSet (+ complete, stats actions); get_service()
     │   ├── filters.py              # TaskFilterSet
-    │   ├── services.py             # create/update/assign/complete/change_status/soft_delete
-    │   ├── repositories.py         # TaskRepository
+    │   ├── services.py             # TaskService — imports the Protocol only
+    │   ├── repositories.py         # TaskRepository (Protocol) + DjangoTaskRepository
     │   ├── selectors.py            # scoped_tasks, overdue_candidates, task_stats
     │   ├── exceptions.py
     │   ├── urls.py
@@ -283,7 +394,8 @@ backend/
         ├── models.py               # Notification, NotificationEvent
         ├── tasks.py                # Celery tasks
         ├── services.py             # recipient resolution, dedupe key construction
-        ├── repositories.py         # NotificationRepository (create_if_absent)
+        ├── dispatchers.py          # NotificationDispatcher (Protocol) + Celery impl
+        ├── repositories.py         # NotificationRepository (Protocol) + Django impl
         ├── emails.py               # subject/body rendering
         ├── templates/
         ├── migrations/
@@ -1086,6 +1198,12 @@ Beyond the matrix, these behaviours are tested individually (`backend §37`, `§
 - creating a second *live* user with an existing email returns 400
 - `simple-history` records the deletion, and the pre-deletion state is recoverable
 
+**Repository contracts** (D8a, §5.2.1) — two tests per repository, both cheap:
+
+- `isinstance(DjangoTaskRepository(), TaskRepository)` — belt and braces, since `@abstractmethod` already makes a missing method a `TypeError` at construction
+- **`isinstance(FakeTaskRepository(), TaskRepository)`** — the one that earns its place. Fakes do not inherit the Protocol, so nothing else catches a fake drifting from the real contract; without this, a service test could keep passing against a method signature the production repository no longer has
+- a service module's imports contain no `Django*Repository` — the §5.2.2 dependency rule, asserted rather than left to review
+
 **Database integrity** (`backend §41`)
 
 - the `completed_at`/`status` check constraint rejects a direct ORM write that violates it
@@ -1150,7 +1268,7 @@ One GitHub Actions workflow on push and pull request, with four jobs. `.pre-comm
 
 | Job | Created in | Steps |
 |---|---|---|
-| `lint` | phase 1 | `uv sync`, `ruff check`, `ruff format --check` |
+| `lint` | phase 1 | `uv sync`, `ruff check`, `ruff format --check`, `mypy apps/` |
 | `compat` | phase 1, extended at 4 and 8 | see below |
 | `backend` | phase 3 | services `postgres:16` and `redis:7`; `uv sync`, `manage.py migrate`, `manage.py makemigrations --check --dry-run`, `pytest --cov` |
 | `frontend` | phase 9 | `npm ci`, `tsc --noEmit`, `npm run lint`, `vitest run` |
@@ -1176,6 +1294,8 @@ Stage 1 alone already answers the day-one question — *does this dependency set
 
 `makemigrations --check` fails the build if a model change was committed without its migration (`backend §4`).
 
+**mypy's job here is narrow and worth stating**, so nobody mistakes it for a general typing initiative. It exists to catch what the runtime checks cannot: **signature drift** between a repository Protocol and its implementation — a changed parameter or return type, which `@abstractmethod` and `isinstance` both miss because the method is still present. It runs with `ignore_missing_imports = True` and needs **no `django-stubs`**: the conformance comparison is between two classes in one file whose annotations the project wrote itself, so Django's untyped surface resolving to `Any` does not weaken it. django-stubs stays an optional later upgrade, not a prerequisite.
+
 ### 13.1 Pre-commit parity
 
 `.pre-commit-config.yaml` carries, per `backend §44a` and the brief's "equivalent to pre-commit definition" requirement:
@@ -1184,6 +1304,7 @@ Stage 1 alone already answers the day-one question — *does this dependency set
 |---|---|
 | `ruff check --fix` (same pinned version as CI) | the `lint` job |
 | `ruff format` (same pinned version) | the `lint` job |
+| `mypy apps/` (same pinned version) | the `lint` job |
 | `pytest -x -q` on pre-push (not pre-commit) | the `backend` job |
 | `end-of-file-fixer`, `trailing-whitespace`, `check-merge-conflict`, `check-yaml`, `check-toml` | nothing in CI — cheap local hygiene |
 
@@ -1233,9 +1354,9 @@ A dependency-driven sequence for the implementation plan. `apps.users` must come
 |---|---|
 | 1 | Scaffold: `pyproject.toml` with the git pin, settings split, Compose, Dockerfiles, ruff, pre-commit, the `lint` CI job, **and `compat` stage 1 — proving the Django 6.0 dependency set imports and boots** (§13) |
 | 2 | `apps.core`: **`UUIDPrimaryKeyModel`** (D28), soft-delete base and manager, `roles.py`, pagination, exception handler, throttles, permission matrix module |
-| 3 | `apps.users`: custom user, partial unique index, serializers, `UserRepository`, selectors, Admin CRUD, `/users/me/`, simple-history; the `backend` CI job (coverage reported, not yet gated) |
+| 3 | `apps.users`: custom user, partial unique index, serializers, **`UserRepository` Protocol + Django implementation (D8a)**, `UserService`, selectors, Admin CRUD, `/users/me/`, simple-history; the `backend` CI job (coverage reported, not yet gated) |
 | 4 | Auth: cookie-based login/refresh/logout, blacklist, throttling, security settings; **`compat` stage 2** (login round-trip) |
-| 5 | `apps.tasks`: model, check constraint, partial indexes, **simple-history on `Task`** (phase 7's `dedupe_key` depends on `HistoricalTask.history_id`), serializers, `TaskRepository`, selectors, services, viewset, filters, `complete/`, `stats/` |
+| 5 | `apps.tasks`: model, check constraint, partial indexes, **simple-history on `Task`** (phase 7's `dedupe_key` depends on `HistoricalTask.history_id`), serializers, **`TaskRepository` Protocol + Django implementation (D8a)**, selectors, `TaskService`, viewset with `get_service()`, filters, `complete/`, `stats/` |
 | 6 | Permission matrix enforcement, **`IsTaskCreator` for D27**, plus the parametrized matrix test suite |
 | 7 | `apps.notifications`: model, `NotificationRepository.create_if_absent`, recipient resolution, Celery tasks with dedupe, `on_commit` enqueue, overdue sweep, beat schedule |
 | 8 | `seed_demo_data` and drf-spectacular wiring; **`compat` stage 3** (`spectacular --validate`) |
@@ -1277,7 +1398,8 @@ Two ordering constraints that are not obvious from the phase names:
 - **Soft delete and `PROTECT` interact.** Because `delete()` is deliberately not overridden, a hard delete in a data migration can hit `PROTECT`. That is the intended loud failure (D25), but anyone writing such a migration needs to know it.
 - **The minimal user serializer is a privilege boundary.** Adding a field to `UserMinimalSerializer` widens what a Supervisor can see. It carries an explicit field-list test for that reason.
 - **A silent fall-back from `uuid7` to `uuid4` would break nothing visibly.** Ids would still be unique, every functional test would still pass, and only index locality — the entire reason for D28 — would be lost. The ordering assertion in §12.3 is the guard, and it is the only test that would catch it.
-- **The repository layer is only worth its cost if services honour it.** D8 and D9 mean a service reaching for `Task.objects` directly, or a serializer regaining a `create()`, quietly reintroduces a second write path and bypasses transition validation, notification enqueue and row locking. Code review should treat an ORM call inside `services.py` as a defect.
+- **The repository layer is only worth its cost if services honour it.** D8 and D9 mean a service reaching for `Task.objects` directly, or a serializer regaining a `create()`, quietly reintroduces a second write path and bypasses transition validation, notification enqueue and row locking. Code review should treat an ORM call inside `services.py` as a defect — and D8a makes the weaker half of that checkable rather than cultural: a `Django*Repository` import in a service module is a visible rule violation, asserted in §12.3.
+- **A Protocol member added without `@abstractmethod` silently defeats D8a.** Explicit inheritance would then supply a `...` body returning `None` instead of failing, so an implementation could omit the method and still construct. Every Protocol member carries `@abstractmethod` for that reason (§5.2.1), and this is the kind of detail a later contributor adding a sixth method would plausibly drop.
 
 ---
 
@@ -1286,6 +1408,7 @@ Two ordering constraints that are not obvious from the phase names:
 - [ ] Backend: Python 3.14, Django 6.0 and DRF, four apps, migrations, at least 80% coverage
 - [ ] **UUIDv7 primary keys on every model** via stdlib `uuid.uuid7`, with the ordering test that proves it
 - [ ] **Full layering: views, serializers, services, repositories, selectors** — no serializer persists (D8/D9)
+- [ ] **`Protocol`-based repository contracts** with services depending on the abstraction, the view as composition root, and the conformance tests that keep fakes honest (D8a)
 - [ ] JWT auth with in-memory access token and HttpOnly refresh cookie, blacklist, throttling
 - [ ] Strict three-role permission matrix with a matrix-driven test suite, **including D27's Operator delete restriction**
 - [ ] Task CRUD, assignment, `complete/`, filtering by status and due date, pagination, `stats/`
