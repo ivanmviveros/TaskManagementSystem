@@ -51,11 +51,13 @@ select = ["E", "F", "I", "UP", "B", "DJ", "C4", "SIM", "RUF"]
 "config/settings/*" = ["F403", "F405"]
 # RUF012 guards against mutable class attributes shared between instances. The
 # framework-declared lists in these modules — Django's REQUIRED_FIELDS and
-# Meta.constraints/indexes, DRF's and django-filter's Meta.fields — are read once at
-# class creation and never mutated, so the hazard does not apply. Same reason
-# migrations ignore it. Service and repository classes are still checked.
+# Meta.constraints/indexes, DRF's Meta.fields, permission_classes, filter_backends,
+# search_fields, ordering — are read once at class creation and never mutated, so
+# the hazard does not apply. Same reason migrations ignore it. Services,
+# repositories and dispatchers are still checked, which is where it would matter.
 "apps/*/models.py" = ["RUF012"]
-"apps/*/serializers.py" = ["RUF012"]
+"apps/*/*serializers.py" = ["RUF012"]
+"apps/*/*views.py" = ["RUF012"]
 "apps/*/filters.py" = ["RUF012"]
 
 [tool.mypy]
