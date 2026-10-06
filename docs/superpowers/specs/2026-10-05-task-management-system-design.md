@@ -335,6 +335,16 @@ class TaskViewSet(viewsets.GenericViewSet):
 
 `get_service()` sits beside `get_serializer_class()` and `get_queryset()`, so composition reads as ordinary Django rather than imported DI machinery. Nothing else needs wiring: service unit tests construct `TaskService(tasks=FakeTaskRepository([...]), notifications=RecordingDispatcher())` directly, and API tests go through the view and get the real stack — so there is no container, no registry and no settings hook. Per-request instantiation is free, since a repository holds no fields, no connection and no cache.
 
+**Rejected alternative: a DI container** (`dependency-injector`, `fast-depends`, or similar FastAPI-`Depends`-style injection).
+
+Not rejected on compatibility — both support Python 3.14. Rejected because FastAPI's `Depends` fills a gap DRF does not have: FastAPI handlers are plain functions, so dependencies can only arrive through the signature, whereas a DRF ViewSet is a class with an established extension protocol that `get_service()` simply joins.
+
+The usage that makes a container attractive — `Provide[Container.task_service]` markers in signatures — would couple the consumer back to the container, in a design whose whole purpose is that inner layers name no infrastructure; it also needs `container.wire(...)` at startup, which breaks go-to-definition. Resolving only at the composition root avoids that, but then the container is doing exactly what `get_service()` does, with an added dependency.
+
+The problems a container exists to solve are also absent here: the dependency graph is one level deep (repositories take no collaborators of their own), every dependency is stateless so "a new one per request" is the only lifetime needed, no implementation is selected from configuration, and there are three composition points of four lines each.
+
+Revisit if graphs reach three levels, if a per-request unit of work must be shared across several services, or if implementations genuinely need runtime selection. For that last case Django already has the idiom and it needs no package — a dotted path in settings resolved with `django.utils.module_loading.import_string`, the same mechanism behind pluggable storages, auth backends and email backends.
+
 ### 5.3 Backend layout
 
 ```
