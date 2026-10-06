@@ -247,6 +247,52 @@ Case-insensitive uniqueness without requiring the Postgres `citext` extension an
 migration. Normalization happens in `UserManager` and again in the serializer, so both the
 API and `createsuperuser` go through it.
 
+### The `Task` invariants that live in the database
+
+**`completed_at` and `status` cannot disagree.** A `CheckConstraint` asserts that
+`status = COMPLETED` implies `completed_at IS NOT NULL`, and any other status implies
+`completed_at IS NULL`. The database is the final boundary deliberately: this holds even
+against a direct ORM write, the Django admin, or a data migration — not just against the
+API. Both directions are tested.
+
+**D18 — `POST /tasks/{id}/complete/` is the only path to `COMPLETED`.** `PATCH
+status=COMPLETED` is a 400. One audited path for the transition is what guarantees
+`completed_at` is always set alongside it. The `TRANSITIONS` map encodes this by omitting
+`COMPLETED` from *every* set of reachable statuses, and a test asserts that omission rather
+than trusting the table to be read correctly.
+
+**D19 — `COMPLETED` and `CANCELLED` are terminal.** Both map to an empty transition set.
+Reopening is a documented future extension, not a current requirement.
+
+**D23 — `due_date` is a nullable `DateTimeField`**, not a `DateField`: the overdue sweep
+compares against `timezone.now()` and needs a time of day. Nullable because a task may
+legitimately have no deadline — and `due_date__lt` excludes nulls automatically, which is
+the behaviour the overdue query wants.
+
+**D25 — both task FKs are `on_delete=PROTECT`.** Nothing is ever hard-deleted, so this
+should never fire; if it does, it must fail loudly rather than silently null an audit
+record.
+
+**D17 is deliberately *not* a database constraint.** "An assignee must be a Supervisor or
+Operator, never an Admin" is a cross-table assertion and not expressible as a
+`CheckConstraint`, so it is enforced in the serializer *and* re-checked in the service, with
+tests at both levels.
+
+### Indexing: every index is partial, and `created_by` has none
+
+All task indexes carry `WHERE deleted_at IS NULL`, so they cover only live rows — the only
+rows the API can see.
+
+**There is no index on `created_by`**, even though D27 makes it load-bearing for
+authorization. The check is `task.created_by_id == user.id` against a row the request has
+*already* fetched, so no `WHERE created_by = ...` query is ever issued. `backend §30` asks
+for evidence before an index, and there is none to point at. If a "created by" **filter**
+is ever added, the index arrives with it.
+
+`is_overdue` is a Python property computed from loaded data, so serializing it costs no
+query; filtering by it uses the equivalent database `Q()` in `TaskFilterSet`. A test asserts
+it never became a model field.
+
 ### D28 — UUIDv7 primary keys
 
 All primary keys are UUIDv7 via `uuid.uuid7()` from the Python 3.14 standard library (D2),
