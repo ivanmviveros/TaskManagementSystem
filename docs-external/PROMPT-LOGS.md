@@ -51,3 +51,16 @@ Diagrams
 
 With the specification above start a brainstorming to define spec documents for project using /superpowers-extended-cc:brainstorming  
 ```
+
+Related skill: https://github.com/pcvelz/superpowers
+
+
+# Specs review
+```
+After reviewing specs I need to address the following concerns:
+
+- In accepted risks, "An Operator can delete assigned work" restrict operator delete to created task to avoid deletion of tasks created by a different user and assigned by supevisor
+- In 3.2 Architecture, D8 and D9 should be reverted, the application should keep repositores architecture to maintain consistency with proposed backend architecture and consistency with services implementation. 3.3 D14 mentions created_by as audit but its also used for validate deletion of owned tasks. 
+- Implement uuidv7 for unique ids to improve securiy while keeping index performance
+
+```
