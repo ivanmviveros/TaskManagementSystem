@@ -5,6 +5,16 @@ const PREFIX = "/api/v1";
 const REFRESH_PATH = "/auth/refresh/";
 
 /**
+ * Endpoints where a 401 is the answer, not a stale-token symptom.
+ *
+ * `/auth/login/` matters as much as `/auth/refresh/`: a 401 there means the
+ * credentials are wrong. Refreshing would spend a pointless request, replace
+ * the server's "no active account found" message with the refresh endpoint's
+ * own error, and fire the session-expired handler on an ordinary typo.
+ */
+const NO_REFRESH_PATHS = new Set([REFRESH_PATH, "/auth/login/"]);
+
+/**
  * The access token lives here, in module memory, and never in localStorage or
  * sessionStorage (root AGENTS.md § Authentication). AuthContext is the only
  * writer; keeping the value out of React state avoids a second copy that could
@@ -82,8 +92,9 @@ async function request<T>(path: string, options: Options = {}): Promise<T> {
   });
 
   // Refresh ONCE and retry ONCE. Never refresh the refresh endpoint itself, or
-  // a 401 there would recurse forever.
-  if (response.status === 401 && allowRefresh && path !== REFRESH_PATH) {
+  // a 401 there would recurse forever — see NO_REFRESH_PATHS for why login is
+  // excluded too.
+  if (response.status === 401 && allowRefresh && !NO_REFRESH_PATHS.has(path)) {
     try {
       await refreshAccessToken();
     } catch (error) {

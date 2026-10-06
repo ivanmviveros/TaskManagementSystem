@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider, createMemoryHistory } from "@tanstack/react-router";
 import { render } from "@testing-library/react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { createAppRouter } from "../app/router";
 import { AuthProvider } from "../features/auth/AuthContext";
@@ -23,6 +23,11 @@ function AppAtPath({ initialPath }: { initialPath: string }) {
       history: createMemoryHistory({ initialEntries: [initialPath] }),
     }),
   );
+
+  // Mirrors RoutedApp: context changes alone do not re-run beforeLoad.
+  useEffect(() => {
+    void router.invalidate();
+  }, [router, auth.user, auth.isLoading]);
 
   if (auth.isLoading) return <div role="status">Loading…</div>;
   return <RouterProvider router={router} context={{ auth }} />;

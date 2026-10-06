@@ -1,5 +1,9 @@
 import { useState } from "react";
+import type { FormEvent } from "react";
 
+import { Button } from "../../components/Button";
+import { FormError } from "../../components/FormError";
+import { TextField } from "../../components/TextField";
 import { ApiError } from "../../lib/api-error";
 import { useAuth } from "./hooks/useAuth";
 
@@ -8,23 +12,28 @@ export function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string[]> | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
+    setFieldErrors(null);
     setIsSubmitting(true);
     try {
       await signIn(email, password);
       // The router's beforeLoad sends the user to their role's landing page.
     } catch (caught) {
-      // Server-side validation surfaced to the user, never swallowed (F3).
       if (caught instanceof ApiError) {
-        setError(
-          caught.status === 429
-            ? "Too many attempts. Wait a minute and try again."
-            : "Those credentials are not valid.",
-        );
+        // Branch on STATUS, not on the message: the backend's throttle copy is
+        // not a contract, the 429 is.
+        if (caught.status === 429) {
+          setError("Too many attempts. Wait a minute and try again.");
+        } else {
+          // Otherwise show what the server said rather than inventing copy (F3).
+          setError(caught.message);
+          setFieldErrors(caught.errors);
+        }
       } else {
         setError("Could not reach the server. Try again.");
       }
@@ -38,51 +47,40 @@ export function LoginPage() {
       <form
         onSubmit={handleSubmit}
         noValidate
+        aria-label="Sign in"
         className="w-full max-w-sm rounded-lg bg-white p-6 shadow-sm sm:p-8"
       >
         <h1 className="mb-6 text-xl font-semibold text-slate-900">Sign in</h1>
 
-        <label htmlFor="email" className="mb-1 block text-sm font-medium text-slate-700">
-          Email
-        </label>
-        <input
+        <TextField
           id="email"
+          label="Email"
           name="email"
           type="email"
           autoComplete="username"
           required
           value={email}
+          error={fieldErrors?.email?.[0]}
           onChange={(event) => setEmail(event.target.value)}
-          className="mb-4 w-full rounded border border-slate-300 px-3 py-2"
         />
 
-        <label htmlFor="password" className="mb-1 block text-sm font-medium text-slate-700">
-          Password
-        </label>
-        <input
+        <TextField
           id="password"
+          label="Password"
           name="password"
           type="password"
           autoComplete="current-password"
           required
           value={password}
+          error={fieldErrors?.password?.[0]}
           onChange={(event) => setPassword(event.target.value)}
-          className="mb-4 w-full rounded border border-slate-300 px-3 py-2"
         />
 
-        {error !== null && (
-          <p role="alert" className="mb-4 text-sm text-status-overdue">
-            {error}
-          </p>
-        )}
+        <FormError message={error} />
 
-        <button
-          type="submit"
-          disabled={isSubmitting}
-          className="w-full rounded bg-status-progress px-4 py-2 font-medium text-white disabled:opacity-60"
-        >
+        <Button type="submit" disabled={isSubmitting} className="w-full">
           {isSubmitting ? "Signing in…" : "Sign in"}
-        </button>
+        </Button>
       </form>
     </main>
   );

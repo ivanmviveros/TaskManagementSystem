@@ -161,6 +161,29 @@ describe("refresh on 401", () => {
     expect(onSessionExpired).toHaveBeenCalledOnce();
   });
 
+  it("never refreshes after a failed login, and keeps the server's message", async () => {
+    // A 401 from /auth/login/ means "wrong credentials", not "stale token".
+    // Refreshing would replace this message with the refresh endpoint's own.
+    let refreshes = 0;
+    server.use(
+      http.post(`${BASE}/auth/login/`, () =>
+        HttpResponse.json(
+          { detail: "No active account found with the given credentials.", code: "no_active" },
+          { status: 401 },
+        ),
+      ),
+      http.post(`${BASE}/auth/refresh/`, () => {
+        refreshes += 1;
+        return HttpResponse.json({ access: "should-not-be-requested" });
+      }),
+    );
+    const error = await apiClient
+      .post<never>("/auth/login/", { email: "a@b.c", password: "wrong" })
+      .catch((e) => e as ApiError);
+    expect(refreshes).toBe(0);
+    expect(error.message).toMatch(/no active account/i);
+  });
+
   it("never attempts to refresh the refresh endpoint itself", async () => {
     let refreshes = 0;
     server.use(
