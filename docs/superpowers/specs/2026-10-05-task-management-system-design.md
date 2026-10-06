@@ -90,11 +90,11 @@ djangorestframework-simplejwt = { git = "https://github.com/jazzband/djangorestf
 | D13 | **Strict role separation.** Admin manages users only and has **no task access at all**. Supervisor manages all tasks and has **read-only, minimal-field** access to the user list. Operator manages only tasks **assigned to them**. | The brief's literal reading. Supervisor's user read is the one addition, needed to populate an assignee picker and to display who holds a task. |
 | D14 | **Operator scope is `assignee = me` only.** `created_by` grants **no** access. | A Supervisor reassigning or unassigning a task revokes the original Operator's access immediately. `created_by` survives purely as an audit field. |
 | D15 | **Operator has full CRUD on assigned tasks but cannot change `assignee`** | "Tasks management for owned tasks", minus the ability to hand work off, which belongs to a Supervisor. See the accepted risk in §16.1. |
-| D16 | **On create, an Operator's task is forced to `assignee = self`** | An Operator supplying any other assignee is rejected with 400. |
+| D16 | **On create, an Operator's task is always `assignee = self`** | Precisely: if an Operator **omits** `assignee`, it defaults to self; if an Operator **supplies a different user**, the request is rejected with 400 `assignee_not_assignable`. Defaulting is a convenience; silently coercing a value the client explicitly sent would hide a client bug, so the explicit-mismatch case is an error, not a coercion. |
 | D17 | **`assignee` must be a Supervisor or Operator, never an Admin** | Assigning to an Admin would create a task nobody can open, given D13. **Not expressible as a DB `CheckConstraint`** — it is a cross-table assertion — so it is enforced in the serializer *and* re-checked in the service, with tests at both levels. |
 | D18 | **`POST /tasks/{id}/complete/` is the only path to `COMPLETED`.** `PATCH status=COMPLETED` returns 400. | One audited path for the state transition, per `backend §34`. Guarantees `completed_at` is always set alongside it. |
 | D19 | **`COMPLETED` and `CANCELLED` are terminal** | Simpler invariant, and it matches the DB constraint tying `completed_at` to status. Reopening is a documented future extension, not a current requirement. |
-| D20 | **Soft delete on all models**; no restore endpoint; soft-deleted rows are invisible to the entire API | Required for a meaningful audit trail alongside `django-simple-history`. |
+| D20 | **Soft delete on every domain model — `User` and `Task`.** No restore endpoint; soft-deleted rows are invisible to the entire API. | Required for a meaningful audit trail alongside `django-simple-history`. **`Notification` is exempt**: it is an append-only log that no API exposes and no user deletes, so a `deleted_at` column on it would never be anything but null. Its FKs are therefore `CASCADE` rather than D25's `PROTECT` — if a row ever *is* hard-deleted in data repair, its notification log should go with it. |
 | D21 | **A soft-deleted user's email becomes reusable** | Enforced by a partial unique index `WHERE deleted_at IS NULL` rather than a plain unique constraint. |
 | D22 | **`is_active` and `deleted_at` are both retained, and are not synonyms** | `is_active` is Django's authentication gate; `deleted_at` is the soft-delete marker. Soft deletion sets both, but an Admin may deactivate a user *without* deleting them. |
 | D23 | **`due_date` is `DateTimeField`, nullable** | Overdue detection compares to `timezone.now()` in an hourly sweep, which needs a time of day. Nullable because a task may legitimately have no deadline; `due_date__lt` excludes nulls automatically. Stored UTC with `USE_TZ=True`. |
@@ -203,6 +203,7 @@ backend/
     ├── core/
     │   ├── models.py               # TimeStampedModel, SoftDeleteModel
     │   ├── managers.py             # SoftDeleteManager
+    │   ├── roles.py                # Role TextChoices (see §6.2)
     │   ├── pagination.py           # DefaultPageNumberPagination
     │   ├── exceptions.py           # ApplicationError hierarchy + exception_handler
     │   ├── throttling.py           # scoped throttle classes
@@ -211,7 +212,7 @@ backend/
     │   │   └── classes.py          # RolePermission
     │   └── tests/
     ├── users/
-    │   ├── models.py               # User (AbstractBaseUser), UserManager, Role
+    │   ├── models.py               # User (AbstractBaseUser), UserManager
     │   ├── serializers.py          # UserSerializer, UserCreate/Update, UserMinimal
     │   ├── views.py                # UserViewSet, MeView, auth views
     │   ├── services.py             # create_user, update_user, soft_delete_user
@@ -322,13 +323,14 @@ erDiagram
 
 `User` and `Task` each declare `history = HistoricalRecords()`. Because deletion is soft, `simple-history` records it as an ordinary update (`history_type='~'`), so the audit trail remains continuous and the deleted row's final state is preserved.
 
-`Notification` is **not** historised — it is already an append-only record.
+`Notification` is **neither historised nor soft-deletable** — it is already an append-only record, no API exposes it, and nothing deletes it (D20). This is why its two FKs are `CASCADE` while `Task`'s are `PROTECT`.
 
 ### 6.2 `User`
 
 Custom model on `AbstractBaseUser` + `PermissionsMixin`, with `USERNAME_FIELD = "email"` and `REQUIRED_FIELDS = ["first_name", "last_name"]`.
 
 ```python
+# apps/core/roles.py
 class Role(models.TextChoices):
     ADMIN      = "ADMIN",      "Admin"
     SUPERVISOR = "SUPERVISOR", "Supervisor"
@@ -336,6 +338,8 @@ class Role(models.TextChoices):
 ```
 
 Role is a `CharField(choices=Role.choices)` on the user, **not** Django `Group` membership: it is single-valued, indexed, cheap to filter on, and directly readable by the permission matrix without a join.
+
+**`Role` lives in `apps/core/roles.py`, not in `apps/users/models.py`.** Both the user model and the permission matrix need it, and the matrix lives in `core`. Defining it in `users` would force `core` to import a feature app — inverting the dependency direction D10 exists to protect, and creating a circular import with `core.permissions.classes`. `apps.users.models` imports it from `core`, keeping the direction feature -> shared. This also decides the build order: `core` can be completed before `users` exists (§15).
 
 **Constraints and indexes**
 
@@ -553,11 +557,18 @@ A `django-filter` `TaskFilterSet` (`backend §16`) — no manual query-parameter
 | `status` | multiple choice | `?status=PENDING&status=IN_PROGRESS` -> `status__in` |
 | `due_date_after` | ISO datetime | `due_date__gte` |
 | `due_date_before` | ISO datetime | `due_date__lte` |
-| `overdue` | boolean | `true` -> `Q(due_date__lt=now, status__in=(PENDING, IN_PROGRESS))`; `false` -> the complement |
+| `overdue` | boolean | `true` -> `Q(due_date__lt=now, status__in=(PENDING, IN_PROGRESS))`. `false` -> `~Q(...)` **plus an explicit null branch** (see below) |
 | `assignee` | user id | available to Supervisors; ignored for Operators, whose queryset is already self-scoped |
 | `ordering` | enum | `due_date`, `-due_date`, `created_at`, `-created_at`, `status`; always tiebroken with `-id` |
 
 The `overdue` filter is a small deliberate addition beyond the brief: the dashboard surfaces an overdue count, and that count must be clickable through to the matching list.
+
+**`overdue=false` must handle NULL `due_date` explicitly.** In SQL, `NOT (due_date < now)` is `NULL` — not `TRUE` — for a row with no due date, so a bare negation silently drops every undated task from the result. Both of the following count as **not overdue** and must appear when `overdue=false`:
+
+- a task with `due_date IS NULL` (no deadline, so it cannot be late)
+- a task in a terminal status (`COMPLETED`/`CANCELLED`), whatever its due date
+
+So the false branch is `Q(due_date__isnull=True) | Q(due_date__gte=now) | Q(status__in=(COMPLETED, CANCELLED))`, and `overdue=true` plus `overdue=false` must partition the queryset exactly. The same reasoning applies to the `due_next_7_days` figure in §8.5, which also excludes nulls and terminal statuses.
 
 `UserFilterSet` exposes `role` and `is_active`, plus a `search` over `email`/`first_name`/`last_name` via DRF's `SearchFilter`.
 
@@ -580,8 +591,8 @@ Computed in a **single** `.aggregate()` using conditional `Count(Case(When(...))
 
 | Endpoint | Technique |
 |---|---|
-| `GET /tasks/` | `select_related("assignee", "created_by")` — both are FKs, so one join each. No `prefetch_related` is needed: the task representation has no to-many relation. |
-| `GET /tasks/{id}/` | same |
+| `GET /tasks/` | `select_related("assignee")` **only** — `TaskListSerializer` (§8.2) does not render `created_by`, so joining it would fetch a column nobody reads. No `prefetch_related` is needed: the task representation has no to-many relation. |
+| `GET /tasks/{id}/` | `select_related("assignee", "created_by")` — `TaskDetailSerializer` renders both |
 | `GET /tasks/stats/` | one conditional `.aggregate()` |
 | `GET /users/` | no related fields in the representation; nothing to join |
 | overdue sweep | `.values_list("id", "assignee_id", "created_by_id").iterator()` — never materialises `Task` instances |
@@ -615,7 +626,9 @@ Application errors subclass `ApplicationError` with a `code` and a `status_code`
 | `InvalidStatusTransition` | `invalid_status_transition` | 409 |
 | `CompletionRequiresCompleteAction` | `use_complete_action` | 400 |
 | `AssigneeNotAssignable` | `assignee_not_assignable` | 400 |
-| `AssigneeImmutableForRole` | `assignee_immutable` | 403 |
+| `AssigneeImmutableForRole` | `assignee_immutable` | **400** |
+
+`AssigneeImmutableForRole` is deliberately **400, not 403.** Two reasons: an Operator supplying a foreign assignee on *create* is already a 400 (D16), so the same rule on *update* must not return a different code; and §7.3 reserves 403 as the permission class's exclusive output, which keeps the three enforcement layers distinguishable from the response alone. The request is refused because one field in the payload is not writable by this role — a field-level validation failure, which is what 400 means here.
 
 Stack traces, database errors, secrets and infrastructure details are never returned (`backend §18`). Unexpected exceptions are logged with context and returned as a bare 500.
 
@@ -662,6 +675,7 @@ Lifetimes: access **15 minutes**, refresh **7 days**.
 - `SameSite=Strict` is the primary CSRF defence for the cookie-authenticated endpoints: a cross-site request will not carry the cookie at all. Django's CSRF middleware remains **enabled** and is **never** globally disabled (`backend §21`); `CSRF_TRUSTED_ORIGINS` lists the frontend origin.
 - Every other endpoint authenticates via `Authorization: Bearer`, which is immune to CSRF because the browser never attaches it automatically.
 - CORS is explicit (`backend §22`): `CORS_ALLOWED_ORIGINS` enumerates origins (`http://localhost:5173` locally) and `CORS_ALLOW_CREDENTIALS=True` so the refresh cookie flows. `CORS_ALLOW_ALL_ORIGINS` is never set.
+- **`SameSite=Strict` and cross-origin credentials coexist here only because the two origins are same-site.** Locally, `localhost:5173` and `localhost:8000` differ by port, which CORS treats as cross-origin but `SameSite` does not — ports are not part of a site. A deployment that puts the SPA and the API on different registrable domains would silently stop sending the refresh cookie, and refresh would fail with no CORS error to explain it. Such a deployment must either serve both from one registrable domain (the recommendation) or move to `SameSite=Lax`/`None` and add explicit CSRF token validation on the refresh and logout endpoints.
 - Production settings assert `DEBUG=False`, `ALLOWED_HOSTS` from env, `SECURE_HSTS_SECONDS`, `SECURE_SSL_REDIRECT`, `SESSION_COOKIE_SECURE`, `CSRF_COOKIE_SECURE` (`backend §23`).
 
 ### 9.3 Rate limiting
@@ -819,9 +833,13 @@ TanStack Router with a **code-based** route tree: one `router.tsx` shows the ent
 | `/login` | public | redirects to the role landing page if already authenticated |
 | `/dashboard` | Supervisor, Operator | role landing for both |
 | `/tasks` | Supervisor, Operator | list, filters, pagination |
+| `/tasks/new` | Supervisor, Operator | **create form** |
 | `/tasks/:id` | Supervisor, Operator | detail and edit |
 | `/users` | Admin | **Admin landing page** |
+| `/users/new` | Admin | create form |
 | `/users/:id` | Admin | detail and edit |
+
+Creation is a **route, not a modal**, for both resources: it is deep-linkable, it is guarded by exactly the same mechanism as every other route, and it keeps the create and edit forms as one component with two modes rather than two divergent surfaces. `/tasks/new` and `/users/new` must be registered **before** their `:id` siblings so the static segment is not captured as an id.
 
 Landing page by role, resolved from `GET /users/me/`: Admin -> `/users`, Supervisor -> `/dashboard`, Operator -> `/dashboard`. An Admin never renders a task route, matching the backend's 403.
 
@@ -848,10 +866,10 @@ Server data is never copied into `useState` or Context. Query keys are structure
 ### 11.5 Screens
 
 - **Login** — email and password, inline server-side validation errors, and a distinct message for 429 ("too many attempts, try again shortly").
-- **Dashboard** — status count tiles, a CSS-grid distribution bar, and an overdue count linking through to `/tasks?overdue=true`. Fed by one `GET /tasks/stats/` call. Supervisors see global figures and Operators see their own; the component is identical because the backend scopes the response.
-- **Task list** — paginated table with filters for status (multi-select), due-date range and overdue; sortable columns; inline complete action. The assignee column and the assignee picker are Supervisor-only, the picker populated from `GET /users/` (minimal serializer).
-- **Task detail and edit** — full form. The `assignee` field is absent for Operators, because they cannot change it. Complete is a distinct button hitting `/complete/`, not a status dropdown value, mirroring D18.
-- **User list and detail** (Admin) — paginated, role and active filters, search, create/edit forms, and a delete confirmation dialog that states deletion is a deactivation.
+- **Dashboard** — four status count tiles, a **due-next-7-days** tile and an **overdue** tile, plus a CSS-grid distribution bar. Both the overdue and due-soon tiles link through to the matching filtered list (`/tasks?overdue=true` and `/tasks?due_date_before=<+7d>`), so every number on the dashboard is navigable. Fed by one `GET /tasks/stats/` call, consuming all four of its keys (§8.5). Supervisors see global figures and Operators see their own; the component is identical because the backend scopes the response.
+- **Task list** — paginated table with filters for status (multi-select), due-date range and overdue; sortable columns; inline complete action; a "New task" action routing to `/tasks/new`. The assignee column is Supervisor-only.
+- **Task create and edit** — one form component serving `/tasks/new` and `/tasks/:id`. The **`assignee` field renders only for Supervisors**, populated from `GET /users/` (minimal serializer); for an Operator it is omitted entirely, because on create the backend forces it to self (D16) and on update it is immutable (D15). Complete is a distinct button hitting `/complete/`, never a status dropdown value, mirroring D18 — so `COMPLETED` is absent from the status select.
+- **User list, create and edit** (Admin) — paginated list with role and active filters plus search; one form component serving `/users/new` and `/users/:id`; and a delete confirmation dialog that states plainly that deletion is a deactivation.
 
 ### 11.6 Styling and responsiveness
 
@@ -897,7 +915,9 @@ Beyond the matrix, these behaviours are tested individually (`backend §37`, `§
 
 - an Operator listing tasks sees only `assignee = me`
 - an Operator who **created** a task but is no longer the assignee receives **404** on its detail — the direct test of D14
-- an Operator cannot set `assignee` on create (forced to self) or on update (rejected)
+- an Operator creating a task **without** `assignee` gets `assignee = self` (D16, default half)
+- an Operator creating a task **with another user** as `assignee` receives 400 `assignee_not_assignable` (D16, explicit-mismatch half)
+- an Operator updating `assignee` on an assigned task receives 400 `assignee_immutable` (D15, §8.7)
 - an Admin receives 403 on every task endpoint
 - a Supervisor receives 200 from `GET /users/` and the response contains **no** `is_staff` or `last_login` — the direct test of the minimal serializer
 
@@ -935,11 +955,14 @@ Beyond the matrix, these behaviours are tested individually (`backend §37`, `§
 - the overdue sweep finds only live, non-terminal, past-due tasks
 - the sweep run twice in one day sends one email per task
 
+**A note the notification tests depend on:** `pytest-django` wraps each test in a transaction that is rolled back rather than committed, so `transaction.on_commit` callbacks **never fire by default** and every "an email was enqueued" assertion would fail for a reason unrelated to the code under test. These tests therefore use the `django_capture_on_commit_callbacks(execute=True)` fixture (or `django_db(transaction=True)` where a real commit is genuinely needed). Given §16.2 identifies `on_commit` as the easiest thing in this design to regress, the tests guarding it must not be the confusing ones.
+
 **Pagination, filtering, performance**
 
 - page size, `page_size` override, and the `max_page_size` ceiling
 - pagination is stable across pages when ordering by a non-unique field (`due_date`)
 - each filter in §8.4, in isolation and in combination
+- **`overdue=true` and `overdue=false` partition the queryset exactly**, with a task having `due_date IS NULL` and a terminal-status past-due task both appearing under `false` — the direct test of the NULL branch in §8.4
 - `django_assert_num_queries` on task list, task detail, user list, and `stats` (exactly one aggregate query)
 
 **Concurrency** (`backend §42`)
@@ -948,7 +971,20 @@ Beyond the matrix, these behaviours are tested individually (`backend §37`, `§
 
 ### 12.4 Frontend
 
-Vitest with React Testing Library, and **MSW mocking at the network boundary** rather than mocking component internals (`frontend §7`). Tests assert behaviour the user observes, not implementation detail. Covered: login success and failure, role-based landing redirects, task list rendering with filters and empty state, the complete action, dashboard rendering from stats, and the **single-flight refresh** behaviour under concurrent 401s. There is no numeric coverage gate on the frontend (`frontend §7`), but `tsc --noEmit` must pass.
+Vitest with React Testing Library, and **MSW mocking at the network boundary** rather than mocking component internals (`frontend §7`). Tests assert behaviour the user observes, not implementation detail.
+
+Covered:
+
+- login success and failure, including the 429 message
+- role-based landing redirects for all three roles
+- task list rendering with filters, pagination and empty state
+- **task creation** — the form submits and the list invalidates (`frontend §7` names task creation a priority path)
+- **the create/edit form omits the `assignee` field for an Operator and renders it for a Supervisor** — the UI half of D15/D16
+- the complete action, and `COMPLETED` being absent from the status select
+- dashboard rendering from stats, including the overdue and due-soon tiles
+- the **single-flight refresh** behaviour under concurrent 401s
+
+There is no numeric coverage gate on the frontend (`frontend §7`), but `tsc --noEmit` must pass.
 
 ---
 
@@ -956,16 +992,41 @@ Vitest with React Testing Library, and **MSW mocking at the network boundary** r
 
 One GitHub Actions workflow on push and pull request, with four jobs. `.pre-commit-config.yaml` uses the **same pinned ruff version**, so a local hook and CI can never disagree.
 
-| Job | Steps |
-|---|---|
-| `lint` | `uv sync`, `ruff check`, `ruff format --check` |
-| `compat` | `uv sync`, assert the installed Django is 6.0.x, import `rest_framework_simplejwt` and `drf_spectacular`, generate the OpenAPI schema (`manage.py spectacular --validate`), and run one login round-trip |
-| `backend` | services `postgres:16` and `redis:7`; `uv sync`, `manage.py migrate`, `manage.py makemigrations --check --dry-run`, `pytest --cov --cov-fail-under=80`, upload coverage |
-| `frontend` | `npm ci`, `tsc --noEmit`, `npm run lint`, `vitest run` |
+| Job | Created in | Steps |
+|---|---|---|
+| `lint` | phase 1 | `uv sync`, `ruff check`, `ruff format --check` |
+| `compat` | phase 1, extended at 4 and 8 | see below |
+| `backend` | phase 3 | services `postgres:16` and `redis:7`; `uv sync`, `manage.py migrate`, `manage.py makemigrations --check --dry-run`, `pytest --cov` |
+| `frontend` | phase 9 | `npm ci`, `tsc --noEmit`, `npm run lint`, `vitest run` |
 
-The **`compat` job exists because of D1, D3 and D4** and is built on day one, before anything depends on the two lagging packages. It converts "simplejwt@master and drf-spectacular are untested above Django 6.0" from an assumption into a continuously verified fact, and it is the signal that tells us when D1's exit criterion can be taken.
+The **`compat` job exists because of D1, D3 and D4.** It converts "simplejwt@master and drf-spectacular are untested above Django 6.0" from an assumption into a continuously verified fact, and it is the signal that tells us when D1's exit criterion can be taken.
+
+It is **built in three stages**, because its later checks depend on code that does not exist on day one:
+
+| Stage | Phase | Check |
+|---|---|---|
+| 1 | **1** | `uv sync` resolves the git pin; assert the installed Django is 6.0.x; `import rest_framework_simplejwt` and `import drf_spectacular` succeed; `manage.py check` passes |
+| 2 | **4** | one real login round-trip against the cookie-based auth views |
+| 3 | **8** | `manage.py spectacular --validate` generates a valid OpenAPI 3 schema |
+
+Stage 1 alone already answers the day-one question — *does this dependency set import and boot on Django 6.0?* — which is the risk D3 and D4 actually carry. Stages 2 and 3 land with the code they exercise.
+
+`--cov-fail-under=80` is **not** added to the `backend` job until **phase 11**, since coverage cannot reach the gate while the suite is still being written. Until then the job reports coverage without failing on it.
 
 `makemigrations --check` fails the build if a model change was committed without its migration (`backend §4`).
+
+### 13.1 Pre-commit parity
+
+`.pre-commit-config.yaml` carries, per `backend §44a` and the brief's "equivalent to pre-commit definition" requirement:
+
+| Hook | Mirrors |
+|---|---|
+| `ruff check --fix` (same pinned version as CI) | the `lint` job |
+| `ruff format` (same pinned version) | the `lint` job |
+| `pytest -x -q` on pre-push (not pre-commit) | the `backend` job |
+| `end-of-file-fixer`, `trailing-whitespace`, `check-merge-conflict`, `check-yaml`, `check-toml` | nothing in CI — cheap local hygiene |
+
+The test check runs on **pre-push rather than pre-commit** so that committing stays fast while nothing broken reaches the remote. Ruff's version is pinned identically in both places, so a local hook and CI can never disagree.
 
 ---
 
@@ -1009,19 +1070,24 @@ A dependency-driven sequence for the implementation plan. `apps.users` must come
 
 | Phase | Deliverable |
 |---|---|
-| 1 | Scaffold: `pyproject.toml` with the git pin, settings split, Compose, Dockerfiles, ruff, pre-commit, **and the `compat` CI job proving the Django 6.0 stack works** |
-| 2 | `apps.core`: soft-delete base and manager, pagination, exception handler, throttles, permission matrix module |
-| 3 | `apps.users`: custom user, partial unique index, serializers, Admin CRUD, `/users/me/`, simple-history |
-| 4 | Auth: cookie-based login/refresh/logout, blacklist, throttling, security settings |
-| 5 | `apps.tasks`: model, check constraint, partial indexes, serializers, viewset, filters, services, selectors, `complete/`, `stats/` |
+| 1 | Scaffold: `pyproject.toml` with the git pin, settings split, Compose, Dockerfiles, ruff, pre-commit, the `lint` CI job, **and `compat` stage 1 — proving the Django 6.0 dependency set imports and boots** (§13) |
+| 2 | `apps.core`: soft-delete base and manager, `roles.py`, pagination, exception handler, throttles, permission matrix module |
+| 3 | `apps.users`: custom user, partial unique index, serializers, Admin CRUD, `/users/me/`, simple-history; the `backend` CI job (coverage reported, not yet gated) |
+| 4 | Auth: cookie-based login/refresh/logout, blacklist, throttling, security settings; **`compat` stage 2** (login round-trip) |
+| 5 | `apps.tasks`: model, check constraint, partial indexes, **simple-history on `Task`** (phase 7's `dedupe_key` depends on `HistoricalTask.history_id`), serializers, viewset, filters, services, selectors, `complete/`, `stats/` |
 | 6 | Permission matrix enforcement plus the parametrized matrix test suite |
 | 7 | `apps.notifications`: model, recipient resolution, Celery tasks with dedupe, `on_commit` enqueue, overdue sweep, beat schedule |
-| 8 | `seed_demo_data` and drf-spectacular wiring |
-| 9 | Frontend: API client, auth context, router and guards, login |
-| 10 | Frontend: task list/detail/forms, user CRUD, dashboard |
-| 11 | Frontend tests; backend coverage brought to at least 80% |
+| 8 | `seed_demo_data` and drf-spectacular wiring; **`compat` stage 3** (`spectacular --validate`) |
+| 9 | Frontend: API client, auth context, router and guards, login; the `frontend` CI job |
+| 10 | Frontend: task list/detail/create forms, user CRUD, dashboard |
+| 11 | Frontend tests; backend coverage brought to at least 80% and **`--cov-fail-under=80` enabled** in the `backend` job |
 | 12 | `README.md`, mermaid diagrams, CI finalisation |
 | 13 | Persist insights to `claude-insights/` |
+
+Two ordering constraints that are not obvious from the phase names:
+
+- **`Role` must exist before the permission matrix.** The matrix is built in phase 2 but `Role` would naturally live with the user model in phase 3 — and a shared app importing a feature app inverts the layering D10 exists to protect. `Role` therefore lives in `apps/core/roles.py` and `apps.users.models` imports it, keeping the dependency direction feature -> shared (§6.2).
+- **`simple-history` on `Task` is a phase 5 deliverable, not a phase 7 one**, because the notification `dedupe_key` is derived from `HistoricalTask.history_id` (§10.3b).
 
 ---
 
@@ -1051,7 +1117,7 @@ A dependency-driven sequence for the implementation plan. `apps.users` must come
 - [ ] Strict three-role permission matrix with a matrix-driven test suite
 - [ ] Task CRUD, assignment, `complete/`, filtering by status and due date, pagination, `stats/`
 - [ ] `django-simple-history` on `User` and `Task`
-- [ ] Soft delete across all models, with a partial unique index and partial indexes
+- [ ] Soft delete on `User` and `Task` (`Notification` exempt per D20), with a partial unique index and partial indexes
 - [ ] Celery and Redis notifications with `on_commit` enqueue and dedupe-based idempotency
 - [ ] Celery beat hourly overdue sweep
 - [ ] drf-spectacular OpenAPI 3 schema, Swagger UI and ReDoc
