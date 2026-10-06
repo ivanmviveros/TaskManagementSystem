@@ -59,7 +59,7 @@ Every non-obvious decision, with its rationale. This section is the basis for th
 | D4 | **drf-spectacular 0.30.0 instead of drf-yasg** | drf-yasg 1.21.17 still caps its classifiers at Django 5.2 and emits OpenAPI 2.0 only. drf-spectacular classifies Django 6.0, emits OpenAPI 3.0.3/3.1/3.2, and is actively maintained. Sanctioned by `backend §35`, which names either tool. Overrides the original brief's nomination of drf-yasg. |
 | D5 | **uv as package manager**, `pyproject.toml` + committed `uv.lock` | Required by the brief; `backend §44a` permits uv or Poetry, one consistently. |
 | D6 | **No `django-safedelete`**; soft delete is roughly 40 owned lines | Avoids a third dependency carrying Django 6 lag risk, and its manager semantics would need our own tests regardless. |
-| D7 | **No frontend charting library** | The dashboard presents four counts plus an overdue total. Status tiles and a CSS-grid distribution bar satisfy it without adding Recharts. Trivially swappable later. |
+| D7 | **No frontend charting library** | The dashboard presents six numbers: four status counts, an overdue total and a due-soon total (§11.5). Stat tiles and a CSS-grid distribution bar satisfy that without adding Recharts. Trivially swappable later. |
 
 **Consequences of D3**, all recorded in `README.md`:
 
@@ -90,7 +90,7 @@ djangorestframework-simplejwt = { git = "https://github.com/jazzband/djangorestf
 | D13 | **Strict role separation.** Admin manages users only and has **no task access at all**. Supervisor manages all tasks and has **read-only, minimal-field** access to the user list. Operator manages only tasks **assigned to them**. | The brief's literal reading. Supervisor's user read is the one addition, needed to populate an assignee picker and to display who holds a task. |
 | D14 | **Operator scope is `assignee = me` only.** `created_by` grants **no** access. | A Supervisor reassigning or unassigning a task revokes the original Operator's access immediately. `created_by` survives purely as an audit field. |
 | D15 | **Operator has full CRUD on assigned tasks but cannot change `assignee`** | "Tasks management for owned tasks", minus the ability to hand work off, which belongs to a Supervisor. See the accepted risk in §16.1. |
-| D16 | **On create, an Operator's task is always `assignee = self`** | Precisely: if an Operator **omits** `assignee`, it defaults to self; if an Operator **supplies a different user**, the request is rejected with 400 `assignee_not_assignable`. Defaulting is a convenience; silently coercing a value the client explicitly sent would hide a client bug, so the explicit-mismatch case is an error, not a coercion. |
+| D16 | **On create, an Operator's task is always `assignee = self`** | Precisely: if an Operator **omits** `assignee`, it defaults to self; if an Operator **supplies a different user**, the request is rejected with 400 `assignee_immutable` (§8.7). Defaulting is a convenience; silently coercing a value the client explicitly sent would hide a client bug, so the explicit-mismatch case is an error, not a coercion. |
 | D17 | **`assignee` must be a Supervisor or Operator, never an Admin** | Assigning to an Admin would create a task nobody can open, given D13. **Not expressible as a DB `CheckConstraint`** — it is a cross-table assertion — so it is enforced in the serializer *and* re-checked in the service, with tests at both levels. |
 | D18 | **`POST /tasks/{id}/complete/` is the only path to `COMPLETED`.** `PATCH status=COMPLETED` returns 400. | One audited path for the state transition, per `backend §34`. Guarantees `completed_at` is always set alongside it. |
 | D19 | **`COMPLETED` and `CANCELLED` are terminal** | Simpler invariant, and it matches the DB constraint tying `completed_at` to status. Reopening is a documented future extension, not a current requirement. |
@@ -628,7 +628,14 @@ Application errors subclass `ApplicationError` with a `code` and a `status_code`
 | `AssigneeNotAssignable` | `assignee_not_assignable` | 400 |
 | `AssigneeImmutableForRole` | `assignee_immutable` | **400** |
 
-`AssigneeImmutableForRole` is deliberately **400, not 403.** Two reasons: an Operator supplying a foreign assignee on *create* is already a 400 (D16), so the same rule on *update* must not return a different code; and §7.3 reserves 403 as the permission class's exclusive output, which keeps the three enforcement layers distinguishable from the response alone. The request is refused because one field in the payload is not writable by this role — a field-level validation failure, which is what 400 means here.
+**The two assignee errors are distinct rules and must not share a code.** They fail for different reasons and the frontend needs to tell them apart from `code` alone, without parsing `detail`:
+
+| Code | Means | Raised when |
+|---|---|---|
+| `assignee_not_assignable` | *that user* cannot hold tasks | any role assigns to an **Admin** (D17) |
+| `assignee_immutable` | *your role* cannot choose an assignee at all | an **Operator** supplies a different assignee on create (D16) or any assignee on update (D15) |
+
+`AssigneeImmutableForRole` is deliberately **400, not 403.** Two reasons: the Operator create-side case is already a 400, so the same rule on update must not return a different **status**; and §7.3 reserves 403 as the permission class's exclusive output, which keeps the three enforcement layers distinguishable from the response code alone. The request is refused because one field in the payload is not writable by this role — a field-level validation failure, which is what 400 means here.
 
 Stack traces, database errors, secrets and infrastructure details are never returned (`backend §18`). Unexpected exceptions are logged with context and returned as a bare 500.
 
@@ -866,9 +873,21 @@ Server data is never copied into `useState` or Context. Query keys are structure
 ### 11.5 Screens
 
 - **Login** — email and password, inline server-side validation errors, and a distinct message for 429 ("too many attempts, try again shortly").
-- **Dashboard** — four status count tiles, a **due-next-7-days** tile and an **overdue** tile, plus a CSS-grid distribution bar. Both the overdue and due-soon tiles link through to the matching filtered list (`/tasks?overdue=true` and `/tasks?due_date_before=<+7d>`), so every number on the dashboard is navigable. Fed by one `GET /tasks/stats/` call, consuming all four of its keys (§8.5). Supervisors see global figures and Operators see their own; the component is identical because the backend scopes the response.
+- **Dashboard** — four status count tiles, a **due-next-7-days** tile and an **overdue** tile, plus a CSS-grid distribution bar. Fed by one `GET /tasks/stats/` call, consuming all four of its keys (§8.5). Supervisors see global figures and Operators see their own; the component is identical because the backend scopes the response.
+
+  **Every tile links to a list that reproduces its own number exactly.** This is a real constraint, not a nicety: a drill-through whose count differs from the tile it came from reads as a bug. Each link must therefore carry the tile's *full* predicate, not an approximation of it:
+
+  | Tile | Link |
+  |---|---|
+  | status count | `/tasks?status=<STATUS>` |
+  | overdue | `/tasks?overdue=true` |
+  | due next 7 days | `/tasks?due_date_after=<now>&due_date_before=<+7d>&status=PENDING&status=IN_PROGRESS` |
+
+  The due-soon link is the one that needs care. `due_next_7_days` excludes nulls **and terminal statuses** (§8.4), so linking on `due_date_before` alone would also pull in every past-due task and every completed task with a due date — a list visibly larger than the tile. No new backend filter is required; the existing params compose to the right set.
 - **Task list** — paginated table with filters for status (multi-select), due-date range and overdue; sortable columns; inline complete action; a "New task" action routing to `/tasks/new`. The assignee column is Supervisor-only.
-- **Task create and edit** — one form component serving `/tasks/new` and `/tasks/:id`. The **`assignee` field renders only for Supervisors**, populated from `GET /users/` (minimal serializer); for an Operator it is omitted entirely, because on create the backend forces it to self (D16) and on update it is immutable (D15). Complete is a distinct button hitting `/complete/`, never a status dropdown value, mirroring D18 — so `COMPLETED` is absent from the status select.
+- **Task create and edit** — one form component serving `/tasks/new` and `/tasks/:id`, in two modes. The **`assignee` field renders only for Supervisors**, populated from `GET /users/` (minimal serializer); for an Operator it is omitted entirely, because on create the backend defaults it to self (D16) and on update it is immutable (D15). Two mode-specific rules:
+  - **The status select renders in edit mode only.** `TaskCreateSerializer` (§8.2) accepts no `status` field — a new task is always `PENDING` — so rendering the select on create would offer a choice the API silently discards.
+  - **`COMPLETED` is absent from the status select entirely.** Completion is a distinct button hitting `/complete/`, never a dropdown value, mirroring D18's single audited path.
 - **User list, create and edit** (Admin) — paginated list with role and active filters plus search; one form component serving `/users/new` and `/users/:id`; and a delete confirmation dialog that states plainly that deletion is a deactivation.
 
 ### 11.6 Styling and responsiveness
@@ -887,7 +906,7 @@ Loading, error and empty states all handled; server-side validation errors surfa
 
 `pytest` with `pytest-django`, `pytest-cov` and `factory_boy` (`backend §36`). Django's `TestCase` runner is not used. Tests are written before implementation for new endpoints and business rules.
 
-**Coverage gate: `--cov-fail-under=80`**, enforced in CI. Coverage is concentrated on authentication, authorization and task operations rather than chased on trivial code.
+**Coverage gate: `--cov-fail-under=80`**, enforced in CI — but **only from phase 11**, since coverage cannot reach the gate while the suite is still being written (§13 and §15 carry the staging). Coverage is concentrated on authentication, authorization and task operations rather than chased on trivial code.
 
 ### 12.2 The permission matrix suite
 
@@ -916,8 +935,9 @@ Beyond the matrix, these behaviours are tested individually (`backend §37`, `§
 - an Operator listing tasks sees only `assignee = me`
 - an Operator who **created** a task but is no longer the assignee receives **404** on its detail — the direct test of D14
 - an Operator creating a task **without** `assignee` gets `assignee = self` (D16, default half)
-- an Operator creating a task **with another user** as `assignee` receives 400 `assignee_not_assignable` (D16, explicit-mismatch half)
+- an Operator creating a task **with another user** as `assignee` receives 400 `assignee_immutable` (D16, explicit-mismatch half)
 - an Operator updating `assignee` on an assigned task receives 400 `assignee_immutable` (D15, §8.7)
+- the two assignee errors do not collide: a **Supervisor** assigning to an Admin receives `assignee_not_assignable`, while an **Operator** choosing any assignee receives `assignee_immutable` (§8.7)
 - an Admin receives 403 on every task endpoint
 - a Supervisor receives 200 from `GET /users/` and the response contains **no** `is_staff` or `last_login` — the direct test of the minimal serializer
 
@@ -1003,15 +1023,20 @@ The **`compat` job exists because of D1, D3 and D4.** It converts "simplejwt@mas
 
 It is **built in three stages**, because its later checks depend on code that does not exist on day one:
 
-| Stage | Phase | Check |
-|---|---|---|
-| 1 | **1** | `uv sync` resolves the git pin; assert the installed Django is 6.0.x; `import rest_framework_simplejwt` and `import drf_spectacular` succeed; `manage.py check` passes |
-| 2 | **4** | one real login round-trip against the cookie-based auth views |
-| 3 | **8** | `manage.py spectacular --validate` generates a valid OpenAPI 3 schema |
+| Stage | Phase | Check | Services needed |
+|---|---|---|---|
+| 1 | **1** | `uv sync` resolves the git pin; assert the installed Django is 6.0.x; `import rest_framework_simplejwt` and `import drf_spectacular` succeed; `manage.py check` passes | none |
+| 2 | **4** | one real login round-trip against the cookie-based auth views | **`postgres:16`** |
+| 3 | **8** | `manage.py spectacular --validate` generates a valid OpenAPI 3 schema | `postgres:16` |
 
 Stage 1 alone already answers the day-one question — *does this dependency set import and boot on Django 6.0?* — which is the risk D3 and D4 actually carry. Stages 2 and 3 land with the code they exercise.
 
-`--cov-fail-under=80` is **not** added to the `backend` job until **phase 11**, since coverage cannot reach the gate while the suite is still being written. Until then the job reports coverage without failing on it.
+**Stage 2 adds a Postgres service to the job.** A login round-trip needs a real database, and `config/settings/test.py` targets Postgres rather than SQLite because the schema depends on partial indexes and a check constraint (§6.2, §6.3). Stage 1 needs no services, which is part of why it can ship on day one.
+
+**Two jobs are deliberately not gated at full strength from the start,** because a job that is red for several phases trains people to ignore it:
+
+- `--cov-fail-under=80` is added to `backend` only at **phase 11**; until then the job reports coverage without failing on it.
+- `vitest run` exits non-zero when it finds no test files, so the `frontend` job would be red from phase 9 to phase 11. Rather than paper over that with `--passWithNoTests`, **phase 9 ships the login tests** from §12.4 alongside the login screen, so the job is meaningful — not merely green — the moment it exists.
 
 `makemigrations --check` fails the build if a model change was committed without its migration (`backend §4`).
 
@@ -1078,9 +1103,9 @@ A dependency-driven sequence for the implementation plan. `apps.users` must come
 | 6 | Permission matrix enforcement plus the parametrized matrix test suite |
 | 7 | `apps.notifications`: model, recipient resolution, Celery tasks with dedupe, `on_commit` enqueue, overdue sweep, beat schedule |
 | 8 | `seed_demo_data` and drf-spectacular wiring; **`compat` stage 3** (`spectacular --validate`) |
-| 9 | Frontend: API client, auth context, router and guards, login; the `frontend` CI job |
+| 9 | Frontend: API client, auth context, router and guards, login; **the login tests** (so the new `frontend` CI job has something real to run — §13) |
 | 10 | Frontend: task list/detail/create forms, user CRUD, dashboard |
-| 11 | Frontend tests; backend coverage brought to at least 80% and **`--cov-fail-under=80` enabled** in the `backend` job |
+| 11 | Remaining frontend tests; backend coverage brought to at least 80% and **`--cov-fail-under=80` enabled** in the `backend` job |
 | 12 | `README.md`, mermaid diagrams, CI finalisation |
 | 13 | Persist insights to `claude-insights/` |
 
