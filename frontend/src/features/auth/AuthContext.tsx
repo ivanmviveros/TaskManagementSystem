@@ -58,12 +58,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return me;
   }, []);
 
+  /**
+   * Never rejects. The local sign-out is authoritative: the token is dropped and
+   * the user cleared whatever the server says, so the UI can never be stuck
+   * appearing signed in. A failed revoke leaves a refresh token alive until it
+   * expires, which the caller cannot do anything about — so swallowing it here
+   * is the honest contract, rather than handing every caller a rejection to
+   * discard with `void`.
+   */
   const signOut = useCallback(async () => {
     try {
       await authService.logout();
+    } catch {
+      // Already expired, offline, or a 5xx: nothing actionable.
     } finally {
-      // Local state is cleared even if the server call fails, so the UI can
-      // never be stuck appearing signed in.
       clearAccessToken();
       setUser(null);
     }
