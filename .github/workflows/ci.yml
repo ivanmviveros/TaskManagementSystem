@@ -42,3 +42,37 @@ jobs:
           "import rest_framework_simplejwt, drf_spectacular"
       - name: Django boots
         run: uv run --directory backend python manage.py check
+
+  backend:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: taskmanagement
+          POSTGRES_USER: taskmanagement
+          POSTGRES_PASSWORD: taskmanagement
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+    env:
+      POSTGRES_HOST: localhost
+      POSTGRES_DB: taskmanagement
+      POSTGRES_USER: taskmanagement
+      POSTGRES_PASSWORD: taskmanagement
+      REDIS_URL: redis://localhost:6379/0
+      DJANGO_SECRET_KEY: ci-only-not-a-real-secret
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync --directory backend
+      # Fails the build if a model change was committed without its migration.
+      - run: uv run --directory backend python manage.py makemigrations --check --dry-run
+      - run: uv run --directory backend python manage.py migrate
+      # Coverage is REPORTED here, not gated. --cov-fail-under=80 lands in Task 51.
+      - run: uv run --directory backend pytest --cov=apps --cov-report=term-missing
