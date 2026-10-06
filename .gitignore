@@ -222,6 +222,13 @@ __marimo__/
 # Git worktrees (superpowers-extended-cc:using-git-worktrees)
 .worktrees/
 
+# The Python "Distribution / packaging" block above ignores `lib/` and `dist/`,
+# meaning setuptools build output. Those patterns are unanchored, so they also
+# swallow the frontend's own source and build directories — frontend/src/lib
+# holds the API client, which would silently never be committed.
+!frontend/src/lib/
+!frontend/src/**/lib/
+
 # Local-only Compose override (host port collisions, etc.)
 docker-compose.override.yml
 
