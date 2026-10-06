@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync --directory backend
+      - run: uv run --directory backend ruff check .
+      - run: uv run --directory backend ruff format --check .
+      - run: uv run --directory backend mypy
+
+  # Verifies the unusual dependency combination this design deliberately chose
+  # (D1 Django 6.0, D3 simplejwt git pin, D4 drf-spectacular, D2/D28 Python 3.14).
+  # Every other job asks "is my code right?"; this one asks "does this dependency
+  # set still assemble and boot at all?". Extended at Task 20 and Task 40.
+  compat:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - name: Resolve the pinned dependency set, git source included
+        run: uv sync --directory backend
+      - name: Python floor is 3.14 and uuid.uuid7 is importable (D2, D28)
+        run: >
+          uv run --directory backend python -c
+          "import sys, uuid; assert sys.version_info >= (3, 14), sys.version_info; assert uuid.uuid7().version == 7"
+      - name: Django is 6.0.x (D1)
+        run: >
+          uv run --directory backend python -c
+          "import django; assert django.VERSION[:2] == (6, 0), django.get_version()"
+      - name: The two at-risk packages import (D3, D4)
+        run: >
+          uv run --directory backend python -c
+          "import rest_framework_simplejwt, drf_spectacular"
+      - name: Django boots
+        run: uv run --directory backend python manage.py check
