@@ -19,12 +19,64 @@ docker compose up -d
 docker compose exec backend python manage.py migrate
 ```
 
-The API answers on `http://localhost:8000/api/v1/` and the SPA on `http://localhost:5173`.
+```bash
+docker compose exec backend python manage.py seed_demo_data
+```
+
+The API answers on `http://localhost:8000/api/v1/`, the SPA on `http://localhost:5173`, and
+the interactive API docs on `http://localhost:8000/api/v1/schema/swagger-ui/`.
 
 `.env` is never committed; `.env.example` is the template and lists every variable the
-stack reads. The `beat` and `worker` services need `config/celery.py`, and the `frontend`
-service needs `frontend/package-lock.json` — until those land, bring up only what exists:
-`docker compose up -d db redis backend`.
+stack reads.
+
+One wrinkle if you **re-create the database** rather than starting fresh: `celery beat`
+keeps its last-run state in `backend/celerybeat-schedule` (gitignored), which lives in the
+bind mount and therefore survives `docker compose down -v`. Beat then considers the hourly
+sweep overdue and fires it immediately on startup — before you have run `migrate` — and the
+worker logs one `relation "tasks_task" does not exist`. It is harmless: the sweep runs again
+on the hour against the migrated schema. To avoid the noise entirely, migrate before the
+worker and beat start:
+
+```bash
+docker compose up -d db redis backend
+```
+
+```bash
+docker compose exec backend python manage.py migrate
+```
+
+```bash
+docker compose up -d
+```
+
+### Working on the frontend
+
+Compose runs the SPA, but **the recommended edit loop is native**:
+
+```bash
+cd frontend
+```
+
+```bash
+npm install
+```
+
+```bash
+npm run dev
+```
+
+Vite's HMR is noticeably faster against the native filesystem than through a bind-mounted
+`node_modules`, especially on Windows, where every file-watch event crosses the container
+boundary. The Compose `frontend` service exists so `docker compose up` brings the whole
+stack up for a reviewer who just wants to see it run; the anonymous `node_modules` volume
+is what stops the bind mount shadowing the container's own install.
+
+**Install must run from inside `frontend/`.** On npm 10.9, none of
+`npm --prefix frontend install`, `npm install --prefix frontend` or `npm install -C frontend`
+works — each changes where packages land but not where `package.json` is read from, so all
+three fail looking for one at the repository root. Running a *script* that way is fine
+(`npm run --prefix frontend test`), and CI sidesteps the question with
+`defaults.run.working-directory`.
 
 ## Running the checks
 
@@ -55,6 +107,29 @@ uv run --directory backend pytest -q
 The test settings use **Postgres, not SQLite** — the schema depends on partial indexes
 and a check constraint that SQLite does not exercise the same way. `docker compose up -d db`
 provides one on `localhost:5432` with the credentials from `.env.example`.
+
+`pytest` carries `--cov=apps --cov-report=term-missing --cov-fail-under=80` in `addopts`,
+so a local run and CI apply the same gate rather than two thresholds that can drift. The
+suite currently sits at 100% of `apps/`; 80 is a floor, not a target.
+
+Frontend checks run from `frontend/`:
+
+```bash
+npm run typecheck
+```
+
+```bash
+npm run lint
+```
+
+```bash
+npm run test
+```
+
+There is no numeric coverage gate on the frontend, but `tsc --noEmit` must pass, and the
+Vitest setup turns **any unexpected `console.error` or `console.warn` into a test failure**
+— so "no console noise" is enforced rather than reviewed. A test that deliberately renders
+an error state opts out for one specific message with `allowConsole(/…/)`.
 
 Lint and format locally exactly as CI does, via the pinned hooks:
 
@@ -105,6 +180,194 @@ The command is **idempotent** (running it twice changes nothing) and **refuses t
 production settings**, so demo credentials cannot be seeded into a production-like profile.
 
 ## Architecture
+
+The five diagrams below are copied from the design spec, which is their source of truth.
+Each was rendered with `@mermaid-js/mermaid-cli` to confirm it parses.
+
+### Containers
+
+Six Compose services. `beat` is a documented override of root `AGENTS.md` — the brief
+requires scheduled overdue notifications, and Celery documents `worker -B` as
+development-only.
+
+```mermaid
+graph TB
+    subgraph browser["Browser"]
+        UI["React SPA<br/>TanStack Router + Query"]
+    end
+
+    subgraph compose["Docker Compose"]
+        API["backend<br/>Django 6 + DRF<br/>:8000"]
+        WORKER["worker<br/>Celery"]
+        BEAT["beat<br/>Celery beat"]
+        REDIS[("redis:7<br/>broker + throttle cache")]
+        DB[("postgres:16")]
+    end
+
+    SMTP["SMTP<br/>(console backend in local)"]
+
+    UI -->|"/api/v1/*<br/>Bearer access token<br/>+ HttpOnly refresh cookie"| API
+    API --> DB
+    API -->|"enqueue on_commit"| REDIS
+    API -->|"throttle counters"| REDIS
+    BEAT -->|"hourly schedule"| REDIS
+    REDIS --> WORKER
+    WORKER --> DB
+    WORKER --> SMTP
+```
+
+### Data model
+
+Every primary key is a UUIDv7 (D28). `Task`'s two user foreign keys are `PROTECT`
+because nothing is ever hard-deleted; `Notification`'s are `CASCADE`, since it is an
+append-only log that should go with a row if one ever *is* removed in data repair.
+
+```mermaid
+erDiagram
+    USER ||--o{ TASK : "created_by (gates delete, D27)"
+    USER ||--o{ TASK : "assignee (grants visibility, D14)"
+    TASK ||--o{ NOTIFICATION : "triggers"
+    USER ||--o{ NOTIFICATION : "recipient"
+    USER ||--o{ HISTORICALUSER : "versions"
+    TASK ||--o{ HISTORICALTASK : "versions"
+
+    USER {
+        uuid id PK "UUIDv7"
+        varchar email "lowercase; UNIQUE WHERE deleted_at IS NULL"
+        varchar password
+        varchar role "ADMIN SUPERVISOR OPERATOR; indexed"
+        varchar first_name
+        varchar last_name
+        boolean is_active "authentication gate"
+        boolean is_staff
+        boolean is_superuser
+        datetime date_joined
+        datetime last_login
+        datetime deleted_at "soft-delete marker; indexed"
+        uuid deleted_by FK "SET_NULL"
+    }
+
+    TASK {
+        uuid id PK "UUIDv7"
+        varchar title
+        text description
+        varchar status "PENDING IN_PROGRESS COMPLETED CANCELLED"
+        datetime due_date "nullable, UTC"
+        uuid assignee FK "nullable, PROTECT - grants visibility"
+        uuid created_by FK "PROTECT, not null - gates delete per D27"
+        datetime completed_at "nullable"
+        datetime created_at
+        datetime updated_at
+        datetime deleted_at
+        uuid deleted_by FK "SET_NULL"
+    }
+
+    NOTIFICATION {
+        uuid id PK "UUIDv7"
+        uuid task FK "CASCADE"
+        uuid recipient FK "CASCADE"
+        varchar event "ASSIGNED STATUS_CHANGED DUE_DATE_CHANGED OVERDUE"
+        varchar dedupe_key "UNIQUE, max_length 160"
+        varchar status "PENDING SENT FAILED"
+        datetime created_at
+        datetime sent_at "nullable"
+        text error "nullable"
+    }
+
+    HISTORICALUSER {
+        bigint history_id PK "stays integer - see below"
+        datetime history_date
+        varchar history_type "plus tilde minus"
+        uuid history_user FK
+    }
+
+    HISTORICALTASK {
+        bigint history_id PK "stays integer - see below"
+        datetime history_date
+        varchar history_type "plus tilde minus"
+        uuid history_user FK
+    }
+```
+
+### Task status transitions
+
+`COMPLETED` is reachable only through `POST /tasks/{id}/complete/` (D18), which is what
+guarantees `completed_at` is always set alongside it. `COMPLETED` and `CANCELLED` are
+terminal (D19), and a database check constraint ties the timestamp to the status.
+
+```mermaid
+stateDiagram-v2
+    [*] --> PENDING
+    PENDING --> IN_PROGRESS : PATCH status
+    PENDING --> CANCELLED : PATCH status
+    PENDING --> COMPLETED : POST /complete/
+    IN_PROGRESS --> PENDING : PATCH status
+    IN_PROGRESS --> CANCELLED : PATCH status
+    IN_PROGRESS --> COMPLETED : POST /complete/
+    COMPLETED --> [*]
+    CANCELLED --> [*]
+```
+
+### Authentication flow
+
+The access token lives only in frontend memory; the refresh token is only ever an
+HttpOnly cookie scoped to `/api/v1/auth/`, and never appears in a JSON body.
+
+```mermaid
+sequenceDiagram
+    participant UI as React SPA
+    participant API as Django
+    participant R as Redis
+
+    UI->>API: POST /auth/login/ {email, password}
+    API->>R: throttle check (scope "login", by IP)
+    API-->>UI: 200 {access, user} + Set-Cookie refresh_token<br/>(HttpOnly, SameSite=Strict, Secure in prod,<br/>Path=/api/v1/auth/)
+    note over UI: access token held in memory only
+
+    UI->>API: GET /tasks/ (Authorization: Bearer access)
+    API-->>UI: 200
+
+    UI->>API: GET /tasks/ (expired access)
+    API-->>UI: 401
+    UI->>API: POST /auth/refresh/ (cookie sent automatically)
+    API-->>UI: 200 {access} + rotated refresh cookie
+    UI->>API: retry GET /tasks/ (once)
+
+    UI->>API: POST /auth/logout/
+    API->>API: blacklist refresh jti
+    API-->>UI: 204 + cookie cleared
+```
+
+### Notification dispatch
+
+Enqueued through `transaction.on_commit`, so a worker can never read a row that has not
+committed yet, and made idempotent by a unique dedupe key derived from the
+`django-simple-history` record id.
+
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant V as TaskViewSet
+    participant S as tasks.services
+    participant DB as PostgreSQL
+    participant Q as Redis
+    participant W as Celery worker
+    participant M as SMTP
+
+    C->>V: PATCH /tasks/{uuid}/ {assignee: uuid}
+    V->>S: assign_task(task, assignee, actor)
+    rect rgb(240,240,240)
+    note right of S: transaction.atomic()
+    S->>DB: UPDATE task
+    S->>DB: INSERT historical record
+    end
+    S-->>Q: transaction.on_commit -> send_task_event_email.delay(...)
+    V-->>C: 200 OK
+    Q->>W: deliver
+    W->>DB: INSERT Notification (dedupe_key UNIQUE) - skip if exists
+    W->>M: send_mail
+    W->>DB: status=SENT, sent_at=now
+```
 
 ### The capability matrix
 
@@ -174,7 +437,40 @@ the production repository no longer has — which nothing else would catch.
 
 ## Key implementation decisions
 
-Full rationale for each is in the design spec's decision log (§3).
+Every decision at a glance; the sections below expand the ones whose reasoning is
+load-bearing. Full rationale for all of them is in the design spec's decision log (§3).
+
+| # | Decision | Why |
+|---|---|---|
+| D1 | Django `>=6.0,<6.1` | The newest Django *every* dependency tests against; two of them stop at 6.0. |
+| D2 | Python `>=3.14` as a hard floor | `uuid.uuid7()` entered the stdlib in 3.14 (D28); anything lower needs a third-party package. |
+| D3 | simplejwt from a pinned git commit | PyPI 5.5.1 predates Django 6.0 support. Outside Dependabot — carries an exit criterion. |
+| D4 | drf-spectacular over drf-yasg | drf-yasg caps at Django 5.2 and emits OpenAPI 2.0 only. |
+| D5 | uv with a committed `uv.lock` | Required by the brief; reproducible resolution including the git source. |
+| D6 | No `django-safedelete` | Soft delete is ~40 owned lines and needs our own tests regardless. |
+| D7 | No charting library | The dashboard is six numbers; stat tiles and a CSS bar suffice. |
+| D8 | Views → serializers → services → repositories, plus selectors | The project's documented architecture, applied consistently rather than per feature. |
+| D8a | Repositories are `Protocol`s; the viewset is the composition root | Makes the dependency rule structural — the import graph enforces it. |
+| D9 | Serializers never persist; write serializers are plain `Serializer`s | Removes the second write path rather than forbidding it by convention. |
+| D10 | A shared `apps/core/`, every module named for one responsibility | A shared app is unavoidable; a `utils.py` dumping ground is not. |
+| D11 | The permission matrix is declarative data | One table read by both the permission class and a parametrized suite, so they cannot drift. |
+| D12 | No `django-guardian` | The rules are role-derived, not per-object. |
+| D13 | Strict role separation; **Admin has no task surface at all** | The brief's literal reading; account administration stays separate from the work. |
+| D14 | Operator visibility is `assignee = me` only | Reassignment revokes access immediately. `created_by` grants no visibility. |
+| D15 | An Operator may update and complete an assigned task, but not reassign it | Handing work off belongs to a Supervisor. |
+| D16 | An Operator's new task is always self-assigned | Omitting `assignee` defaults to self; supplying someone else is a 400, not a silent coercion. |
+| D17 | An assignee is never an Admin | Assigning to one would create a task nobody can open. Not expressible as a check constraint. |
+| D18 | `POST /tasks/{id}/complete/` is the only path to `COMPLETED` | One audited transition, so `completed_at` is always set with it. |
+| D19 | `COMPLETED` and `CANCELLED` are terminal | A simpler invariant that matches the database constraint. |
+| D20 | Soft delete on `User` and `Task`; `Notification` exempt | Needed for a meaningful audit trail. The log is append-only, so a marker there would always be null. |
+| D21 | A soft-deleted user's email becomes reusable | A partial unique index, not a plain unique constraint. |
+| D22 | `is_active` and `deleted_at` are not synonyms | One is the auth gate, the other the delete marker; an Admin may deactivate without deleting. |
+| D23 | `due_date` is a nullable `DateTimeField` | The hourly sweep compares against a time of day; a task may have no deadline. |
+| D24 | Email stored lowercase in a plain `EmailField` | Case-insensitive uniqueness without the `citext` extension. |
+| D25 | Both task FKs are `PROTECT` | Nothing is hard-deleted; if it ever is, fail loudly rather than null an audit record. |
+| D26 | Notification recipients are gated by current read access | Never email someone about a task they would get a 404 on. |
+| D27 | An Operator may delete only a task they **created** | Closes an accepted risk: no restore endpoint means a wrong delete is irrecoverable. |
+| D28 | All primary keys are UUIDv7 | Removes enumeration while keeping index locality close to a sequential integer's. |
 
 ### D1 — Django `>=6.0,<6.1`, not 6.1
 
@@ -544,6 +840,23 @@ millisecond **by the same process**; across processes, ordering is millisecond-g
 
 ## Known limitations and exit criteria
 
+### Accepted risks
+
+These are known and deliberate, not oversights. Each is listed with what could be done
+about it, so the next person decides rather than rediscovers.
+
+| Risk | Detail | Mitigation available |
+|---|---|---|
+| **No recovery path for a soft-deleted row** | D20 provides no restore endpoint, so a deletion is irrecoverable through the API and recoverable only at the database level. D27 keeps the blast radius small: an Operator can only delete tasks they created, so the worst case is someone destroying their own work. A Supervisor can delete any task. | A Supervisor-only restore endpoint: one view plus one matrix row, since `all_objects` already exposes deleted rows. |
+| **A UUIDv7 is not a secret** | A cold guess faces roughly 2^73, but a *sibling* id minted in the same millisecond by the same process is far weaker, since the counter advances by increment. An id must never be treated as a capability token. | None needed — no authorization anywhere depends on id secrecy, and the matrix suite proves it. |
+| **A `User` id discloses `date_joined`** | UUIDv7's timestamp prefix is readable by anyone holding the id. Harmless for `Task`, whose `created_at` is already public, but the minimal user serializer exposes `id` while deliberately withholding `date_joined` — so anyone who can see a nested `assignee` can recover that user's account-creation time. A real if minor widening of a boundary. **Accepted.** | Key `User` on UUIDv4 and keep v7 elsewhere: `User` is low-insert-rate so it gains little from v7, and both store identically as Postgres `uuid` — a one-line default change, no migration. Not done because D28 asks for v7 on all ids. |
+| **Two dependencies are untested above Django 6.0** | simplejwt@master's tox matrix and drf-spectacular's classifiers both stop at 6.0, which is why D1 pins 6.0. | The `compat` job verifies the combination on every push. |
+| **Python 3.14 support is verified for only part of the stack** | Only simplejwt and drf-spectacular were checked package-by-package; DRF, django-simple-history, django-filter, Celery, psycopg and factory_boy were not. | `compat` stage 1 runs `uv sync`, which fails outright if anything caps below 3.14 — a resolution error, not a subtle runtime bug. It resolved cleanly. |
+| **A git-pinned dependency sits outside advisory tooling** | `pip-audit` and Dependabot cannot track a git SHA, and this is the **authentication** library. | The D3 exit criterion below; `compat` signals when a PyPI release can replace it. |
+| **Django 6.0 is a security-fix-only branch** | 6.0 left mainstream support when 6.1 shipped (Aug 2026). | The same exit criterion. |
+
+### Exit criteria
+
 | Limitation | Exit criterion |
 |---|---|
 | simplejwt is a git pin, outside Dependabot and `pip-audit` coverage (D3) | A simplejwt release containing PR #959 ships; move back to PyPI and relax D1 toward Django 6.1. |
@@ -582,5 +895,52 @@ A plain `unique=True` would satisfy the checker and break the requirement.
 
 ## GenAI prompt and validation record
 
-See `docs-external/PROMPT-LOGS.md` for the prompts issued, what came back wrong, and what
-had to be corrected.
+`docs-external/PROMPT-LOGS.md` holds the verbatim prompts. This section records what the
+generated output got **wrong**, because that is the part worth knowing.
+
+Four prompts produced this repository: a brainstorming prompt, a spec review that corrected
+three decisions, a planning prompt, and one execution prompt. The plan carried the code,
+the commands and the expected output for 53 tasks, which made the failures informative:
+where reality disagreed with the plan, it disagreed specifically.
+
+**The plan's largest bet was correct.** D2 assumed the whole dependency set would resolve on
+Python 3.14 with Django 6.0. It did, first try — including the git-pinned simplejwt. Neither
+documented fallback (Python 3.13 plus `uuid-utils`, or ruff `target-version = "py313"`) was
+needed, and the four query-count guards hit their predicted numbers with no adjustment.
+
+**Six claims were wrong and were corrected against the real toolchain:**
+
+- **A plan comment asserted a bug that does not exist.** It justified writing the
+  `overdue=false` filter positively by claiming `.exclude()` would "silently drop every
+  undated task". That is true of raw SQL but not of Django, which injects
+  `AND due_date IS NOT NULL` inside the negated group. Verified by running the naive version
+  against the suite — all tests still passed. The positive form was kept for readability and
+  the comment rewritten to say so.
+- **The task list's delete control was unimplementable as specified.** The list was asked to
+  hide delete for an Operator's non-created tasks, while the list serializer deliberately
+  omits `created_by`. Resolved by extracting D27 into one `may_delete_task()` predicate read
+  by both the permission class and the serializers, surfaced as `can_delete` — computed from
+  a local column, so the query counts did not change.
+- **The dashboard's drill-through links pointed nowhere.** The list held its filters in local
+  state only, so the links would have navigated and then been ignored. The route now
+  validates search params and the list seeds from them.
+- **The API client refreshed after a failed login.** It excluded only `/auth/refresh/` from
+  refresh-and-retry, so a wrong password triggered a pointless refresh whose error replaced
+  the server's message and tripped the session-expired handler.
+- **Deleting the placeholder dispatcher broke a test the plan did not mention**, leaving an
+  orphaned import in the concurrency test.
+- **Three toolchain assumptions were stale**: the current Vite template ships Vite 8,
+  TypeScript 6 and oxlint rather than Vite 7 and eslint; Vitest config needs
+  `vitest/config`'s `defineConfig`; and `npm --prefix` no longer redirects where
+  `package.json` is read, so the planned `npm --prefix frontend ci` would have failed in CI.
+
+**Two assertions in the plan were weaker than they looked**, and were strengthened rather
+than trusted: the single-flight refresh test and the `select_for_update` concurrency test
+were each verified to **fail** when the mechanism they guard was removed (`expected 5 to
+be 1`, and both threads completing). A guard that cannot fail is decoration — the coverage
+gate was checked the same way.
+
+**One environment difference is worth recording** for anyone writing similar tests: Django
+creates Postgres foreign keys as `DEFERRABLE INITIALLY DEFERRED`, so a bad-FK insert does
+not raise until `COMMIT`. Inside a test transaction that means teardown, long after the code
+under test returned.

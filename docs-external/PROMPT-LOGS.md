@@ -133,3 +133,71 @@ the diff:
 - `pre-commit` was not on the machine and is not in the project's dependency groups; it was
   installed as a uv tool (`uv tool install pre-commit`) so the plan's bare `pre-commit`
   invocations work without perturbing the locked dependency set.
+
+## Phases 2–8 — the backend
+
+No further prompts. The plan's code was used as written except where it failed a real
+check; each correction is in the commit that made it.
+
+**Recurring friction, both from the plan assuming a looser toolchain than the one it
+configured.** `RUF012` fires on framework-declared class attributes — Django's
+`REQUIRED_FIELDS` and `Meta.constraints`/`indexes`, DRF's `Meta.fields`,
+`permission_classes`, `filter_backends` — which the plan anticipated for migrations only.
+Settled with per-file-ignores over the declaration-site modules, the same reasoning the
+plan already applied to migrations. And mypy without `django-stubs` reads a `TextChoices`
+member as the `tuple[str, str]` literal in the class body rather than the `str` the
+metaclass produces, so every annotated collection built from one is rejected. Settled on
+`str(TaskStatus.X)`, which typechecks and is runtime-correct, after first trying `cast`.
+
+**Two ruff false positives worth distinguishing from real findings.** `DJ012` reads
+`models.Manager()` as a *field* because it matches the `models.X(...)` pattern, so it saw
+"field after manager" in the soft-delete model. Declaring `all_objects` first silences it —
+and hands `_default_manager` to the **unfiltered** manager, which is how a soft-deleted user
+could still log in. The plan's order was kept and the lint suppressed. `DJ001` objects to
+`null=True` on `Notification.error`, where NULL is meaningful (no failure recorded) and a
+successful retry restores it; suppressed with that reason.
+
+**One genuine defect the plan deferred and then fixed.** Task 20 produced four
+drf-spectacular warnings, deferred to Task 40. One was real: `UserViewSet`'s
+`get_serializer_class()` read `request.user.role`, which throws during the request-less
+schema pass, so **the entire users viewset was being dropped from the API documentation**.
+`TaskViewSet.get_queryset()` had the same flaw via `scoped_tasks`. Both now tolerate a
+missing request, and `spectacular --validate` reports zero warnings.
+
+**A plan refinement that proved necessary.** `create_if_absent` returning `None` for *any*
+existing dedupe key would have made `autoretry_for` dead code, since the first attempt
+always inserts before sending. It returns `None` only for an already-`SENT` row.
+
+Verified against real infrastructure rather than mocks: migrations apply to Postgres 16, the
+Celery worker boots on Python 3.14 and registers its task, beat carries the hourly schedule
+in-container, and `seed_demo_data` loaded 5 users and 45 tasks into the running stack.
+
+## Phases 9–11 — the frontend and the gates
+
+**Two defects found by the plan's own tests**, both described in `README.md`'s validation
+record: the API client refreshing after a failed login, and nothing navigating after
+sign-in. The second was mine, not the plan's — re-creating the router whenever auth changed
+renders *nothing at all*, because handing `RouterProvider` a new instance does not re-run
+navigation. Diagnosed by bisecting with a throwaway probe: a minimal router worked, the real
+route tree with settled auth worked, so the remount was the fault. The router is now created
+once, auth arrives via `context`, and an explicit `router.invalidate()` re-runs the guards.
+
+**One gitignore trap.** The root `.gitignore`'s unanchored Python `lib/` rule silently
+swallowed `frontend/src/lib/`, so the API client was missing from its first commit. Caught
+from git's "paths are ignored" hint, then negated explicitly.
+
+**Two testing facts that shaped assertions.** jsdom applies no CSS, so the responsive table
+*and* the mobile cards are both in the DOM — desktop assertions scope with `within(table)`,
+and the card presentation gets its own test rather than being pretended away. And TanStack
+Router serialises an array search param as JSON (`status=["PENDING"]`), not repeated keys,
+so the plan's assertion on the link's `href` was testing the wrong layer: the SPA URL format
+is internal, and the repeated form the backend needs is produced when the list calls the
+API. Replaced with an end-to-end test that follows the tile and asserts what the API
+receives.
+
+**Coverage was treated as judgement, not a number.** Every gap in the report was a real
+branch — manager guards, the retry re-raise, the no-op update, the raise-through on a
+non-dedupe integrity error — so each got a test. Only `__str__` reprs and Protocol stubs are
+excluded, with the reason recorded next to them. The suite reached 100% of `apps/` with the
+gate set at the specified floor of 80, and the gate was verified to fail at an unreachable
+threshold.

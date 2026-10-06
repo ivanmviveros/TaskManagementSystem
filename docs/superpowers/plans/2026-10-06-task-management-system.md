@@ -9404,8 +9404,3 @@ From spec §17 — the plan is complete when every box is ticked.
 - [ ] `README.md`: setup, decision log, demo credentials, and the GenAI prompt/validation record
 - [ ] Mermaid diagrams: container architecture, ERD, status state machine, auth sequence, notification flow
 - [ ] Insights persisted to `claude-insights/`
-
-
-
-
-
