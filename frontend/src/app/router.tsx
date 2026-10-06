@@ -14,6 +14,7 @@ import { DashboardPage } from "../features/tasks/DashboardPage";
 import { TaskDetailPage } from "../features/tasks/TaskDetailPage";
 import { TaskCreatePage, TaskEditPage } from "../features/tasks/TaskFormPage";
 import { TaskListPage } from "../features/tasks/TaskListPage";
+import { UserCreatePage, UserEditPage } from "../features/users/UserFormPage";
 import { UserListPage } from "../features/users/UserListPage";
 import { AppShell } from "./layout/AppShell";
 
@@ -134,6 +135,21 @@ const taskEditRoute = createRoute({
   beforeLoad: guard("/tasks/$taskId"),
 });
 
+// Again the static segment first, so "new" is never read as a user id.
+const userCreateRoute = createRoute({
+  getParentRoute: () => shellRoute,
+  path: "/users/new",
+  component: UserCreatePage,
+  beforeLoad: guard("/users/new"),
+});
+
+const userEditRoute = createRoute({
+  getParentRoute: () => shellRoute,
+  path: "/users/$userId",
+  component: UserEditPage,
+  beforeLoad: guard("/users/$userId"),
+});
+
 const routeTree = rootRoute.addChildren([
   loginRoute,
   shellRoute.addChildren([
@@ -144,6 +160,8 @@ const routeTree = rootRoute.addChildren([
     taskDetailRoute,
     taskEditRoute,
     usersRoute,
+    userCreateRoute,
+    userEditRoute,
   ]),
 ]);
 
