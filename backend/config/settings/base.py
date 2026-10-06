@@ -48,7 +48,7 @@ INSTALLED_APPS = [
     # and `compat` stage 1 ships in Task 5.
 ]
 
-INSTALLED_APPS += ["apps.core", "apps.users", "apps.tasks"]
+INSTALLED_APPS += ["apps.core", "apps.users", "apps.tasks", "apps.notifications"]
 
 AUTH_USER_MODEL = "users.User"
 
