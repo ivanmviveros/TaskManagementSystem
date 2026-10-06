@@ -1,0 +1,188 @@
+import { useState } from "react";
+import type { FormEvent } from "react";
+
+import { Button } from "../../../components/Button";
+import { FormError } from "../../../components/FormError";
+import { TextField } from "../../../components/TextField";
+import { ApiError } from "../../../lib/api-error";
+import { useAuth } from "../../auth/hooks/useAuth";
+import { useAssignableUsers } from "../../users/hooks/useAssignableUsers";
+import type { TaskDetail, TaskStatus } from "../types";
+
+/**
+ * COMPLETED is deliberately absent: completion goes through POST /complete/,
+ * which is the only path to it (D18). Offering it here would present a choice
+ * the API answers with 400 use_complete_action.
+ */
+const EDITABLE_STATUSES: TaskStatus[] = ["PENDING", "IN_PROGRESS", "CANCELLED"];
+
+const STATUS_LABEL: Record<TaskStatus, string> = {
+  PENDING: "Pending",
+  IN_PROGRESS: "In progress",
+  COMPLETED: "Completed",
+  CANCELLED: "Cancelled",
+};
+
+export interface TaskFormValues {
+  title: string;
+  description: string;
+  due_date: string | null;
+  assignee: string | null;
+  status?: TaskStatus;
+}
+
+interface TaskFormProps {
+  /** Present in edit mode, absent when creating. */
+  task?: TaskDetail;
+  onSubmit: (values: TaskFormValues) => Promise<unknown>;
+  onCancel: () => void;
+}
+
+export function TaskForm({ task, onSubmit, onCancel }: TaskFormProps) {
+  const { user } = useAuth();
+  const isEdit = task !== undefined;
+  // D15/D16: an Operator cannot choose an assignee — on create it defaults to
+  // self, on update it is immutable. Rendering the field would offer a choice
+  // that cannot work, so it is omitted rather than disabled.
+  const canChooseAssignee = user?.role === "SUPERVISOR";
+  const assignable = useAssignableUsers(canChooseAssignee);
+
+  const [title, setTitle] = useState(task?.title ?? "");
+  const [description, setDescription] = useState(task?.description ?? "");
+  const [dueDate, setDueDate] = useState(task?.due_date?.slice(0, 10) ?? "");
+  const [assignee, setAssignee] = useState(task?.assignee?.id ?? "");
+  const [status, setStatus] = useState<TaskStatus>(task?.status ?? "PENDING");
+  const [formError, setFormError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string[]> | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setFormError(null);
+    setFieldErrors(null);
+    setIsSubmitting(true);
+    try {
+      await onSubmit({
+        title,
+        description,
+        due_date: dueDate === "" ? null : new Date(`${dueDate}T12:00:00Z`).toISOString(),
+        assignee: canChooseAssignee ? (assignee === "" ? null : assignee) : null,
+        // A new task is always PENDING, so status is sent in edit mode only.
+        ...(isEdit ? { status } : {}),
+      });
+    } catch (caught) {
+      if (caught instanceof ApiError) {
+        // Distinguished by `code` alone, never by parsing `detail` — which is
+        // exactly why spec §8.7 keeps the two assignee codes separate.
+        if (caught.code === "validation_error") {
+          setFieldErrors(caught.errors);
+          setFormError(null);
+        } else if (caught.code === "assignee_not_assignable") {
+          setFieldErrors({ assignee: [caught.message] });
+        } else {
+          setFormError(caught.message);
+        }
+      } else {
+        setFormError("Could not save. Try again.");
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  return (
+    <form onSubmit={handleSubmit} noValidate aria-label={isEdit ? "Edit task" : "New task"}>
+      <TextField
+        id="title"
+        label="Title"
+        required
+        maxLength={200}
+        value={title}
+        error={fieldErrors?.title?.[0]}
+        onChange={(event) => setTitle(event.target.value)}
+      />
+
+      <div className="mb-4">
+        <label htmlFor="description" className="mb-1 block text-sm font-medium text-slate-700">
+          Description
+        </label>
+        <textarea
+          id="description"
+          rows={4}
+          value={description}
+          onChange={(event) => setDescription(event.target.value)}
+          className="w-full rounded border border-slate-300 px-3 py-2"
+        />
+      </div>
+
+      <TextField
+        id="due_date"
+        label="Due date"
+        type="date"
+        value={dueDate}
+        error={fieldErrors?.due_date?.[0]}
+        onChange={(event) => setDueDate(event.target.value)}
+      />
+
+      {canChooseAssignee && (
+        <div className="mb-4">
+          <label htmlFor="assignee" className="mb-1 block text-sm font-medium text-slate-700">
+            Assignee
+          </label>
+          <select
+            id="assignee"
+            value={assignee}
+            aria-invalid={fieldErrors?.assignee === undefined ? undefined : true}
+            aria-describedby={fieldErrors?.assignee === undefined ? undefined : "assignee-error"}
+            onChange={(event) => setAssignee(event.target.value)}
+            className="w-full rounded border border-slate-300 px-3 py-2"
+          >
+            <option value="">Unassigned</option>
+            {(assignable.data ?? []).map((option) => (
+              <option key={option.id} value={option.id}>
+                {option.first_name} {option.last_name} ({option.email})
+              </option>
+            ))}
+          </select>
+          {fieldErrors?.assignee !== undefined && (
+            <p id="assignee-error" className="mt-1 text-sm text-status-overdue">
+              {fieldErrors.assignee[0]}
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* Edit mode only: TaskCreateSerializer accepts no status field. */}
+      {isEdit && (
+        <div className="mb-4">
+          <label htmlFor="status" className="mb-1 block text-sm font-medium text-slate-700">
+            Status
+          </label>
+          <select
+            id="status"
+            value={status}
+            onChange={(event) => setStatus(event.target.value as TaskStatus)}
+            className="w-full rounded border border-slate-300 px-3 py-2"
+          >
+            {EDITABLE_STATUSES.map((option) => (
+              <option key={option} value={option}>
+                {STATUS_LABEL[option]}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+
+      <FormError message={formError} />
+
+      <div className="flex gap-2">
+        <Button type="submit" disabled={isSubmitting}>
+          {isSubmitting ? "Saving…" : isEdit ? "Save changes" : "Create task"}
+        </Button>
+        <Button variant="secondary" onClick={onCancel}>
+          Cancel
+        </Button>
+      </div>
+    </form>
+  );
+}

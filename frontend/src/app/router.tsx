@@ -11,6 +11,8 @@ import type { AuthState } from "../features/auth/AuthContext";
 import { LoginPage } from "../features/auth/LoginPage";
 import type { Role } from "../features/auth/types";
 import { DashboardPage } from "../features/tasks/DashboardPage";
+import { TaskDetailPage } from "../features/tasks/TaskDetailPage";
+import { TaskCreatePage, TaskEditPage } from "../features/tasks/TaskFormPage";
 import { TaskListPage } from "../features/tasks/TaskListPage";
 import { UserListPage } from "../features/users/UserListPage";
 import { AppShell } from "./layout/AppShell";
@@ -109,12 +111,40 @@ const usersRoute = createRoute({
   beforeLoad: guard("/users"),
 });
 
-// Task 47 and 48 register /tasks/new, /tasks/$taskId, /users/new and
-// /users/$userId here. The static "new" segments must come BEFORE their $id
-// siblings so "new" is never captured as an id.
+// The static "new" segment is registered BEFORE its $taskId sibling, so "new"
+// is never captured as an id.
+const taskCreateRoute = createRoute({
+  getParentRoute: () => shellRoute,
+  path: "/tasks/new",
+  component: TaskCreatePage,
+  beforeLoad: guard("/tasks/new"),
+});
+
+const taskDetailRoute = createRoute({
+  getParentRoute: () => shellRoute,
+  path: "/tasks/$taskId",
+  component: TaskDetailPage,
+  beforeLoad: guard("/tasks/$taskId"),
+});
+
+const taskEditRoute = createRoute({
+  getParentRoute: () => shellRoute,
+  path: "/tasks/$taskId/edit",
+  component: TaskEditPage,
+  beforeLoad: guard("/tasks/$taskId"),
+});
+
 const routeTree = rootRoute.addChildren([
   loginRoute,
-  shellRoute.addChildren([indexRoute, dashboardRoute, tasksRoute, usersRoute]),
+  shellRoute.addChildren([
+    indexRoute,
+    dashboardRoute,
+    tasksRoute,
+    taskCreateRoute,
+    taskDetailRoute,
+    taskEditRoute,
+    usersRoute,
+  ]),
 ]);
 
 /**
