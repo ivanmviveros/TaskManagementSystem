@@ -9,6 +9,7 @@ from typing import Any
 
 from rest_framework import serializers
 
+from apps.core.permissions.classes import may_delete_task
 from apps.core.roles import Role
 from apps.tasks.exceptions import AssigneeImmutableForRole, AssigneeNotAssignable
 from apps.tasks.models import Task, TaskStatus
@@ -19,16 +20,41 @@ from apps.users.serializers import UserMinimalSerializer
 class TaskListSerializer(serializers.ModelSerializer):
     assignee = UserMinimalSerializer(read_only=True)
     is_overdue = serializers.BooleanField(read_only=True)
+    # Reported, not re-derived: the SPA must not offer a delete the backend would
+    # refuse (D27), and a second copy of that rule in the frontend is how the UI
+    # and the API drift. Reads created_by_id, a local column, so no extra query.
+    can_delete = serializers.SerializerMethodField()
+
+    def get_can_delete(self, task) -> bool:
+        request = self.context.get("request")
+        return may_delete_task(getattr(request, "user", None), task)
 
     class Meta:
         model = Task
-        fields = ["id", "title", "status", "due_date", "assignee", "is_overdue", "created_at"]
+        fields = [
+            "id",
+            "title",
+            "status",
+            "due_date",
+            "assignee",
+            "is_overdue",
+            "can_delete",
+            "created_at",
+        ]
 
 
 class TaskDetailSerializer(serializers.ModelSerializer):
     assignee = UserMinimalSerializer(read_only=True)
     created_by = UserMinimalSerializer(read_only=True)
     is_overdue = serializers.BooleanField(read_only=True)
+    # Reported, not re-derived: the SPA must not offer a delete the backend would
+    # refuse (D27), and a second copy of that rule in the frontend is how the UI
+    # and the API drift. Reads created_by_id, a local column, so no extra query.
+    can_delete = serializers.SerializerMethodField()
+
+    def get_can_delete(self, task) -> bool:
+        request = self.context.get("request")
+        return may_delete_task(getattr(request, "user", None), task)
 
     class Meta:
         model = Task
@@ -41,6 +67,7 @@ class TaskDetailSerializer(serializers.ModelSerializer):
             "assignee",
             "created_by",
             "is_overdue",
+            "can_delete",
             "completed_at",
             "created_at",
             "updated_at",

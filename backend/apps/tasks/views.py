@@ -88,7 +88,10 @@ class TaskViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.Gen
         serializer = TaskCreateSerializer(data=request.data, context={"request": request})
         serializer.is_valid(raise_exception=True)
         task = self.get_service().create(data=serializer.validated_data, actor=request.user)
-        return Response(TaskDetailSerializer(task).data, status=status.HTTP_201_CREATED)
+        return Response(
+            TaskDetailSerializer(task, context=self.get_serializer_context()).data,
+            status=status.HTTP_201_CREATED,
+        )
 
     @extend_schema(
         request=TaskUpdateSerializer,
@@ -110,7 +113,7 @@ class TaskViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.Gen
         updated = self.get_service().update(
             task_id=task.pk, data=serializer.validated_data, actor=request.user
         )
-        return Response(TaskDetailSerializer(updated).data)
+        return Response(TaskDetailSerializer(updated, context=self.get_serializer_context()).data)
 
     def destroy(self, request, *args, **kwargs):
         # get_object() runs queryset scoping (404) AND object permissions (403).
@@ -131,7 +134,7 @@ class TaskViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.Gen
         completed_at is always set alongside the status."""
         task = self.get_object()
         completed = self.get_service().complete(task_id=task.pk, actor=request.user)
-        return Response(TaskDetailSerializer(completed).data)
+        return Response(TaskDetailSerializer(completed, context=self.get_serializer_context()).data)
 
     @extend_schema(
         responses=inline_serializer(

@@ -31,6 +31,24 @@ class RolePermission(BasePermission):
         return is_allowed(user.role, resource, view.action)
 
 
+def may_delete_task(user, task) -> bool:
+    """D27 as a predicate, so the rule exists in exactly one place.
+
+    Read by IsTaskCreator (which enforces it) and by the task serializers (which
+    report it, so the SPA never offers a delete the backend would refuse). A
+    second copy of this rule in the serializer is how the UI and the API drift.
+
+    Touches `created_by_id` only — a local column, so reporting it costs no join
+    and no extra query.
+    """
+    if user is None or not user.is_authenticated:
+        return False
+    if user.role != Role.OPERATOR:
+        # A Supervisor may delete any task; an Admin never reaches a task at all.
+        return user.role == Role.SUPERVISOR
+    return task.created_by_id == user.pk
+
+
 class IsTaskCreator(BasePermission):
     """D27: an Operator may delete a task only if they created it as well as
     holding it. Without this an Operator could soft-delete Supervisor-assigned

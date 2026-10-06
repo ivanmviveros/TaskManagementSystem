@@ -18,6 +18,12 @@ export interface TaskListItem {
   due_date: string | null;
   assignee: CurrentUser | null;
   is_overdue: boolean;
+  /**
+   * D27, reported by the API rather than re-derived here. The list payload has
+   * no created_by, so the frontend cannot compute this — and re-deriving an
+   * authorization rule client-side is how the UI and the API drift (F7).
+   */
+  can_delete: boolean;
   created_at: string;
 }
 

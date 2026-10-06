@@ -30,8 +30,11 @@ def test_list_serializer_renders_exactly_the_contracted_fields():
         "due_date",
         "assignee",
         "is_overdue",
+        "can_delete",
         "created_at",
     }
+    # Still no nested created_by: can_delete reports D27 from the local
+    # created_by_id column, so the UI needs no join to hide a refused delete.
     assert "created_by" not in rendered, "joining it would fetch a column nobody reads"
 
 
@@ -47,6 +50,7 @@ def test_detail_serializer_adds_the_detail_only_fields():
         "created_at",
         "description",
         "created_by",
+        "can_delete",
         "completed_at",
         "updated_at",
     }
@@ -146,3 +150,27 @@ def test_title_is_required_and_bounded():
     serializer = TaskCreateSerializer(data={"title": ""}, context=context_for(SupervisorFactory()))
     assert not serializer.is_valid()
     assert "title" in serializer.errors
+
+
+def test_can_delete_mirrors_D27_for_an_operator():
+    """The serializer reports the same rule IsTaskCreator enforces, so the SPA
+    never offers a delete the backend would refuse."""
+    operator = OperatorFactory()
+    own = TaskFactory(created_by=operator, assignee=operator)
+    someone_elses = TaskFactory(assignee=operator)
+
+    assert TaskListSerializer(own, context=context_for(operator)).data["can_delete"] is True
+    assert (
+        TaskListSerializer(someone_elses, context=context_for(operator)).data["can_delete"] is False
+    )
+
+
+def test_can_delete_is_true_for_a_supervisor_on_any_task():
+    supervisor = SupervisorFactory()
+    task = TaskFactory(created_by=OperatorFactory())
+    assert TaskListSerializer(task, context=context_for(supervisor)).data["can_delete"] is True
+
+
+def test_can_delete_is_false_without_a_request():
+    """Schema generation and any context-less render must not claim permission."""
+    assert TaskListSerializer(TaskFactory()).data["can_delete"] is False
