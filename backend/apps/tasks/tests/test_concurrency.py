@@ -7,11 +7,11 @@ import threading
 import pytest
 from django.db import connection
 
-from apps.notifications.dispatchers import NullNotificationDispatcher
 from apps.tasks.models import Task, TaskStatus
 from apps.tasks.repositories import DjangoTaskRepository
 from apps.tasks.services import TaskService
 from apps.tasks.tests.factories import TaskFactory
+from apps.tasks.tests.fakes import RecordingDispatcher
 from apps.users.tests.factories import SupervisorFactory
 
 
@@ -24,9 +24,10 @@ def test_two_concurrent_completions_produce_exactly_one_transition():
 
     def complete():
         barrier.wait()
-        service = TaskService(
-            tasks=DjangoTaskRepository(), notifications=NullNotificationDispatcher()
-        )
+        # A recording fake, not the Celery dispatcher: this test is about the row
+        # lock, and real notification fan-out would add queries and emails that
+        # say nothing about whether the transition serialised.
+        service = TaskService(tasks=DjangoTaskRepository(), notifications=RecordingDispatcher())
         try:
             service.complete(task_id=task.pk, actor=actor)
             outcomes.append("completed")

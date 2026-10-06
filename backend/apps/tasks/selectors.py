@@ -8,6 +8,7 @@ neither of which wants a join at all.
 
 from datetime import timedelta
 from typing import Any
+from uuid import UUID
 
 from django.db.models import Count, Q, QuerySet
 from django.utils import timezone
@@ -44,6 +45,20 @@ def overdue_candidates():
         Task.objects.filter(status__in=OPEN_STATUSES, due_date__lt=timezone.now())
         .values_list("id", "assignee_id", "created_by_id", "created_by__role")
         .iterator()
+    )
+
+
+def notification_target(task_id: UUID) -> tuple[UUID | None, UUID, str] | None:
+    """(assignee_id, created_by_id, created_by__role) for recipient resolution.
+
+    One query, no model instances. Lives here rather than in the dispatcher
+    because spec §16.2 treats a raw ORM call outside a repository or selector as
+    a defect.
+    """
+    return (
+        Task.objects.filter(pk=task_id)
+        .values_list("assignee_id", "created_by_id", "created_by__role")
+        .first()
     )
 
 

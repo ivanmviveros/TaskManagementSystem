@@ -9,7 +9,7 @@ from apps.core.constants import UUID_LOOKUP_REGEX
 from apps.core.ordering import TiebrokenOrderingFilter
 from apps.core.permissions.classes import IsTaskCreator, RolePermission
 from apps.core.permissions.matrix import Resource
-from apps.notifications.dispatchers import NullNotificationDispatcher
+from apps.notifications.dispatchers import CeleryNotificationDispatcher
 from apps.tasks.filters import TaskFilterSet
 from apps.tasks.repositories import DjangoTaskRepository
 from apps.tasks.selectors import scoped_tasks, task_stats
@@ -59,7 +59,7 @@ class TaskViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.Gen
         """The composition root: the only place concrete infrastructure is named."""
         return TaskService(
             tasks=DjangoTaskRepository(),
-            notifications=NullNotificationDispatcher(),  # replaced in Task 37
+            notifications=CeleryNotificationDispatcher(),
         )
 
     def create(self, request, *args, **kwargs):

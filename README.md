@@ -344,6 +344,74 @@ Operator, never an Admin" is a cross-table assertion and not expressible as a
 `CheckConstraint`, so it is enforced in the serializer *and* re-checked in the service, with
 tests at both levels.
 
+### Notifications: who gets told, and when
+
+| Event | Trigger | Recipients |
+|---|---|---|
+| `ASSIGNED` | a task gains an assignee | the new assignee |
+| `DUE_DATE_CHANGED` | `due_date` changes | the assignee |
+| `STATUS_CHANGED` | the status changes, completion included | the assignee **and** the creator |
+| `OVERDUE` | the hourly sweep finds a past-due open task | the assignee **and** the creator |
+
+Title and description edits are **intentionally silent** — they are not worth an email, and
+a test asserts that a title-only PATCH enqueues nothing.
+
+Two filters then apply to every event, in this order:
+
+1. **The read-access gate (D26).** A recipient must currently be able to read the task. An
+   Operator who created a task but no longer holds it is **dropped** — emailing someone
+   about a task they would get a 404 on is confusing and leaks information. A Supervisor
+   creator is kept, because Supervisors see every task. An Admin creator is also dropped
+   (defensively: the API forbids it, but the Django admin and seed data do not, and an
+   Admin can read no task at all under D13). This falls straight out of D14.
+2. **Actor suppression.** Nobody is emailed about their own action. The overdue sweep has
+   no actor, so it suppresses nobody.
+
+Both are pure functions over ids and roles in `apps/notifications/services.py`, so the
+rules are unit-tested with no database, no broker and no email backend.
+
+### The three notification failure modes, and how each is handled
+
+These are the parts most likely to be got wrong, so each is named and tested.
+
+**1. Enqueueing inside a transaction.** Calling `.delay()` inside `transaction.atomic()`
+can deliver the message to a worker *before* the transaction commits — the worker then
+reads a row that does not exist yet, or a pre-update version. So every enqueue goes through
+`transaction.on_commit`, and services enqueue while views never do. The guard is a test
+that rolls the surrounding transaction back and asserts nothing was sent; a later
+contributor adding a bare `.delay()` would break that test and nothing else.
+
+`functools.partial` is used rather than a lambda for the callback, because a lambda in a
+loop captures by reference and every callback would fire with the last iteration's values.
+
+**2. Retries double-sending.** Delivery is made idempotent by a unique `dedupe_key`
+derived from the `django-simple-history` record id:
+`{task_id}:{segment}:{recipient_id}:{history_id}`. Tying the key to the audited change
+means the *next* genuine change is a new email while a retry of the same one is not.
+`NotificationRepository.create_if_absent` owns the whole mechanism, including the
+`IntegrityError` catch — wrapped in its own inner `atomic()` block, because otherwise the
+violation marks the outer transaction broken and every later query raises
+`TransactionManagementError` somewhere unrelated.
+
+One refinement of the spec here, worth stating because it changes behaviour: returning
+`None` for *any* existing key would make `autoretry_for` dead code, since the first attempt
+always inserts the row before sending. So `create_if_absent` returns `None` only when an
+existing row is already `SENT`, and returns the existing row when a previous attempt did
+not complete — the retry can then finish the job. One email per key still holds.
+
+`OVERDUE` keys on the **date** instead of a history id, because there is no change to
+anchor to. The cadence and the dedupe window are deliberately different granularities:
+the sweep runs **hourly** so a task going overdue at 09:15 is emailed by 10:00, while the
+date in the key caps delivery at **one email per task per recipient per day**.
+
+**3. Blind retries.** `autoretry_for` lists `SMTPException` and `ConnectionError` only —
+transport failures, which are worth retrying. A bare `Exception` is **never** retried; a
+test asserts `Exception not in autoretry_for`. The ordering in the send task is what makes
+this work: a transport failure re-raises *before* `mark_failed`, so the row stays `PENDING`
+and `create_if_absent` hands it back on the retry; an unexpected failure marks the row
+`FAILED` and returns, so Celery does not retry a bug. Nothing is swallowed — there is no
+`except Exception: pass` anywhere.
+
 ### D27 — an Operator may delete only a task they created
 
 An Operator can read, update and complete any task **assigned** to them, but may delete one
