@@ -64,3 +64,18 @@ After reviewing specs I need to address the following concerns:
 - Implement uuidv7 for unique ids to improve securiy while keeping index performance
 
 ```
+
+# Task planning
+
+```
+Continue with tasks planning considering DoD and conventions provided in backend/AGENTS.md and frontend/AGENTS.md using /superpowers-extended-cc:writing-plans
+
+```
+
+
+# Executing plan
+
+```
+/superpowers-extended-cc:executing-plans docs/superpowers/plans/2026-10-06-task-management-system.md
+
+```
