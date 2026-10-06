@@ -75,3 +75,44 @@ def test_access_token_authenticates_a_subsequent_request(api_client):
     access = login(api_client, user).data["access"]
     api_client.credentials(HTTP_AUTHORIZATION=f"Bearer {access}")
     assert api_client.get("/api/v1/users/me/").status_code == 200
+
+
+def test_refresh_reads_the_cookie_and_returns_a_new_access_token(api_client):
+    login(api_client, OperatorFactory())
+    response = api_client.post(REFRESH, {}, format="json")
+    assert response.status_code == 200
+    assert response.data["access"]
+    assert "refresh" not in response.data
+
+
+def test_refresh_rotates_the_cookie(api_client):
+    original = login(api_client, OperatorFactory()).cookies[COOKIE].value
+    rotated = api_client.post(REFRESH, {}, format="json").cookies[COOKIE].value
+    assert rotated != original
+
+
+def test_refresh_without_a_cookie_is_401(api_client):
+    response = api_client.post(REFRESH, {}, format="json")
+    assert response.status_code == 401
+    assert response.data["code"] == "refresh_cookie_missing"
+
+
+def test_a_rotated_refresh_token_is_blacklisted(api_client):
+    client_cookie = login(api_client, OperatorFactory()).cookies[COOKIE].value
+    api_client.post(REFRESH, {}, format="json")  # rotates; blacklists the old one
+    api_client.cookies[COOKIE] = client_cookie  # replay the original
+    assert api_client.post(REFRESH, {}, format="json").status_code == 401
+
+
+def test_logout_blacklists_the_token_clears_the_cookie_and_blocks_refresh(api_client):
+    user = OperatorFactory()
+    access = login(api_client, user).data["access"]
+    api_client.credentials(HTTP_AUTHORIZATION=f"Bearer {access}")
+    response = api_client.post(LOGOUT, {}, format="json")
+    assert response.status_code == 204
+    assert response.cookies[COOKIE].value == ""
+    assert api_client.post(REFRESH, {}, format="json").status_code == 401
+
+
+def test_logout_requires_authentication(api_client):
+    assert api_client.post(LOGOUT, {}, format="json").status_code == 401
