@@ -47,7 +47,16 @@ INSTALLED_APPS = [
     # and `compat` stage 1 ships in Task 5.
 ]
 
-INSTALLED_APPS += ["apps.core"]
+INSTALLED_APPS += ["apps.core", "apps.users"]
+
+AUTH_USER_MODEL = "users.User"
+
+# auth.E003 requires USERNAME_FIELD to carry a *total* unique constraint, and
+# Options.total_unique_constraints deliberately excludes partial ones. D21 needs
+# the constraint to be partial so a deleted user's email becomes reusable, so the
+# check cannot be satisfied — only silenced. The guarantee it would have given is
+# covered instead by test_two_live_users_cannot_share_an_email (Task 12).
+SILENCED_SYSTEM_CHECKS = ["auth.E003"]
 
 MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",

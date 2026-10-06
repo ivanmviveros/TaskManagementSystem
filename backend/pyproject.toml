@@ -49,6 +49,10 @@ select = ["E", "F", "I", "UP", "B", "DJ", "C4", "SIM", "RUF"]
 [tool.ruff.lint.per-file-ignores]
 "*/migrations/*" = ["E501", "RUF012"]
 "config/settings/*" = ["F403", "F405"]
+# RUF012 guards against mutable class attributes shared between instances. Django's
+# REQUIRED_FIELDS and Meta.constraints/indexes are read once at class creation and
+# never mutated, so the hazard does not apply — same reason migrations ignore it.
+"apps/*/models.py" = ["RUF012"]
 
 [tool.mypy]
 python_version = "3.14"

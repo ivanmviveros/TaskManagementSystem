@@ -221,3 +221,6 @@ __marimo__/
 
 # Git worktrees (superpowers-extended-cc:using-git-worktrees)
 .worktrees/
+
+# Local-only Compose override (host port collisions, etc.)
+docker-compose.override.yml

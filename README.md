@@ -164,6 +164,55 @@ Its scope is deliberately narrow: endpoint reachability only. The one object-lev
 matrix, because encoding one row-dependent outcome would require a richer value type for
 every other row.
 
+### D20, D21, D22 — soft delete, and why `is_active` survives alongside `deleted_at`
+
+Every domain model (`User`, `Task`) is soft-deleted: deletion is a state change, never a
+row removal, which is what makes the `django-simple-history` audit trail worth having.
+There is no restore endpoint, and soft-deleted rows are invisible to the entire API —
+enforced by making the filtering manager the *default* manager, so no viewset needs its own
+`deleted_at` filter. That removes the single most likely place for a data leak.
+
+`Notification` is the deliberate exception (D20): it is an append-only log that no API
+exposes and no user deletes, so a `deleted_at` column on it would never be anything but
+null.
+
+**D21 — a soft-deleted user's email becomes reusable.** This is why `email` is *not*
+`unique=True`. Uniqueness is a partial index, `UNIQUE(email) WHERE deleted_at IS NULL`, so
+deleting `sam@example.com` frees the address while the audit row keeps it.
+
+**D22 — `is_active` and `deleted_at` are not synonyms.** `is_active` is Django's
+authentication gate; `deleted_at` is the soft-delete marker. Soft deletion sets both, so a
+deleted user cannot log in, but an Admin may deactivate a user *without* deleting them.
+
+Two subtleties that are easy to get wrong and are pinned by tests:
+
+- `Meta.default_manager_name = "objects"` is set explicitly on `User`. Manager order under
+  multiple inheritance is not reliable, and `ModelBackend` authenticates through
+  `User._default_manager.get_by_natural_key()` — if that ever resolved to the unfiltered
+  manager, **a soft-deleted user could still log in**.
+- `Meta.base_manager_name` is deliberately *not* set, so related-object descriptors and
+  `PROTECT` keep seeing deleted rows and behave predictably.
+
+### D24 — email stored lowercase in a plain `EmailField`
+
+Case-insensitive uniqueness without requiring the Postgres `citext` extension and its
+migration. Normalization happens in `UserManager` and again in the serializer, so both the
+API and `createsuperuser` go through it.
+
+### D28 — UUIDv7 primary keys
+
+All primary keys are UUIDv7 via `uuid.uuid7()` from the Python 3.14 standard library (D2),
+so it costs no dependency. Non-sequential ids remove resource enumeration from the API
+surface, while UUIDv7's 48-bit big-endian timestamp prefix keeps inserts append-ordered —
+B-tree index locality stays close to a sequential integer's instead of fragmenting the way
+UUIDv4 would.
+
+The ordering property is the entire point, and it is the one thing a functional test would
+*not* catch: a silent fall-back to `uuid4` would keep every id unique and every other test
+green, losing only index locality. `test_generated_ids_sort_in_creation_order` exists for
+exactly that. Note the caveat: CPython's 42-bit counter orders ids minted in the same
+millisecond **by the same process**; across processes, ordering is millisecond-granular.
+
 ## Deliberate overrides of AGENTS.md
 
 | Override | AGENTS.md says | This project does | Why |
@@ -179,6 +228,20 @@ every other row.
 | simplejwt is a git pin, outside Dependabot and `pip-audit` coverage (D3) | A simplejwt release containing PR #959 ships; move back to PyPI and relax D1 toward Django 6.1. |
 | Django 6.0 is a security-fix-only branch (D1) | Same as above — D1 is gated on D3. |
 | `ruff format` rewrites Python code blocks embedded in Markdown, which would edit the read-only `AGENTS.md` briefs | `AGENTS.md` is in `extend-exclude` in `backend/pyproject.toml`. Remove it only if ruff gains a narrower setting for embedded code. |
+| **`auth.E003` is silenced** in `SILENCED_SYSTEM_CHECKS` — see below | Django's `Options.total_unique_constraints` learns to count partial constraints. Until then the check cannot be satisfied, only silenced. |
+
+### Why `auth.E003` is silenced
+
+This is a security-adjacent check, so it should not be discovered later by reading
+settings. `auth.E003` requires `USERNAME_FIELD` to carry a **total** unique constraint, and
+Django's `Options.total_unique_constraints` deliberately excludes partial ones. D21 needs
+the email constraint to be partial (`WHERE deleted_at IS NULL`) so a deleted user's address
+becomes reusable — so the check is unsatisfiable by construction, not merely inconvenient.
+
+The guarantee it would have given is not abandoned, it is relocated to a test:
+`test_two_live_users_cannot_share_an_email` asserts the `IntegrityError` against real
+Postgres, and `test_a_soft_deleted_users_email_becomes_reusable` asserts the other half.
+A plain `unique=True` would satisfy the checker and break the requirement.
 
 ## GenAI prompt and validation record
 
