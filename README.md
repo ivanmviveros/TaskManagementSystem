@@ -78,6 +78,72 @@ committing stays fast while nothing broken reaches the remote.
 
 ## Architecture
 
+### The capability matrix
+
+The authoritative, machine-readable version is `apps/core/permissions/matrix.py`. This table
+mirrors it — and `apps/core/tests/test_permission_matrix_api.py` drives a parametrized
+request against **every cell**, reading the same data `RolePermission` reads at request
+time, so the rules and their enforcement cannot drift apart. A matrix row added without a
+corresponding request definition fails a test rather than going silently untested.
+
+| Endpoint | Admin | Supervisor | Operator | Unauthenticated |
+|---|---|---|---|---|
+| `POST /auth/login/` | allowed | allowed | allowed | allowed |
+| `POST /auth/refresh/` | allowed | allowed | allowed | allowed (cookie) |
+| `POST /auth/logout/` | allowed | allowed | allowed | 401 |
+| `GET /users/me/` | allowed (minimal) | allowed (minimal) | allowed (minimal) | 401 |
+| `GET /users/` | allowed (full) | **allowed (read-only, minimal)** | **403** | 401 |
+| `POST /users/` | allowed | **403** | **403** | 401 |
+| `GET /users/{id}/` | allowed (full) | allowed (minimal) | **403** | 401 |
+| `PATCH /users/{id}/` | allowed | **403** | **403** | 401 |
+| `DELETE /users/{id}/` | allowed (soft) | **403** | **403** | 401 |
+| `GET /tasks/` | **403** | allowed (all) | allowed (`assignee = me`) | 401 |
+| `POST /tasks/` | **403** | allowed (any valid assignee) | allowed (**self-assigned only**) | 401 |
+| `GET /tasks/{id}/` | **403** | allowed | own, else **404** | 401 |
+| `PATCH /tasks/{id}/` | **403** | allowed (incl. `assignee`) | own, **`assignee` immutable** | 401 |
+| `DELETE /tasks/{id}/` | **403** | allowed (soft) | **only if `created_by = me` too** (soft), else **403** | 401 |
+| `POST /tasks/{id}/complete/` | **403** | allowed | own | 401 |
+| `GET /tasks/stats/` | **403** | allowed (global) | allowed (own) | 401 |
+
+Three consequences worth stating outright, because each is unusual:
+
+1. **An Admin has no task surface whatsoever** — every `/tasks/*` route is 403, `stats/`
+   included. An Admin therefore has no dashboard at all; their landing page is user
+   management. Account administration and operational data stay separated.
+2. **A Supervisor's user access is a different serializer, not a flag.** The minimal shape
+   exposes `id`, `email`, `first_name`, `last_name`, `role` — enough for an assignee picker
+   and to show who holds a task. `is_active`, `is_staff`, `date_joined` and `last_login`
+   stay Admin-only, and write methods are refused at the permission layer before
+   serialization ever happens.
+3. **403 vs 404 is role-dependent and deliberate.** An Admin hitting `/tasks/{id}/` gets
+   **403** — the role has no business with that resource type. An Operator hitting another
+   Operator's task gets **404** — the type is theirs, that instance is not, and 403 would
+   confirm the row exists. Because this falls out of queryset scoping, list and detail
+   cannot disagree.
+
+### Layering, and how the dependency direction is enforced
+
+Requests flow **views → serializers → services → repositories**, with selectors owning
+reusable reads. A service never touches the ORM; a repository never holds a workflow;
+neither knows about `request` or HTTP status codes.
+
+D8a makes the dependency rule structural rather than conventional: each repository is a
+`@runtime_checkable` `Protocol` whose members are all `@abstractmethod`, implementations
+inherit it explicitly, and **the DRF viewset is the composition root** — the only place a
+concrete `Django*Repository` is ever named. So `services.py` imports `TaskRepository` and
+never `DjangoTaskRepository`, and a reviewer can verify the rule by reading the imports.
+
+`apps/core/tests/test_layering.py` asserts it instead of trusting it: the service modules
+name no `Django*Repository`, contain no `.objects.` manager access, and the views do name
+the concrete classes. The ORM check is a coarse text scan, chosen deliberately — it is
+cheap, has no false negatives for the pattern that matters, and the alternative is an
+import-graph dependency for one rule.
+
+Why `Protocol` rather than a plain `ABC`, given the explicit inheritance and
+`@abstractmethod` make it look like one: a test fake conforms **without inheriting**, so
+`test_the_test_fake_conforms_to_the_same_protocol` catches a fake drifting from a signature
+the production repository no longer has — which nothing else would catch.
+
 ## Key implementation decisions
 
 Full rationale for each is in the design spec's decision log (§3).
