@@ -9,6 +9,7 @@ from apps.users.models import User
 class FakeUserRepository:
     def __init__(self, users: list[User] | None = None):
         self._users = {u.pk: u for u in (users or [])}
+        self.saved: list[User] = []
         self.deleted: list[User] = []
 
     def get(self, user_id: UUID) -> User | None:
@@ -26,6 +27,7 @@ class FakeUserRepository:
 
     def save(self, user: User) -> User:
         self._users[user.pk] = user
+        self.saved.append(user)
         return user
 
     def soft_delete(self, user: User, *, by: User) -> None:

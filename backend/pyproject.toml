@@ -68,8 +68,25 @@ files = ["apps"]
 [tool.pytest.ini_options]
 DJANGO_SETTINGS_MODULE = "config.settings.test"
 python_files = ["test_*.py"]
-addopts = "--strict-markers --cov=apps --cov-report=term-missing"
+# The gate is 80 per spec §12.1, not the 100 the suite currently reaches: it is a
+# floor that must not be crossed, not a target that forbids ever adding code
+# ahead of its test within a single commit.
+addopts = "--strict-markers --cov=apps --cov-report=term-missing --cov-fail-under=80"
 
 [tool.coverage.run]
 source = ["apps"]
 omit = ["*/migrations/*", "*/tests/*", "*/__init__.py"]
+
+[tool.coverage.report]
+# Excluded because a test over them would assert nothing about behaviour, not
+# because they are inconvenient. Every error path, guard and business branch is
+# tested instead — see apps/core/tests/test_error_paths.py.
+exclude_also = [
+    # Debug reprs. A test would restate the f-string.
+    "def __str__\\(self\\)",
+    # Protocol members: the bodies are `...`, and conformance is asserted
+    # structurally by the isinstance tests in each test_repositories module.
+    "@abstractmethod",
+    # Unreachable at runtime; present for the type checker only.
+    "if TYPE_CHECKING:",
+]
