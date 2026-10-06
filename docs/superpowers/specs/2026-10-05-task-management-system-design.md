@@ -27,7 +27,21 @@ This document is the single source of truth for the design. It is written to be 
 
 Explicitly out of scope: multi-tenancy/organizations, task comments or attachments, real-time updates (websockets/SSE), task hierarchies or dependencies, in-app notification inbox, password reset by email, social/SSO login, production deployment infrastructure (Compose covers local development only), and internationalization.
 
-### 1.3 Project context
+### 1.3 User story
+
+The "why" the rest of this document answers to:
+
+> **As** a supervisor responsible for a team's workload, **I need** to create tasks, assign them to the right operator, and see at a glance what is overdue or unfinished, **so that** nothing silently slips past its due date.
+>
+> **As** an operator, **I need** to see only the work actually assigned to me and move it through to completion, **so that** my queue is unambiguous and I cannot be distracted by, or interfere with, anyone else's work.
+>
+> **As** an administrator, **I need** to manage who exists in the system and what they are allowed to do, **without** being able to read or alter the work itself, **so that** account administration and operational data stay separated.
+
+The third clause is the one that shapes the architecture. It is why the permission matrix in §7 is strict rather than hierarchical, why an Admin is 403 on every `/tasks/*` route, and why that matrix is machine-readable data (D11) rather than scattered `if` statements — a separation this deliberate is worth being able to prove, not just assert.
+
+Supporting narrative: a task assigned to an operator emails them; one that passes its due date while still open emails both operator and supervisor; and every change stays recoverable from the audit trail, because people who assign work need to be able to answer "who changed this, and when".
+
+### 1.4 Project context
 
 Three `AGENTS.md` files already govern this repository and take precedence over generic convention:
 
@@ -56,7 +70,7 @@ Every non-obvious decision, with its rationale. This section is the basis for th
 | D1 | **Django `>=6.0,<6.1`** | The newest Django that *every* dependency actually tests against. DRF 3.18.1, django-simple-history 3.13.0 and django-filter 26.2 cover 6.0 and 6.1, but simplejwt@master and drf-spectacular 0.30.0 stop at 6.0. Pinning 6.0 leaves zero untested combinations while satisfying the "Django 6+" requirement. Trade-off: 6.0 left mainstream support when 6.1 shipped (Aug 2026), so it is a security-fix-only branch. |
 | D2 | **Python `>=3.14`, Docker image `python:3.14-slim`** | Django 6.0 officially supports 3.12, 3.13 and 3.14. **3.14 is a hard floor, not a preference: `uuid.uuid7()` entered the standard library in 3.14** (D28), so anything lower would need a third-party UUIDv7 package. Directly verified for the two packages already carrying support risk: drf-spectacular 0.30.0 classifies 3.14, and the simplejwt commit pinned in D3 is the very commit that added Python 3.14 support. The remainder (DRF, django-simple-history, django-filter, Celery, psycopg, factory_boy) is **not** individually verified here — instead, `compat` stage 1 (§13) is the guard: `uv sync` fails outright if any dependency caps below 3.14, and it runs on day one before anything is built on the stack. Targeting the newest Python release is the least-evidenced link in an otherwise matrix-driven dependency story, which is why it gets a §16.1 row. |
 | D3 | **simplejwt installed from git, pinned to commit `a7cb077ea0809f78cc6a99cb6825ab7594eae627`** | PyPI 5.5.1 (Jul 2025) predates PR #959 ("feat: add django 6.0 and python 3.14 support", merged 9 Feb 2026), which adds the Django 6.0 test matrix and replaces deprecated `pkg_resources` with `importlib.metadata`. Master therefore supports Django 6.0; the released package does not. |
-| D4 | **drf-spectacular 0.30.0 instead of drf-yasg** | drf-yasg 1.21.17 still caps its classifiers at Django 5.2 and emits OpenAPI 2.0 only. drf-spectacular classifies Django 6.0, emits OpenAPI 3.0.3/3.1/3.2, and is actively maintained. Sanctioned by `backend §35`, which names either tool. Overrides the original brief's nomination of drf-yasg. |
+| D4 | **drf-spectacular 0.30.0 instead of drf-yasg** | drf-yasg 1.21.17 still caps its classifiers at Django 5.2 and emits OpenAPI 2.0 only. drf-spectacular classifies Django 6.0, emits OpenAPI 3.0.3/3.1/3.2, and is actively maintained. Sanctioned by `backend §35`, which names either tool. Overrides the original brief's nomination of drf-yasg — and costs nothing to anyone expecting Swagger, since drf-spectacular serves a Swagger UI at `/api/v1/schema/swagger-ui/` alongside ReDoc. |
 | D5 | **uv as package manager**, `pyproject.toml` + committed `uv.lock` | Required by the brief; `backend §44a` permits uv or Poetry, one consistently. |
 | D6 | **No `django-safedelete`**; soft delete is roughly 40 owned lines | Avoids a third dependency carrying Django 6 lag risk, and its manager semantics would need our own tests regardless. |
 | D7 | **No frontend charting library** | The dashboard presents six numbers: four status counts, an overdue total and a due-soon total (§11.5). Stat tiles and a CSS-grid distribution bar satisfy that without adding Recharts. Trivially swappable later. |
@@ -1231,6 +1245,11 @@ A dependency-driven sequence for the implementation plan. `apps.users` must come
 | 12 | `README.md`, mermaid diagrams, CI finalisation |
 | 13 | Persist insights to `claude-insights/` |
 
+**Two documentation artifacts are written continuously, not in phase 12.** Both record *what happened*, and neither can be reconstructed honestly once the work is behind you:
+
+- **`README.md` is created in phase 1 and grown each phase.** A README written at the end documents what its author remembers; one grown alongside the work documents what was actually decided, while the reasoning is still fresh. Phase 1 commits the skeleton with setup instructions, each phase appends the decisions it realised, and phase 12 polishes and fills in demo credentials.
+- **`docs-external/PROMPT-LOGS.md` is appended to as the work happens.** Root `AGENTS.md` §7 requires the README to cover the prompts used with GenAI tooling and how their output was validated or corrected. That is a record of events — which prompts were actually issued, which suggestions were wrong, what had to be fixed — so it is kept as the events occur. Phase 12 draws on the log rather than inventing it.
+
 Two ordering constraints that are not obvious from the phase names:
 
 - **`Role` must exist before the permission matrix.** The matrix is built in phase 2 but `Role` would naturally live with the user model in phase 3 — and a shared app importing a feature app inverts the layering D10 exists to protect. `Role` therefore lives in `apps/core/roles.py` and `apps.users.models` imports it, keeping the dependency direction feature -> shared (§6.2).
@@ -1279,7 +1298,7 @@ Two ordering constraints that are not obvious from the phase names:
 - [ ] `docker-compose.yml` with six services, plus backend and frontend Dockerfiles
 - [ ] `seed_demo_data` with representative data and documented credentials
 - [ ] GitHub Actions: `lint`, `compat`, `backend`, `frontend`, with a matching pre-commit config
-- [ ] `README.md`: setup, decision log (§3), demo credentials, GenAI prompt log reference
+- [ ] `README.md` (begun in phase 1, grown each phase): setup, decision log (§3), demo credentials, and the GenAI prompt/validation record root `AGENTS.md` §7 requires
 - [ ] Mermaid diagrams: container architecture, ERD, status state machine, auth sequence, notification flow
 - [ ] Insights persisted to `claude-insights/`
 
