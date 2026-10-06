@@ -76,6 +76,34 @@ committing stays fast while nothing broken reaches the remote.
 
 ## Demo credentials
 
+One command populates the database with representative data, so filtering, pagination, the
+overdue sweep and the dashboard all have subjects on the first run — there is no need to
+create users and tasks by hand before evaluating anything.
+
+```bash
+docker compose exec backend python manage.py seed_demo_data
+```
+
+| Email | Role | Name |
+|---|---|---|
+| `admin@demo.local` | Admin | Ada Admin |
+| `supervisor@demo.local` | Supervisor | Sam Supervisor |
+| `operator@demo.local` | Operator | Omar Operator |
+| `operator2@demo.local` | Operator | Olga Operator |
+| `operator3@demo.local` | Operator | Otto Operator |
+
+The password for every demo account is **`DemoPass!2026`**.
+
+Three Operators exist because one would make the assignee picker and the "reassign" flows
+untestable. The seed creates **45 tasks**, which is more than two pages at the default page
+size of 20, so pagination is visible immediately. Statuses cycle through all four, and due
+dates deliberately straddle "now" — some days overdue, some within the next seven days,
+some far future, some with no deadline at all — so the `overdue` filter, the
+`due_next_7_days` tile and the hourly sweep each have matching rows straight away.
+
+The command is **idempotent** (running it twice changes nothing) and **refuses to run under
+production settings**, so demo credentials cannot be seeded into a production-like profile.
+
 ## Architecture
 
 ### The capability matrix
