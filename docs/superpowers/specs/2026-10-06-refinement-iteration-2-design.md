@@ -222,7 +222,9 @@ asserting the task log line contains no submitted value is added in §6.1.
 
 ### 3.4 Output DTO
 
-`task_stats()` returns `TaskStatsOutput` instead of `dict[str, Any]`:
+`task_stats()` returns `TaskStatsOutput` instead of `dict[str, Any]` — which also makes
+`selectors.py`'s `from typing import Any` unused, so the import must go or ruff's `F401` fails
+the commit:
 
 ```python
 class TaskStatsOutput(BaseModel):
@@ -310,10 +312,19 @@ The caller never handles the token itself: `refreshSession()` reuses the existin
 named differently on purpose — `refreshSession` in `api-client.ts`, `restoreSession` in
 `auth-service.ts` — so the wrapper does not shadow its own import.
 
+Counted per bootstrap invocation, which is what the tests measure — `renderApp()` does not
+wrap in `StrictMode`, so a test sees one bootstrap:
+
 | Path | Today | After |
 |---|---|---|
-| Anonymous visitor | 3 failed requests | **1** failed request |
-| Returning user, post-reload | 1 failed, 2 ok | **0** failed, 2 ok |
+| Anonymous visitor | 1 failed (`/users/me/`) | **1** failed (the refresh) |
+| Returning user, post-reload | 1 failed, 1 ok | **0** failed, 2 ok |
+
+In the dev browser `StrictMode` doubles the bootstrap, so today's anonymous visitor sees the
+three failures §4.1 triages and a returning user sees two. After the change the anonymous
+count halves to one, because §4.3.1 deduplicates the refresh; `fetchCurrentUser()` is *not*
+deduplicated, so a returning user still issues it twice. That is harmless — both succeed — but
+it is why the dev numbers are not simply double the table above.
 
 ### 4.3.1 The bootstrap refresh must be deduplicated explicitly
 
@@ -385,7 +396,7 @@ keeps the override burden on the handful of tests that genuinely care.
 |---|---|
 | `src/test/msw-handlers.ts` | **add** the default `POST /auth/refresh/` → `{access}` |
 | `app/layout/AppShell.test.tsx` | its refresh handler returns 401 unconditionally; make it session-aware like its `/users/me/` handler, or its signed-in tests bootstrap to `user = null` and route to `/login` |
-| `features/auth/auth-routing.test.tsx` | `meAs()` overrides only `/users/me/`; it must also assert a session for the signed-in roles |
+| `features/auth/auth-routing.test.tsx` | `meAs()` overrides only `/users/me/` and registers no refresh handler, so it has the same shape as the five rows below — its signed-in tests pass once the default exists, and its one anonymous test already registers its own 401. Confirm, do not assume |
 | `features/dashboard/StatsPage.test.tsx` | relies on the default; covered once the default exists — confirm, do not assume |
 | `features/tasks/TaskListPage.test.tsx` | as above |
 | `features/tasks/TaskForm.test.tsx` | as above |
@@ -408,7 +419,12 @@ python manage.py seed_demo_data --users 25 --tasks 300
 - **`--users N`** (default `0`) adds N randomly-named users on top of the five fixed accounts,
   which stay exactly as documented. Roughly one in four is a Supervisor, the rest Operators,
   so the assignee picker has variety and D27 has subjects.
-- **`--tasks M`** (default `45`) ensures at least M tasks exist.
+- **`--tasks M`** (default `45`) ensures at least M tasks exist. This **replaces an existing
+  early return**: `_seed_tasks` currently opens with `if Task.objects.exists(): return` —
+  "seeded once" — so the guard becomes "ensure at least M". The visible consequence is that a
+  default run against a database whose tasks were partly deleted now refills to 45, where today
+  it does nothing. That is the intended behaviour of a top-up, but it is a behaviour change the
+  default run inherits, not only the new flags.
 - **Both are top-up** (D33): re-running with the same numbers changes nothing; raising one adds
   the difference. Neither deletes anything.
 - **`admin@demo.local` stays fixed** so you can always sign in and discover the generated
@@ -532,6 +548,12 @@ Two practical notes, since this is the repository's **first** shell script — t
 | Bootstrap | a valid refresh cookie restores the session with no failed request |
 | Bootstrap | a failed refresh leaves `user = null` and routes to `/login` |
 | Bootstrap | **two concurrent bootstraps issue one refresh** — the StrictMode case from §4.3.1, which rotation plus blacklisting would otherwise turn into a spurious logout |
+
+The dedup assertion needs its mechanism stated, or it will be written as a tautology:
+`render-app.tsx` does **not** wrap in `StrictMode` (only `src/main.tsx` does), so `renderApp()`
+alone can never produce a second bootstrap. Either wrap that one render in `StrictMode`, or
+call `refreshSession()` twice concurrently and count the requests msw received. Prove the guard
+can fail by removing it, as with the existing single-flight test.
 | Users table | the table renders at `md`+, and a `UserCard` per user exists for narrow viewports |
 | Users table | existing assertions scoped with `within(table)` still pass |
 
