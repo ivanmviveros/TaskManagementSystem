@@ -17,59 +17,506 @@
     "13": "Persist insights"
   },
   "tasks": [
-    {"id": 1, "phase": 1, "subject": "Task 1: Backend project metadata and the git-pinned dependency set", "status": "pending", "blockedBy": []},
-    {"id": 2, "phase": 1, "subject": "Task 2: Django project and the settings split", "status": "pending", "blockedBy": [1]},
-    {"id": 3, "phase": 1, "subject": "Task 3: ruff, mypy, and pre-commit parity", "status": "pending", "blockedBy": [2]},
-    {"id": 4, "phase": 1, "subject": "Task 4: Docker Compose and the backend image", "status": "pending", "blockedBy": [2]},
-    {"id": 5, "phase": 1, "subject": "Task 5: CI workflow — the lint job and compat stage 1", "status": "pending", "blockedBy": [3]},
-    {"id": 6, "phase": 1, "subject": "Task 6: README skeleton", "status": "pending", "blockedBy": [2]},
-    {"id": 7, "phase": 2, "subject": "Task 7: apps/core app with the UUIDv7 and timestamp base models", "status": "pending", "blockedBy": [2]},
-    {"id": 8, "phase": 2, "subject": "Task 8: Soft-delete base model and manager", "status": "pending", "blockedBy": [7]},
-    {"id": 9, "phase": 2, "subject": "Task 9: Roles, pagination, ordering, and throttle scopes", "status": "pending", "blockedBy": [7]},
-    {"id": 10, "phase": 2, "subject": "Task 10: The single error contract", "status": "pending", "blockedBy": [7]},
-    {"id": 11, "phase": 2, "subject": "Task 11: The permission matrix and RolePermission", "status": "pending", "blockedBy": [9]},
-    {"id": 12, "phase": 3, "subject": "Task 12: The custom User model", "status": "pending", "blockedBy": [8, 11]},
-    {"id": 13, "phase": 3, "subject": "Task 13: UserRepository — the Protocol and its Django implementation", "status": "pending", "blockedBy": [12]},
-    {"id": 14, "phase": 3, "subject": "Task 14: User selectors and UserService", "status": "pending", "blockedBy": [13]},
-    {"id": 15, "phase": 3, "subject": "Task 15: User serializers", "status": "pending", "blockedBy": [12]},
-    {"id": 16, "phase": 3, "subject": "Task 16: UserViewSet, /users/me/, and the composition root", "status": "pending", "blockedBy": [14, 15, 10]},
-    {"id": 17, "phase": 3, "subject": "Task 17: The backend CI job", "status": "pending", "blockedBy": [16, 5]},
-    {"id": 18, "phase": 4, "subject": "Task 18: Cookie-based login", "status": "pending", "blockedBy": [16]},
-    {"id": 19, "phase": 4, "subject": "Task 19: Refresh and logout", "status": "pending", "blockedBy": [18]},
-    {"id": 20, "phase": 4, "subject": "Task 20: CORS, CSRF, and compat stage 2", "status": "pending", "blockedBy": [19, 17]},
-    {"id": 21, "phase": 5, "subject": "Task 21: The Task model, its check constraint and its partial indexes", "status": "pending", "blockedBy": [12]},
-    {"id": 22, "phase": 5, "subject": "Task 22: TaskRepository — Protocol and implementation", "status": "pending", "blockedBy": [21]},
-    {"id": 23, "phase": 5, "subject": "Task 23: Task selectors — scoping, the sweep candidate query, and stats", "status": "pending", "blockedBy": [21]},
-    {"id": 24, "phase": 5, "subject": "Task 24: Task errors and the notification dispatcher contract", "status": "pending", "blockedBy": [21, 10]},
-    {"id": 25, "phase": 5, "subject": "Task 25: TaskService — the single write path", "status": "pending", "blockedBy": [22, 23, 24]},
-    {"id": 26, "phase": 5, "subject": "Task 26: Task serializers", "status": "pending", "blockedBy": [21, 24, 15]},
-    {"id": 27, "phase": 5, "subject": "Task 27: TaskFilterSet", "status": "pending", "blockedBy": [21]},
-    {"id": 28, "phase": 5, "subject": "Task 28: TaskViewSet, complete/, stats/, and the query-count guards", "status": "pending", "blockedBy": [25, 26, 27]},
-    {"id": 29, "phase": 5, "subject": "Task 29: Concurrency — two simultaneous completions", "status": "pending", "blockedBy": [28]},
-    {"id": 30, "phase": 6, "subject": "Task 30: IsTaskCreator — D27", "status": "pending", "blockedBy": [28]},
-    {"id": 31, "phase": 6, "subject": "Task 31: Admin has no task surface", "status": "pending", "blockedBy": [28]},
-    {"id": 32, "phase": 6, "subject": "Task 32: The matrix-driven suite and the dependency-direction test", "status": "pending", "blockedBy": [30, 31]},
-    {"id": 33, "phase": 7, "subject": "Task 33: The Notification model", "status": "pending", "blockedBy": [21]},
-    {"id": 34, "phase": 7, "subject": "Task 34: NotificationRepository.create_if_absent", "status": "pending", "blockedBy": [33]},
-    {"id": 35, "phase": 7, "subject": "Task 35: Recipient resolution and dedupe keys — pure functions", "status": "pending", "blockedBy": [33]},
-    {"id": 36, "phase": 7, "subject": "Task 36: Celery app, email rendering, and the send task", "status": "pending", "blockedBy": [34, 35]},
-    {"id": 37, "phase": 7, "subject": "Task 37: Wire the dispatcher into the composition root", "status": "pending", "blockedBy": [36, 28]},
-    {"id": 38, "phase": 7, "subject": "Task 38: The overdue sweep", "status": "pending", "blockedBy": [37, 23]},
-    {"id": 39, "phase": 8, "subject": "Task 39: seed_demo_data", "status": "pending", "blockedBy": [21]},
-    {"id": 40, "phase": 8, "subject": "Task 40: drf-spectacular and compat stage 3", "status": "pending", "blockedBy": [28, 20]},
-    {"id": 41, "phase": 9, "subject": "Task 41: Vite, TypeScript, Tailwind", "status": "pending", "blockedBy": [4]},
-    {"id": 42, "phase": 9, "subject": "Task 42: The API client", "status": "pending", "blockedBy": [41]},
-    {"id": 43, "phase": 9, "subject": "Task 43: Auth context, router, and role guards", "status": "pending", "blockedBy": [42]},
-    {"id": 44, "phase": 9, "subject": "Task 44: The login screen and the frontend CI job", "status": "pending", "blockedBy": [43]},
-    {"id": 45, "phase": 10, "subject": "Task 45: The tasks data layer", "status": "pending", "blockedBy": [44]},
-    {"id": 46, "phase": 10, "subject": "Task 46: The task list", "status": "pending", "blockedBy": [45]},
-    {"id": 47, "phase": 10, "subject": "Task 47: Task create, edit, and completion", "status": "pending", "blockedBy": [45]},
-    {"id": 48, "phase": 10, "subject": "Task 48: User CRUD (Admin)", "status": "pending", "blockedBy": [44]},
-    {"id": 49, "phase": 10, "subject": "Task 49: The statistics dashboard", "status": "pending", "blockedBy": [45]},
-    {"id": 50, "phase": 11, "subject": "Task 50: Remaining frontend tests", "status": "pending", "blockedBy": [46, 47, 48, 49]},
-    {"id": 51, "phase": 11, "subject": "Task 51: Backend coverage to 80% and the gate", "status": "pending", "blockedBy": [32, 38, 39, 40, 29]},
-    {"id": 52, "phase": 12, "subject": "Task 52: README.md, the diagrams, and the final CI pass", "status": "pending", "blockedBy": [50, 51]},
-    {"id": 53, "phase": 13, "subject": "Task 53: Write the insights to claude-insights/", "status": "pending", "blockedBy": [52]}
+    {
+      "id": 1,
+      "phase": 1,
+      "subject": "Task 1: Backend project metadata and the git-pinned dependency set",
+      "status": "completed",
+      "blockedBy": []
+    },
+    {
+      "id": 2,
+      "phase": 1,
+      "subject": "Task 2: Django project and the settings split",
+      "status": "completed",
+      "blockedBy": [
+        1
+      ]
+    },
+    {
+      "id": 3,
+      "phase": 1,
+      "subject": "Task 3: ruff, mypy, and pre-commit parity",
+      "status": "completed",
+      "blockedBy": [
+        2
+      ]
+    },
+    {
+      "id": 4,
+      "phase": 1,
+      "subject": "Task 4: Docker Compose and the backend image",
+      "status": "completed",
+      "blockedBy": [
+        2
+      ]
+    },
+    {
+      "id": 5,
+      "phase": 1,
+      "subject": "Task 5: CI workflow \u2014 the lint job and compat stage 1",
+      "status": "completed",
+      "blockedBy": [
+        3
+      ]
+    },
+    {
+      "id": 6,
+      "phase": 1,
+      "subject": "Task 6: README skeleton",
+      "status": "completed",
+      "blockedBy": [
+        2
+      ]
+    },
+    {
+      "id": 7,
+      "phase": 2,
+      "subject": "Task 7: apps/core app with the UUIDv7 and timestamp base models",
+      "status": "completed",
+      "blockedBy": [
+        2
+      ]
+    },
+    {
+      "id": 8,
+      "phase": 2,
+      "subject": "Task 8: Soft-delete base model and manager",
+      "status": "completed",
+      "blockedBy": [
+        7
+      ]
+    },
+    {
+      "id": 9,
+      "phase": 2,
+      "subject": "Task 9: Roles, pagination, ordering, and throttle scopes",
+      "status": "completed",
+      "blockedBy": [
+        7
+      ]
+    },
+    {
+      "id": 10,
+      "phase": 2,
+      "subject": "Task 10: The single error contract",
+      "status": "completed",
+      "blockedBy": [
+        7
+      ]
+    },
+    {
+      "id": 11,
+      "phase": 2,
+      "subject": "Task 11: The permission matrix and RolePermission",
+      "status": "completed",
+      "blockedBy": [
+        9
+      ]
+    },
+    {
+      "id": 12,
+      "phase": 3,
+      "subject": "Task 12: The custom User model",
+      "status": "completed",
+      "blockedBy": [
+        8,
+        11
+      ]
+    },
+    {
+      "id": 13,
+      "phase": 3,
+      "subject": "Task 13: UserRepository \u2014 the Protocol and its Django implementation",
+      "status": "completed",
+      "blockedBy": [
+        12
+      ]
+    },
+    {
+      "id": 14,
+      "phase": 3,
+      "subject": "Task 14: User selectors and UserService",
+      "status": "completed",
+      "blockedBy": [
+        13
+      ]
+    },
+    {
+      "id": 15,
+      "phase": 3,
+      "subject": "Task 15: User serializers",
+      "status": "completed",
+      "blockedBy": [
+        12
+      ]
+    },
+    {
+      "id": 16,
+      "phase": 3,
+      "subject": "Task 16: UserViewSet, /users/me/, and the composition root",
+      "status": "completed",
+      "blockedBy": [
+        14,
+        15,
+        10
+      ]
+    },
+    {
+      "id": 17,
+      "phase": 3,
+      "subject": "Task 17: The backend CI job",
+      "status": "completed",
+      "blockedBy": [
+        16,
+        5
+      ]
+    },
+    {
+      "id": 18,
+      "phase": 4,
+      "subject": "Task 18: Cookie-based login",
+      "status": "completed",
+      "blockedBy": [
+        16
+      ]
+    },
+    {
+      "id": 19,
+      "phase": 4,
+      "subject": "Task 19: Refresh and logout",
+      "status": "completed",
+      "blockedBy": [
+        18
+      ]
+    },
+    {
+      "id": 20,
+      "phase": 4,
+      "subject": "Task 20: CORS, CSRF, and compat stage 2",
+      "status": "completed",
+      "blockedBy": [
+        19,
+        17
+      ]
+    },
+    {
+      "id": 21,
+      "phase": 5,
+      "subject": "Task 21: The Task model, its check constraint and its partial indexes",
+      "status": "completed",
+      "blockedBy": [
+        12
+      ]
+    },
+    {
+      "id": 22,
+      "phase": 5,
+      "subject": "Task 22: TaskRepository \u2014 Protocol and implementation",
+      "status": "completed",
+      "blockedBy": [
+        21
+      ]
+    },
+    {
+      "id": 23,
+      "phase": 5,
+      "subject": "Task 23: Task selectors \u2014 scoping, the sweep candidate query, and stats",
+      "status": "completed",
+      "blockedBy": [
+        21
+      ]
+    },
+    {
+      "id": 24,
+      "phase": 5,
+      "subject": "Task 24: Task errors and the notification dispatcher contract",
+      "status": "completed",
+      "blockedBy": [
+        21,
+        10
+      ]
+    },
+    {
+      "id": 25,
+      "phase": 5,
+      "subject": "Task 25: TaskService \u2014 the single write path",
+      "status": "completed",
+      "blockedBy": [
+        22,
+        23,
+        24
+      ]
+    },
+    {
+      "id": 26,
+      "phase": 5,
+      "subject": "Task 26: Task serializers",
+      "status": "completed",
+      "blockedBy": [
+        21,
+        24,
+        15
+      ]
+    },
+    {
+      "id": 27,
+      "phase": 5,
+      "subject": "Task 27: TaskFilterSet",
+      "status": "completed",
+      "blockedBy": [
+        21
+      ]
+    },
+    {
+      "id": 28,
+      "phase": 5,
+      "subject": "Task 28: TaskViewSet, complete/, stats/, and the query-count guards",
+      "status": "completed",
+      "blockedBy": [
+        25,
+        26,
+        27
+      ]
+    },
+    {
+      "id": 29,
+      "phase": 5,
+      "subject": "Task 29: Concurrency \u2014 two simultaneous completions",
+      "status": "completed",
+      "blockedBy": [
+        28
+      ]
+    },
+    {
+      "id": 30,
+      "phase": 6,
+      "subject": "Task 30: IsTaskCreator \u2014 D27",
+      "status": "completed",
+      "blockedBy": [
+        28
+      ]
+    },
+    {
+      "id": 31,
+      "phase": 6,
+      "subject": "Task 31: Admin has no task surface",
+      "status": "completed",
+      "blockedBy": [
+        28
+      ]
+    },
+    {
+      "id": 32,
+      "phase": 6,
+      "subject": "Task 32: The matrix-driven suite and the dependency-direction test",
+      "status": "completed",
+      "blockedBy": [
+        30,
+        31
+      ]
+    },
+    {
+      "id": 33,
+      "phase": 7,
+      "subject": "Task 33: The Notification model",
+      "status": "completed",
+      "blockedBy": [
+        21
+      ]
+    },
+    {
+      "id": 34,
+      "phase": 7,
+      "subject": "Task 34: NotificationRepository.create_if_absent",
+      "status": "completed",
+      "blockedBy": [
+        33
+      ]
+    },
+    {
+      "id": 35,
+      "phase": 7,
+      "subject": "Task 35: Recipient resolution and dedupe keys \u2014 pure functions",
+      "status": "completed",
+      "blockedBy": [
+        33
+      ]
+    },
+    {
+      "id": 36,
+      "phase": 7,
+      "subject": "Task 36: Celery app, email rendering, and the send task",
+      "status": "completed",
+      "blockedBy": [
+        34,
+        35
+      ]
+    },
+    {
+      "id": 37,
+      "phase": 7,
+      "subject": "Task 37: Wire the dispatcher into the composition root",
+      "status": "completed",
+      "blockedBy": [
+        36,
+        28
+      ]
+    },
+    {
+      "id": 38,
+      "phase": 7,
+      "subject": "Task 38: The overdue sweep",
+      "status": "completed",
+      "blockedBy": [
+        37,
+        23
+      ]
+    },
+    {
+      "id": 39,
+      "phase": 8,
+      "subject": "Task 39: seed_demo_data",
+      "status": "completed",
+      "blockedBy": [
+        21
+      ]
+    },
+    {
+      "id": 40,
+      "phase": 8,
+      "subject": "Task 40: drf-spectacular and compat stage 3",
+      "status": "completed",
+      "blockedBy": [
+        28,
+        20
+      ]
+    },
+    {
+      "id": 41,
+      "phase": 9,
+      "subject": "Task 41: Vite, TypeScript, Tailwind",
+      "status": "completed",
+      "blockedBy": [
+        4
+      ]
+    },
+    {
+      "id": 42,
+      "phase": 9,
+      "subject": "Task 42: The API client",
+      "status": "completed",
+      "blockedBy": [
+        41
+      ]
+    },
+    {
+      "id": 43,
+      "phase": 9,
+      "subject": "Task 43: Auth context, router, and role guards",
+      "status": "completed",
+      "blockedBy": [
+        42
+      ]
+    },
+    {
+      "id": 44,
+      "phase": 9,
+      "subject": "Task 44: The login screen and the frontend CI job",
+      "status": "completed",
+      "blockedBy": [
+        43
+      ]
+    },
+    {
+      "id": 45,
+      "phase": 10,
+      "subject": "Task 45: The tasks data layer",
+      "status": "completed",
+      "blockedBy": [
+        44
+      ]
+    },
+    {
+      "id": 46,
+      "phase": 10,
+      "subject": "Task 46: The task list",
+      "status": "completed",
+      "blockedBy": [
+        45
+      ]
+    },
+    {
+      "id": 47,
+      "phase": 10,
+      "subject": "Task 47: Task create, edit, and completion",
+      "status": "completed",
+      "blockedBy": [
+        45
+      ]
+    },
+    {
+      "id": 48,
+      "phase": 10,
+      "subject": "Task 48: User CRUD (Admin)",
+      "status": "completed",
+      "blockedBy": [
+        44
+      ]
+    },
+    {
+      "id": 49,
+      "phase": 10,
+      "subject": "Task 49: The statistics dashboard",
+      "status": "completed",
+      "blockedBy": [
+        45
+      ]
+    },
+    {
+      "id": 50,
+      "phase": 11,
+      "subject": "Task 50: Remaining frontend tests",
+      "status": "completed",
+      "blockedBy": [
+        46,
+        47,
+        48,
+        49
+      ]
+    },
+    {
+      "id": 51,
+      "phase": 11,
+      "subject": "Task 51: Backend coverage to 80% and the gate",
+      "status": "completed",
+      "blockedBy": [
+        32,
+        38,
+        39,
+        40,
+        29
+      ]
+    },
+    {
+      "id": 52,
+      "phase": 12,
+      "subject": "Task 52: README.md, the diagrams, and the final CI pass",
+      "status": "completed",
+      "blockedBy": [
+        50,
+        51
+      ]
+    },
+    {
+      "id": 53,
+      "phase": 13,
+      "subject": "Task 53: Write the insights to claude-insights/",
+      "status": "completed",
+      "blockedBy": [
+        52
+      ]
+    }
   ],
-  "lastUpdated": "2026-10-06T00:00:00Z"
+  "lastUpdated": "2026-10-06T21:23:03Z"
 }

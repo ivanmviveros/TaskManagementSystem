@@ -1,0 +1,12 @@
+Hello {{ recipient.first_name }},
+
+The status of a task you are involved in has changed.
+
+  Task:     {{ task.title }}
+  Status:   {{ task.get_status_display }}
+  Due date: {% if task.due_date %}{{ task.due_date }}{% else %}no deadline{% endif %}
+{% if task.completed_at %}  Completed: {{ task.completed_at }}
+{% endif %}
+Open it here: {{ task_url }}
+
+You are receiving this because you are the assignee or you created this task.

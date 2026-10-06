@@ -1,0 +1,126 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync --directory backend
+      - run: uv run --directory backend ruff check .
+      - run: uv run --directory backend ruff format --check .
+      - run: uv run --directory backend mypy
+
+  # Verifies the unusual dependency combination this design deliberately chose
+  # (D1 Django 6.0, D3 simplejwt git pin, D4 drf-spectacular, D2/D28 Python 3.14).
+  # Every other job asks "is my code right?"; this one asks "does this dependency
+  # set still assemble and boot at all?". Extended at Task 20 and Task 40.
+  compat:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: taskmanagement
+          POSTGRES_USER: taskmanagement
+          POSTGRES_PASSWORD: taskmanagement
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      POSTGRES_HOST: localhost
+      POSTGRES_DB: taskmanagement
+      POSTGRES_USER: taskmanagement
+      POSTGRES_PASSWORD: taskmanagement
+      DJANGO_SECRET_KEY: ci-only-not-a-real-secret
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - name: Resolve the pinned dependency set, git source included
+        run: uv sync --directory backend
+      - name: Python floor is 3.14 and uuid.uuid7 is importable (D2, D28)
+        run: >
+          uv run --directory backend python -c
+          "import sys, uuid; assert sys.version_info >= (3, 14), sys.version_info; assert uuid.uuid7().version == 7"
+      - name: Django is 6.0.x (D1)
+        run: >
+          uv run --directory backend python -c
+          "import django; assert django.VERSION[:2] == (6, 0), django.get_version()"
+      - name: The two at-risk packages import (D3, D4)
+        run: >
+          uv run --directory backend python -c
+          "import rest_framework_simplejwt, drf_spectacular"
+      - name: Django boots
+        run: uv run --directory backend python manage.py check
+      # Stage 2: the git-pinned simplejwt actually issues and verifies a token
+      # on Django 6.0 — the single most load-bearing claim in D3.
+      - name: Login round-trip against the cookie auth views
+        run: uv run --directory backend pytest apps/users/tests/test_api_auth.py -q
+      # Stage 3: drf-spectacular 0.30.0 — which classifies Django 6.0 but is not
+      # tested above it — still produces a valid OpenAPI 3 document (D4).
+      - name: Generate and validate the OpenAPI schema
+        run: uv run --directory backend python manage.py spectacular --validate --file schema.yaml
+
+  backend:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: taskmanagement
+          POSTGRES_USER: taskmanagement
+          POSTGRES_PASSWORD: taskmanagement
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+    env:
+      POSTGRES_HOST: localhost
+      POSTGRES_DB: taskmanagement
+      POSTGRES_USER: taskmanagement
+      POSTGRES_PASSWORD: taskmanagement
+      REDIS_URL: redis://localhost:6379/0
+      DJANGO_SECRET_KEY: ci-only-not-a-real-secret
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync --directory backend
+      # Fails the build if a model change was committed without its migration.
+      - run: uv run --directory backend python manage.py makemigrations --check --dry-run
+      - run: uv run --directory backend python manage.py migrate
+      # Coverage flags and the 80% gate come from addopts in backend/pyproject.toml,
+      # so CI and a local run cannot apply different thresholds.
+      - run: uv run --directory backend pytest
+
+  frontend:
+    runs-on: ubuntu-latest
+    # working-directory rather than `npm --prefix frontend`: npm 10's --prefix
+    # changes where packages are installed but NOT where package.json is read
+    # from, so `npm --prefix frontend ci` fails looking for a package.json at
+    # the repository root.
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      # Meaningful from the moment it exists: the login tests ship with the
+      # login screen, so --passWithNoTests is never needed (spec §13).
+      - run: npm run test

@@ -1,0 +1,116 @@
+import { Link, useNavigate, useParams } from "@tanstack/react-router";
+import { useState } from "react";
+
+import { Button } from "../../components/Button";
+import { FormError } from "../../components/FormError";
+import { ApiError } from "../../lib/api-error";
+import { OverdueBadge, StatusBadge } from "./components/StatusBadge";
+import { useCompleteTask, useDeleteTask } from "./hooks/useTaskMutations";
+import { useTask } from "./hooks/useTasks";
+
+export function TaskDetailPage() {
+  const { taskId } = useParams({ from: "/shell/tasks/$taskId" });
+  const navigate = useNavigate();
+  const { data: task, isPending, isError, error } = useTask(taskId);
+  const complete = useCompleteTask();
+  const remove = useDeleteTask();
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  if (isPending) {
+    return (
+      <p role="status" className="text-sm text-slate-500">
+        Loading task…
+      </p>
+    );
+  }
+
+  if (isError || task === undefined) {
+    return (
+      <p role="alert" className="text-sm text-status-overdue">
+        {error instanceof ApiError ? error.message : "Could not load that task."}
+      </p>
+    );
+  }
+
+  // Completion is offered only while the task is still open: COMPLETED and
+  // CANCELLED are terminal (D19), and the API answers 409 for either.
+  const isOpen = task.status === "PENDING" || task.status === "IN_PROGRESS";
+
+  async function run(action: () => Promise<unknown>, after?: () => void) {
+    setActionError(null);
+    try {
+      await action();
+      after?.();
+    } catch (caught) {
+      setActionError(
+        caught instanceof ApiError ? caught.message : "Something went wrong. Try again.",
+      );
+    }
+  }
+
+  return (
+    <section>
+      <div className="mb-4 flex flex-wrap items-center gap-3">
+        <h1 className="text-xl font-semibold text-slate-900">{task.title}</h1>
+        <StatusBadge status={task.status} />
+        {task.is_overdue && <OverdueBadge />}
+      </div>
+
+      <FormError message={actionError} />
+
+      <dl className="mb-6 grid grid-cols-1 gap-2 rounded-lg bg-white p-4 text-sm shadow-sm sm:grid-cols-[10rem_1fr] sm:p-6">
+        <dt className="font-medium text-slate-700">Description</dt>
+        <dd className="text-slate-600">
+          {task.description === "" ? "No description" : task.description}
+        </dd>
+        <dt className="font-medium text-slate-700">Due date</dt>
+        <dd className="text-slate-600">
+          {task.due_date === null ? "No deadline" : new Date(task.due_date).toLocaleString()}
+        </dd>
+        <dt className="font-medium text-slate-700">Assignee</dt>
+        <dd className="text-slate-600">
+          {task.assignee === null
+            ? "Unassigned"
+            : `${task.assignee.first_name} ${task.assignee.last_name}`}
+        </dd>
+        <dt className="font-medium text-slate-700">Created by</dt>
+        <dd className="text-slate-600">
+          {task.created_by.first_name} {task.created_by.last_name}
+        </dd>
+        {task.completed_at !== null && (
+          <>
+            <dt className="font-medium text-slate-700">Completed</dt>
+            <dd className="text-slate-600">{new Date(task.completed_at).toLocaleString()}</dd>
+          </>
+        )}
+      </dl>
+
+      <div className="flex flex-wrap gap-2">
+        {isOpen && (
+          <Button onClick={() => void run(() => complete.mutateAsync(task.id))}>
+            Mark complete
+          </Button>
+        )}
+        <Link to="/tasks/$taskId/edit" params={{ taskId: task.id }}>
+          <Button variant="secondary">Edit</Button>
+        </Link>
+        {task.can_delete && (
+          <Button
+            variant="danger"
+            onClick={() =>
+              void run(
+                () => remove.mutateAsync(task.id),
+                () => void navigate({ to: "/tasks" }),
+              )
+            }
+          >
+            Delete
+          </Button>
+        )}
+        <Link to="/tasks">
+          <Button variant="secondary">Back to tasks</Button>
+        </Link>
+      </div>
+    </section>
+  );
+}
