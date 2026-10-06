@@ -47,6 +47,8 @@ INSTALLED_APPS = [
     # and `compat` stage 1 ships in Task 5.
 ]
 
+INSTALLED_APPS += ["apps.core"]
+
 MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",
     "django.middleware.security.SecurityMiddleware",
