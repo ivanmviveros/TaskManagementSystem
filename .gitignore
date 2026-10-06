@@ -218,3 +218,6 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Git worktrees (superpowers-extended-cc:using-git-worktrees)
+.worktrees/
