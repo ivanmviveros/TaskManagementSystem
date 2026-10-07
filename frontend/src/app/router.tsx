@@ -19,6 +19,7 @@ import { TaskListPage } from "../features/tasks/TaskListPage";
 import { UserCreatePage, UserEditPage } from "../features/users/UserFormPage";
 import { UserListPage } from "../features/users/UserListPage";
 import { DEFAULT_PAGE_SIZE } from "../lib/pagination";
+import { APP_NAME } from "./app-name";
 import { AppShell } from "./layout/AppShell";
 import { validateTaskListSearch, validateUserListSearch } from "./search-params";
 
@@ -47,8 +48,6 @@ const ROUTE_ROLES: Record<string, Role[]> = {
 export interface RouterContext {
   auth: AuthState;
 }
-
-const APP_NAME = "Task Management System";
 
 /** A route's tab title: the page first, so it survives a narrow tab (D57). */
 function pageTitle(page: string) {

@@ -84,6 +84,21 @@ describe("AppShell navigation", () => {
     },
   );
 
+  it.each(["ADMIN", "SUPERVISOR", "OPERATOR"] as const)(
+    "shows the app name in the header, before the menu, for a %s",
+    async (role) => {
+      signedInAs = role;
+      await renderApp(role === "ADMIN" ? "/users" : "/dashboard");
+      const banner = await screen.findByRole("banner");
+      const name = within(banner).getByText("Task Management System");
+      // A name, not a menu item: outside the "Main" navigation, and ahead of it.
+      expect(nav()).not.toContainElement(name);
+      expect(name.compareDocumentPosition(nav()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      // Each page keeps its own h1; the app name must not compete with it.
+      expect(name.tagName).not.toBe("H1");
+    },
+  );
+
   it("shows who is signed in", async () => {
     signedInAs = "SUPERVISOR";
     await renderApp("/dashboard");

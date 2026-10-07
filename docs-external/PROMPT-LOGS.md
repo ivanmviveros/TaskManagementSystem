@@ -258,10 +258,15 @@ Refactor assigned user selector component to allow user inline search and pagina
 ```
 Fix the choosing "Unassigned" when editing a task leaving the old assignee in place, caused by the edit request skiping an empty assignee.
 ```
+
+```
+Add an app title "Task management system" in the main component to the left of menus
+```
+
 ## Final review
 
 ```
 Following  features specs in @docs\superpowers\specs:
-- Do a complete analysis of frontend pages and components, using playwirtgh mcp and generating a final report with validations performed and results. The analysis should be oriented to correct responsive behavior, forms validations and navigability
+- Do a complete analysis of frontend features, pages and components, using playwrigth mcp and generating a final report with validations performed and results. The analysis should be oriented to correct responsive behavior, forms validations and navigability
 - Do a complete test suite run for frontend and backend and include in report, include coverage.
 ```
