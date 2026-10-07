@@ -13,6 +13,7 @@ from apps.core.ordering import TiebrokenOrderingFilter
 from apps.core.permissions.classes import RolePermission
 from apps.core.permissions.matrix import Resource
 from apps.core.roles import Role
+from apps.users.dto import UserCreateInput, UserUpdateInput
 from apps.users.filters import UserFilterSet
 from apps.users.repositories import DjangoUserRepository
 from apps.users.selectors import scoped_users
@@ -70,7 +71,10 @@ class UserViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.Gen
     def create(self, request, *args, **kwargs):
         serializer = UserCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        user = self.get_service().create(data=serializer.validated_data, actor=request.user)
+        # Splat, never map field by field: see tasks/views.py (D30, spec §3.1).
+        user = self.get_service().create(
+            data=UserCreateInput(**serializer.validated_data), actor=request.user
+        )
         return Response(UserSerializer(user).data, status=status.HTTP_201_CREATED)
 
     @extend_schema(request=UserUpdateSerializer, responses={200: UserSerializer})
@@ -79,7 +83,9 @@ class UserViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.Gen
         serializer = UserUpdateSerializer(data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         updated = self.get_service().update(
-            user=user, data=serializer.validated_data, actor=request.user
+            user=user,
+            data=UserUpdateInput(**serializer.validated_data),
+            actor=request.user,
         )
         return Response(UserSerializer(updated).data)
 

@@ -1,6 +1,7 @@
 import pytest
 
 from apps.core.roles import Role
+from apps.users.dto import UserCreateInput, UserUpdateInput
 from apps.users.models import User
 from apps.users.services import EmailAlreadyInUse, UserService
 from apps.users.tests.fakes import FakeUserRepository
@@ -16,13 +17,13 @@ def service(users=None) -> UserService:
 
 def test_create_hashes_the_password_and_normalizes_the_email():
     created = service().create(
-        data={
-            "email": "New.Person@Example.COM",
-            "password": "a-good-password-1",
-            "first_name": "New",
-            "last_name": "Person",
-            "role": Role.OPERATOR,
-        },
+        data=UserCreateInput(
+            email="New.Person@Example.COM",
+            password="a-good-password-1",
+            first_name="New",
+            last_name="Person",
+            role=str(Role.OPERATOR),
+        ),
         actor=User(email="admin@example.com", role=Role.ADMIN),
     )
     assert created.email == "new.person@example.com"
@@ -33,13 +34,13 @@ def test_create_rejects_an_email_already_held_by_a_live_user():
     existing = User(email="taken@example.com", role=Role.OPERATOR)
     with pytest.raises(EmailAlreadyInUse) as caught:
         service([existing]).create(
-            data={
-                "email": "TAKEN@example.com",
-                "password": "a-good-password-1",
-                "first_name": "A",
-                "last_name": "B",
-                "role": Role.OPERATOR,
-            },
+            data=UserCreateInput(
+                email="TAKEN@example.com",
+                password="a-good-password-1",
+                first_name="A",
+                last_name="B",
+                role=str(Role.OPERATOR),
+            ),
             actor=User(email="admin@example.com", role=Role.ADMIN),
         )
     assert caught.value.default_code == "email_already_in_use"
@@ -55,7 +56,7 @@ def test_update_applies_only_the_supplied_fields():
     )
     updated = service([target]).update(
         user=target,
-        data={"first_name": "New"},
+        data=UserUpdateInput(first_name="New"),
         actor=User(email="admin@example.com", role=Role.ADMIN),
     )
     assert updated.first_name == "New"
@@ -67,7 +68,7 @@ def test_update_rehashes_a_supplied_password():
     target.set_password("original-password")
     updated = service([target]).update(
         user=target,
-        data={"password": "replacement-password"},
+        data=UserUpdateInput(password="replacement-password"),
         actor=User(email="admin@example.com", role=Role.ADMIN),
     )
     assert updated.check_password("replacement-password")
