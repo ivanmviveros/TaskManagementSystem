@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Button } from "../../components/Button";
 import { ApiError } from "../../lib/api-error";
 import { Pagination } from "../tasks/components/Pagination";
-import type { Role } from "../auth/types";
+import { ROLES, type Role } from "../auth/types";
 import { DeleteUserDialog } from "./components/DeleteUserDialog";
 import { UserCard } from "./components/UserCard";
 import { UserTable } from "./components/UserTable";
@@ -12,7 +12,6 @@ import { useDeleteUser, useUsers } from "./hooks/useUsers";
 import type { UserDetail, UserFilters } from "./types";
 
 const PAGE_SIZE = 20;
-const ROLES: Role[] = ["ADMIN", "SUPERVISOR", "OPERATOR"];
 
 export function UserListPage() {
   const [filters, setFilters] = useState<UserFilters>({ page: 1, page_size: PAGE_SIZE });
