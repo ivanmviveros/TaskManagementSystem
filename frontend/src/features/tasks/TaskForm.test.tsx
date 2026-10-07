@@ -393,6 +393,27 @@ describe("TaskDetailPage", () => {
     return record;
   }
 
+  it("does not refetch the task it just deleted", async () => {
+    // Invalidating the whole ["tasks"] prefix used to refetch the deleted task's
+    // own detail query — a guaranteed 404 against the real API, logged to the
+    // console just before navigating away (D49).
+    signedInAs(SUPERVISOR);
+    let detailGets = 0;
+    server.use(
+      http.get(`${BASE}/tasks/${TASK_ID}/`, () => {
+        detailGets += 1;
+        return HttpResponse.json({ ...DETAIL, can_delete: true });
+      }),
+    );
+    deletesRespondWith(() => new HttpResponse(null, { status: 204 }));
+    await renderApp(`/tasks/${TASK_ID}`);
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: /^delete$/i }));
+    await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: /^delete$/i }));
+    await screen.findByRole("heading", { name: /^tasks$/i });
+    expect(detailGets).toBe(1);
+  });
+
   it("deletes after confirmation and returns to the task list", async () => {
     signedInAs(SUPERVISOR);
     taskDetail({ can_delete: true });
