@@ -234,3 +234,6 @@ docker-compose.override.yml
 
 # Generated OpenAPI schema — a build artifact, not a second source of truth
 backend/schema.yaml
+
+.playwright-mcp
+.idea
