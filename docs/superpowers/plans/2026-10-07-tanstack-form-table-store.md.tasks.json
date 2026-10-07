@@ -1,0 +1,29 @@
+{
+  "planPath": "docs/superpowers/plans/2026-10-07-tanstack-form-table-store.md",
+  "tasks": [
+    { "id": 1, "subject": "Task 1: Dependencies and dead code", "status": "pending" },
+    { "id": 2, "subject": "Task 2: The store helper and the delete-flow slice", "status": "pending", "blockedBy": [1] },
+    { "id": 3, "subject": "Task 3: The session store replaces AuthContext (D86)", "status": "pending", "blockedBy": [2] },
+    { "id": 4, "subject": "Task 4: The task-actions store for the task list and detail (D87)", "status": "pending", "blockedBy": [3] },
+    { "id": 5, "subject": "Task 5: The user-list store (D87)", "status": "pending", "blockedBy": [4] },
+    { "id": 6, "subject": "Task 6: The assignee combobox's own store (D87)", "status": "pending", "blockedBy": [5] },
+    { "id": 7, "subject": "Task 7: The server-error mapper (D80)", "status": "pending", "blockedBy": [6] },
+    { "id": 8, "subject": "Task 8: The app form: contexts, fields and form components (D79)", "status": "pending", "blockedBy": [7] },
+    { "id": 9, "subject": "Task 9: LoginPage on the app form", "status": "pending", "blockedBy": [8] },
+    { "id": 10, "subject": "Task 10: UserForm on the app form, with its snapshot (D79, D81)", "status": "pending", "blockedBy": [9] },
+    { "id": 11, "subject": "Task 11: The task form's values: snapshot and API payload (D32, D40, D81)", "status": "pending", "blockedBy": [10] },
+    { "id": 12, "subject": "Task 12: TaskForm on the app form (D79, D81)", "status": "pending", "blockedBy": [11] },
+    { "id": 13, "subject": "Task 13: useUrlFieldSync (D82)", "status": "pending", "blockedBy": [12] },
+    { "id": 14, "subject": "Task 14: TaskFilters on the app form (D82)", "status": "pending", "blockedBy": [13] },
+    { "id": 15, "subject": "Task 15: UserFilters on the app form, and useSearchParamDraft retired (D82)", "status": "pending", "blockedBy": [14] },
+    { "id": 16, "subject": "Task 16: Ordering <-> sorting mappers (D84)", "status": "pending", "blockedBy": [15] },
+    { "id": 17, "subject": "Task 17: routePaginationChange (D85)", "status": "pending", "blockedBy": [16] },
+    { "id": 18, "subject": "Task 18: The app table: features, contexts, TableView, SortHeader, Pagination (D83, D85)", "status": "pending", "blockedBy": [17] },
+    { "id": 19, "subject": "Task 19: The user list on the app table (D83)", "status": "pending", "blockedBy": [18] },
+    { "id": 20, "subject": "Task 20: The task list on the app table, and the old pieces removed (D83, D84)", "status": "pending", "blockedBy": [19] },
+    { "id": 21, "subject": "Task 21: README, prompt log and bundle size", "status": "pending", "blockedBy": [20] },
+    { "id": 22, "subject": "Task 22: Re-run the QA report matrix in the browser", "status": "pending", "blockedBy": [21] },
+    { "id": 23, "subject": "Task 23: Persist insights to claude-insights", "status": "pending", "blockedBy": [22] }
+  ],
+  "lastUpdated": "2026-10-07T00:00:00Z"
+}
