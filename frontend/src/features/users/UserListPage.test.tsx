@@ -101,7 +101,13 @@ describe("UserListPage", () => {
     usersRespondWith([operator()]);
     await renderApp("/users");
     const user = userEvent.setup();
-    await user.click(await screen.findByRole("button", { name: /deactivate operator@demo.local/i }));
+    // Scoped to the table: jsdom applies no CSS, so the narrow-viewport card
+    // renders the same button too. findByRole, because the table only exists
+    // once the bootstrap and the list request have settled.
+    const table = await screen.findByRole("table");
+    await user.click(
+      await within(table).findByRole("button", { name: /deactivate operator@demo.local/i }),
+    );
 
     const dialog = await screen.findByRole("dialog");
     // Spec §16.1: an Admin must not be misled about a decision they cannot undo.
@@ -130,7 +136,13 @@ describe("UserListPage", () => {
     );
     await renderApp("/users");
     const user = userEvent.setup();
-    await user.click(await screen.findByRole("button", { name: /deactivate operator@demo.local/i }));
+    // Scoped to the table: jsdom applies no CSS, so the narrow-viewport card
+    // renders the same button too. findByRole, because the table only exists
+    // once the bootstrap and the list request have settled.
+    const table = await screen.findByRole("table");
+    await user.click(
+      await within(table).findByRole("button", { name: /deactivate operator@demo.local/i }),
+    );
     await user.click(within(await screen.findByRole("dialog")).getByRole("button", { name: /^deactivate$/i }));
     await waitFor(() => expect(deleted).toBe(true));
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
@@ -148,10 +160,31 @@ describe("UserListPage", () => {
     );
     await renderApp("/users");
     const user = userEvent.setup();
-    await user.click(await screen.findByRole("button", { name: /deactivate operator@demo.local/i }));
+    // Scoped to the table: jsdom applies no CSS, so the narrow-viewport card
+    // renders the same button too. findByRole, because the table only exists
+    // once the bootstrap and the list request have settled.
+    const table = await screen.findByRole("table");
+    await user.click(
+      await within(table).findByRole("button", { name: /deactivate operator@demo.local/i }),
+    );
     const dialog = await screen.findByRole("dialog");
     await user.click(within(dialog).getByRole("button", { name: /^deactivate$/i }));
     expect(await screen.findByRole("alert")).toHaveTextContent(/still holds tasks/i);
     expect(screen.getByRole("dialog")).toBeInTheDocument();
+  });
+
+  it("renders a card per user for narrow viewports", async () => {
+    // jsdom applies no CSS, so BOTH presentations are in the DOM. That is why
+    // the table assertions above are scoped, and why the card gets its own test
+    // rather than pretending one does not exist.
+    usersRespondWith([operator()]);
+    await renderApp("/users");
+
+    const cards = await screen.findAllByRole("article");
+    expect(cards).toHaveLength(1);
+    expect(within(cards[0]).getByText("operator@demo.local")).toBeInTheDocument();
+    expect(
+      within(cards[0]).getByRole("button", { name: /deactivate operator@demo.local/i }),
+    ).toBeInTheDocument();
   });
 });

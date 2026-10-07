@@ -6,6 +6,7 @@ import { ApiError } from "../../lib/api-error";
 import { Pagination } from "../tasks/components/Pagination";
 import type { Role } from "../auth/types";
 import { DeleteUserDialog } from "./components/DeleteUserDialog";
+import { UserCard } from "./components/UserCard";
 import { UserTable } from "./components/UserTable";
 import { useDeleteUser, useUsers } from "./hooks/useUsers";
 import type { UserDetail, UserFilters } from "./types";
@@ -24,6 +25,11 @@ export function UserListPage() {
   /** Any filter change resets to page 1, or a filter applied on page 3 looks empty. */
   function applyFilters(next: UserFilters) {
     setFilters({ ...next, page: 1, page_size: PAGE_SIZE });
+  }
+
+  function beginDelete(user: UserDetail) {
+    setDeleteError(null);
+    setPendingDelete(user);
   }
 
   async function confirmDelete() {
@@ -117,14 +123,14 @@ export function UserListPage() {
 
       {data !== undefined && data.results.length > 0 && (
         <>
-          <div className="overflow-x-auto">
-            <UserTable
-              users={data.results}
-              onDelete={(user) => {
-                setDeleteError(null);
-                setPendingDelete(user);
-              }}
-            />
+          {/* The table collapses to stacked cards below md (spec §5.2). */}
+          <div className="hidden overflow-x-auto md:block">
+            <UserTable users={data.results} onDelete={beginDelete} />
+          </div>
+          <div className="md:hidden">
+            {data.results.map((user) => (
+              <UserCard key={user.id} user={user} onDelete={beginDelete} />
+            ))}
           </div>
 
           <Pagination

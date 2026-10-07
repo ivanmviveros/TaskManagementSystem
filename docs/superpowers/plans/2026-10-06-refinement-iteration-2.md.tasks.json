@@ -100,7 +100,7 @@
     {
       "id": 14,
       "subject": "Task 14: Add UserCard and the responsive switch",
-      "status": "pending",
+      "status": "completed",
       "blockedBy": [
         13
       ]
@@ -144,5 +144,5 @@
       ]
     }
   ],
-  "lastUpdated": "2026-10-07T01:24:12+00:00"
+  "lastUpdated": "2026-10-07T01:26:19+00:00"
 }
