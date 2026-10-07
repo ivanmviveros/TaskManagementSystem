@@ -54,7 +54,7 @@ export function LoginPage() {
         ref={formRef}
         onSubmit={(event) => {
           event.preventDefault();
-          // D80: a standing server error would make the form refuse this submit.
+          // D80: a standing field error would make the form refuse this submit.
           clearServerErrors(form);
           void form.handleSubmit();
         }}

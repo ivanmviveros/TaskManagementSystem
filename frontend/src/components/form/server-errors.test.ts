@@ -2,7 +2,13 @@ import { FieldApi, FormApi } from "@tanstack/react-form";
 import { describe, expect, it } from "vitest";
 
 import { ApiError } from "../../lib/api-error";
-import { clearServerErrors, serverMessage, setServerErrors, toServerErrors } from "./server-errors";
+import {
+  clearServerErrors,
+  formMessageStore,
+  serverMessage,
+  setServerErrors,
+  toServerErrors,
+} from "./server-errors";
 
 const OPTIONS = {
   renderedFields: ["title", "due_date", "assignee"],
@@ -77,7 +83,7 @@ describe("setServerErrors and clearServerErrors", () => {
   it("writes the form message and each field's message into the onServer slot", () => {
     const { form, title, due } = mountedForm();
     setServerErrors(form, { form: "Whole form.", fields: { title: "Blank." } });
-    expect(serverMessage(form.state.errorMap)).toBe("Whole form.");
+    expect(formMessageStore(form).state).toBe("Whole form.");
     expect(serverMessage(title.state.meta.errorMap)).toBe("Blank.");
     expect(serverMessage(due.state.meta.errorMap)).toBeUndefined();
   });
@@ -87,7 +93,7 @@ describe("setServerErrors and clearServerErrors", () => {
     setServerErrors(form, { form: "Whole form.", fields: { title: "Blank." } });
     clearServerErrors(form);
     expect(form.state.canSubmit).toBe(true);
-    expect(serverMessage(form.state.errorMap)).toBeUndefined();
+    expect(formMessageStore(form).state).toBeUndefined();
     expect(serverMessage(title.state.meta.errorMap)).toBeUndefined();
   });
 });

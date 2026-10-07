@@ -1,4 +1,5 @@
 import type { AnyFormApi } from "@tanstack/react-form";
+import { createStore, type Store } from "@tanstack/react-store";
 
 import { ApiError } from "../../lib/api-error";
 
@@ -53,23 +54,48 @@ export function toServerErrors(
  * The only part of a form these helpers touch. A concrete `FormApi` is not
  * assignable to `AnyFormApi`: its `TSubmitMeta` is `never`, which surfaces through
  * the contravariant `listeners` callbacks ("any is not assignable to never").
- * The helpers only need `setErrorMap`, hence the `Pick`.
+ * The helpers only need `setErrorMap`, plus the form's `store` as the key of its
+ * form-level message (see `formMessageStore`), hence the `Pick`.
  */
-export type ServerErrorTarget = Pick<AnyFormApi, "setErrorMap">;
+export type ServerErrorTarget = Pick<AnyFormApi, "setErrorMap" | "store">;
 
-/** Writes the errors into the form's `onServer` slot: the form and every registered field. */
-export function setServerErrors(form: ServerErrorTarget, errors: ServerErrors): void {
-  form.setErrorMap({ onServer: { form: errors.form, fields: errors.fields } });
+const formMessages = new WeakMap<object, Store<string | undefined>>();
+
+/**
+ * The form-level server message, kept outside form-core's error map: form-core
+ * clears a form-level onServer error on the next change or blur validation, but
+ * the message must stay until the next submit (spec §5.2). Each form has its own.
+ * The key is `form.store`, not the form: react-form's context hands out a wrapper
+ * around the FormApi, not the same object, while both share `store`.
+ */
+export function formMessageStore(form: { store: object }): Store<string | undefined> {
+  let store = formMessages.get(form.store);
+  if (store === undefined) {
+    store = createStore<string | undefined>(undefined);
+    formMessages.set(form.store, store);
+  }
+  return store;
 }
 
 /**
- * Empties the `onServer` slot, form and fields. Call it before every submit: while
- * an onServer error stands, form-core refuses to submit at all (D80). The
- * `fields` key is required — `{ onServer: undefined }` clears only the form-level
- * message and leaves every field error, still blocking the submit.
+ * Writes the errors: each registered field's into the form's `onServer` slot, the
+ * form-level message into the form's message store.
+ */
+export function setServerErrors(form: ServerErrorTarget, errors: ServerErrors): void {
+  form.setErrorMap({ onServer: { form: undefined, fields: errors.fields } });
+  formMessageStore(form).setState(() => errors.form);
+}
+
+/**
+ * Empties the `onServer` slot and the form message. Call it before every submit: a
+ * standing FIELD error makes form-core refuse to submit at all (D80); a form-level
+ * one does not. Clearing first keeps the next submit possible and removes the old
+ * messages. The `fields` key is required — `{ onServer: undefined }` would leave
+ * every field error, still blocking the submit.
  */
 export function clearServerErrors(form: ServerErrorTarget): void {
   form.setErrorMap({ onServer: { form: undefined, fields: {} } });
+  formMessageStore(form).setState(() => undefined);
 }
 
 /** The message setServerErrors left in an `onServer` slot, if any. */

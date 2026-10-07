@@ -149,6 +149,8 @@ describe("LoginPage", () => {
     const emailInput = await screen.findByLabelText(/email/i);
     await waitFor(() => expect(emailInput).toHaveAttribute("aria-invalid", "true"));
     expect(await screen.findByText(/enter a valid email/i)).toBeInTheDocument();
+    // Login's rule: the message shows beside the field errors.
+    expect(screen.getByRole("alert")).toHaveTextContent(/invalid input/i);
   });
 
   it("disables the submit button while the request is in flight", async () => {
@@ -166,11 +168,11 @@ describe("LoginPage", () => {
         if (attempts === 1) {
           return HttpResponse.json(
             {
-              detail: "No active account found with the given credentials.",
-              code: "no_active_account",
-              errors: null,
+              detail: "Invalid input.",
+              code: "validation_error",
+              errors: { email: ["Enter a valid email."] },
             },
-            { status: 401 },
+            { status: 400 },
           );
         }
         signedIn = true;
@@ -179,7 +181,8 @@ describe("LoginPage", () => {
     );
     await renderApp("/login");
     const user = await fillAndSubmit();
-    expect(await screen.findByRole("alert")).toHaveTextContent(/no active account/i);
+    // A standing FIELD error is what blocks a re-submit in form-core.
+    await waitFor(() => expect(screen.getByLabelText(/email/i)).toHaveAttribute("aria-invalid", "true"));
     await user.click(screen.getByRole("button", { name: /sign in/i }));
     expect(await screen.findByRole("heading", { name: /dashboard/i })).toBeInTheDocument();
     expect(attempts).toBe(2);

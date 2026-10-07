@@ -94,6 +94,16 @@ describe("useAppForm", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("Conflict.");
   });
 
+  it("keeps the form message until the next submit, even after a field is edited", async () => {
+    render(<Harness save={() => Promise.reject(new ApiError(409, "Conflict.", "conflict"))} />);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Conflict.");
+    await user.type(screen.getByLabelText("Email"), "a");
+    await user.tab();
+    expect(screen.getByRole("alert")).toHaveTextContent("Conflict.");
+  });
+
   it("submits again after a server error, and clears the old one (D80)", async () => {
     const save = vi.fn().mockRejectedValueOnce(taken()).mockResolvedValueOnce(undefined);
     render(<Harness save={save} />);
