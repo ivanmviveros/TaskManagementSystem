@@ -3,7 +3,7 @@ import clsx from "clsx";
 
 import type { TaskListSearch } from "../../../app/search-params";
 import { formatDueDate } from "../../../lib/dates";
-import { SORT_FIELDS, nextOrdering, parseOrdering } from "../sorting";
+import { SORT_FIELDS, nextOrdering, parseOrdering, type Ordering } from "../sorting";
 import type { TaskListItem } from "../types";
 import { OverdueBadge, StatusBadge } from "./StatusBadge";
 import { TaskRowActions } from "./TaskRowActions";
@@ -12,8 +12,8 @@ interface TaskTableProps {
   tasks: TaskListItem[];
   /** Hidden for an Operator, whose list is self-scoped so the column is noise. */
   showAssignee: boolean;
-  ordering: string | undefined;
-  onOrderingChange: (ordering: string | undefined) => void;
+  ordering: Ordering | undefined;
+  onOrderingChange: (ordering: Ordering | undefined) => void;
   onComplete: (id: string) => void;
   onDelete: (id: string) => void;
   busyId?: string | null;

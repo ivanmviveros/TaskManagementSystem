@@ -7,10 +7,13 @@ import type { UserDetail } from "../types";
 interface UserTableProps {
   users: UserDetail[];
   onDelete: (user: UserDetail) => void;
-  currentUserId?: string;
+  currentUserId: string | undefined;
 }
 
-/** The ≥`md` presentation of the user list, mirroring TaskTable. */
+/**
+ * The ≥`md` presentation of the user list. Follows TaskTable's pattern but keeps
+ * the `md` breakpoint (TaskTable starts at `lg`, D69).
+ */
 export function UserTable({ users, onDelete, currentUserId }: UserTableProps) {
   return (
     <table className="w-full border-collapse bg-white text-left text-sm shadow-sm">

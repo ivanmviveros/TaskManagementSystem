@@ -178,6 +178,18 @@ describe("unknown addresses (F4, D71)", () => {
     },
   );
 
+  it("marks no menu section as current on a not-found page", async () => {
+    // TanStack's prefix match would otherwise mark Tasks on /tasks/a/b.
+    signedInAs = "SUPERVISOR";
+    await renderApp("/tasks/a/b");
+    await screen.findByRole("heading", { name: /page not found/i });
+    for (const link of within(nav()).getAllByRole("link")) {
+      expect(link).not.toHaveAttribute("aria-current");
+      expect(link).not.toHaveClass("border-status-progress");
+    }
+    expect(within(nav()).getByRole("link", { name: /tasks/i })).toHaveClass("border-transparent");
+  });
+
   it("offers a signed-out visitor the sign-in page, with no app menu", async () => {
     signedInAs = null;
     await renderApp("/does-not-exist");
@@ -222,6 +234,35 @@ describe("the menu marks where you are (F7, F14, D77)", () => {
       );
     },
   );
+
+  it("keeps Tasks marked on a task's own page", async () => {
+    const id = "0199a0f0-0000-7000-8000-0000000000a1";
+    signedInAs = "SUPERVISOR";
+    server.use(
+      http.get(`${BASE}/tasks/${id}/`, () =>
+        HttpResponse.json({
+          id,
+          title: "Review the brief",
+          description: "Read it closely.",
+          status: "PENDING",
+          allowed_transitions: ["IN_PROGRESS", "CANCELLED"],
+          due_date: null,
+          assignee: USERS.OPERATOR,
+          created_by: USERS.SUPERVISOR,
+          is_overdue: false,
+          can_delete: true,
+          completed_at: null,
+          created_at: "2026-10-01T09:00:00Z",
+          updated_at: "2026-10-01T09:00:00Z",
+        }),
+      ),
+    );
+    await renderApp(`/tasks/${id}`);
+    await screen.findByRole("heading", { level: 1 });
+    expect(within(nav()).getByRole("link", { name: /tasks/i })).toHaveClass(
+      "border-status-progress",
+    );
+  });
 
   it("gives every header control a 44px target", async () => {
     signedInAs = "SUPERVISOR";

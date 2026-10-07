@@ -8,8 +8,9 @@ const MESSAGE = "There's nothing at this address.";
  * The root route's notFoundComponent (D71). Unmatched paths render at the root
  * (notFoundMode "root"), and a thrown notFound() finds the root as the nearest
  * route with a notFoundComponent, so this renders outside AppShell and wrapping
- * it in ShellLayout here cannot double the header. "/" redirects to each role's landing page, so one
- * link serves every role.
+ * it in ShellLayout here cannot double the header. No menu section is marked
+ * current, since no section owns this page. "/" redirects to each role's landing
+ * page, so one link serves every role.
  */
 export function AppNotFound() {
   const { user } = useAuth();
@@ -28,7 +29,7 @@ export function AppNotFound() {
     );
   }
   return (
-    <ShellLayout>
+    <ShellLayout markCurrent={false}>
       <NotFoundPanel
         title="Page not found"
         message={MESSAGE}

@@ -1,4 +1,5 @@
 import type { CurrentUser } from "../auth/types";
+import type { Ordering } from "./sorting";
 
 export type TaskStatus = "PENDING" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED";
 
@@ -58,7 +59,7 @@ export interface TaskFilters {
   due_date_before?: string;
   overdue?: boolean;
   assignee?: string;
-  ordering?: string;
+  ordering?: Ordering;
   page?: number;
   page_size?: number;
 }

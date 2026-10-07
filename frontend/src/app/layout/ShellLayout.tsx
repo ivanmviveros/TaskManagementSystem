@@ -14,6 +14,12 @@ import { APP_NAME } from "../app-name";
 const NAV_LINK = "inline-flex min-h-11 items-center border-b-2 text-sm font-medium";
 const NAV_ACTIVE = { className: "border-status-progress text-slate-900" };
 const NAV_INACTIVE = { className: "border-transparent text-slate-700 hover:text-slate-900" };
+/**
+ * TanStack always sets aria-current on an active link, and activeProps cannot
+ * remove it. An exact match turns the prefix match off instead: a not-found
+ * address (/tasks/a/b) is never exactly a menu path (/tasks).
+ */
+const EXACT_ONLY = { exact: true };
 
 /**
  * The signed-in page frame: header, menu and main column. Takes children rather
@@ -24,9 +30,17 @@ const NAV_INACTIVE = { className: "border-transparent text-slate-700 hover:text-
  * link that would 403 (F4). An Admin gets no Tasks or Dashboard link at all,
  * because D13 gives them no task surface.
  */
-export function ShellLayout({ children }: { children: ReactNode }) {
+export function ShellLayout({
+  children,
+  markCurrent = true,
+}: {
+  children: ReactNode;
+  /** False on the not-found page, where TanStack's prefix match would mark a section. */
+  markCurrent?: boolean;
+}) {
   const { user, signOut } = useAuth();
   const isAdmin = user?.role === "ADMIN";
+  const activeOptions = markCurrent ? undefined : EXACT_ONLY;
 
   return (
     <div className="min-h-full">
@@ -44,6 +58,7 @@ export function ShellLayout({ children }: { children: ReactNode }) {
                   to="/dashboard"
                   className={NAV_LINK}
                   activeProps={NAV_ACTIVE}
+                  activeOptions={activeOptions}
                   inactiveProps={NAV_INACTIVE}
                 >
                   Dashboard
@@ -52,6 +67,7 @@ export function ShellLayout({ children }: { children: ReactNode }) {
                   to="/tasks"
                   className={NAV_LINK}
                   activeProps={NAV_ACTIVE}
+                  activeOptions={activeOptions}
                   inactiveProps={NAV_INACTIVE}
                 >
                   Tasks
@@ -63,6 +79,7 @@ export function ShellLayout({ children }: { children: ReactNode }) {
                 to="/users"
                 className={NAV_LINK}
                 activeProps={NAV_ACTIVE}
+                  activeOptions={activeOptions}
                 inactiveProps={NAV_INACTIVE}
               >
                 Users

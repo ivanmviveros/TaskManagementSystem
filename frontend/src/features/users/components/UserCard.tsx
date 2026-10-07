@@ -7,7 +7,7 @@ import type { UserDetail } from "../types";
 interface UserCardProps {
   user: UserDetail;
   onDelete: (user: UserDetail) => void;
-  currentUserId?: string;
+  currentUserId: string | undefined;
 }
 
 /**

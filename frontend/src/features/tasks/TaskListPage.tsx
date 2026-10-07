@@ -16,6 +16,7 @@ import { TaskSortSelect } from "./components/TaskSortSelect";
 import { TaskTable } from "./components/TaskTable";
 import { useCompleteTask, useDeleteTask } from "./hooks/useTaskMutations";
 import { useTasks } from "./hooks/useTasks";
+import type { Ordering } from "./sorting";
 import type { TaskFilters as Filters, TaskListItem } from "./types";
 
 type SearchUpdate = (prev: TaskListSearch) => TaskListSearch;
@@ -76,7 +77,7 @@ export function TaskListPage() {
   }
 
   /** A sort change is an edit, like a filter: replace, keep scroll, page 1 (D47). */
-  function setOrdering(ordering: string | undefined) {
+  function setOrdering(ordering: Ordering | undefined) {
     editSearch((prev) => ({ ...prev, ordering, page: undefined }));
   }
 

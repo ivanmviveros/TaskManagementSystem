@@ -1,11 +1,11 @@
 import clsx from "clsx";
 import { useId } from "react";
 
-import { DEFAULT_ORDERING, SORT_OPTIONS } from "../sorting";
+import { DEFAULT_ORDERING, SORT_OPTIONS, type Ordering } from "../sorting";
 
 interface TaskSortSelectProps {
-  ordering: string | undefined;
-  onChange: (ordering: string | undefined) => void;
+  ordering: Ordering | undefined;
+  onChange: (ordering: Ordering | undefined) => void;
   className?: string;
 }
 
@@ -24,9 +24,11 @@ export function TaskSortSelect({ ordering, onChange, className }: TaskSortSelect
         id={id}
         value={ordering ?? DEFAULT_ORDERING}
         // The default is written as no parameter, so the URL stays canonical (D48).
-        onChange={(event) =>
-          onChange(event.target.value === DEFAULT_ORDERING ? undefined : event.target.value)
-        }
+        onChange={(event) => {
+          // The options come from SORT_OPTIONS, so the value is always an Ordering.
+          const value = event.target.value as Ordering;
+          onChange(value === DEFAULT_ORDERING ? undefined : value);
+        }}
         className="rounded border border-slate-300 px-2 py-1 text-sm"
       >
         {SORT_OPTIONS.map((option) => (

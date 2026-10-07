@@ -1,5 +1,5 @@
 import { ROLES, type Role } from "../features/auth/types";
-import { isOrdering } from "../features/tasks/sorting";
+import { isOrdering, type Ordering } from "../features/tasks/sorting";
 import { TASK_STATUSES, type TaskStatus } from "../features/tasks/types";
 import { isPageSize, type PageSize } from "../lib/pagination";
 
@@ -14,7 +14,7 @@ export interface TaskListSearch {
   due_date_after?: string;
   due_date_before?: string;
   overdue?: boolean;
-  ordering?: string;
+  ordering?: Ordering;
   page?: number;
   page_size?: PageSize;
 }

@@ -998,7 +998,7 @@ test that failed first.
     `cannot_change_own_access`**, a field-level refusal like `assignee_immutable`. The service
     compares against the current values rather than testing for presence, because the edit
     page always sends both fields.
-  - The UI hides Deactivate on your own row and shows your role read-only.
+  - The UI hides Deactivate on your own row, shows your role read-only and hides the Active checkbox.
   - Two Admins can still remove each other; see Accepted risks.
 - **The task table shows its sort (D67, D68).** One sort model, `features/tasks/sorting.ts`,
   serves the headers, the mobile select and URL validation. The default, newest first, is
@@ -1036,9 +1036,10 @@ test that failed first.
 - **Due dates show as the UTC day the form edits, with no time (D76).** A seeded due date
   carrying a real time shows its UTC day.
 - **The current menu item is marked, and header targets are 44 px (D77).**
-- **An impossible date range is explained, not hidden (D78).** The explanation is an
-  always-mounted polite live region described by both date inputs, so it is announced whichever
-  field caused the inversion. A single-day range (after equals before) is valid.
+- **An impossible date range is explained, not hidden (D78).** The message is an
+  always-mounted polite live region that both date inputs reference through `aria-describedby`,
+  so it is announced whichever field caused the inversion; only Due before is marked
+  `aria-invalid`. A single-day range (after equals before) is valid.
 
 ## Deliberate overrides of AGENTS.md
 
