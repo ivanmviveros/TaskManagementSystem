@@ -224,3 +224,15 @@ Analyze and design fixes for the following issues found:
 - adjuts dashboard design, add call to action buttons in dashboard cards and extend "Due in 7 days" card to cover full row and avoid the  bottom row to contain only 1 column
 - check github actions compat step failed by test coverage in https://github.com/ivanmviveros/TaskManagementSystem/actions/runs/37559034429/job/112591873156, use gh cli to test changes in the actions
 ```
+
+
+## Frontend improvements
+
+```
+using /superpowers-extended-cc:using-git-worktrees  and /superpowers-extended-cc:brainstorming, analyze and plan required changes for the following frontend improvements:
+
+- include pagination steps component in lists to allow easier navigation between pages, pages number as "first, prev, 1, 3, 5(current), 7, 10, next, last"
+- include page size in filter parameters according to backend max_page_size of 100, available page sizes (10, 20, 50, 100)
+- include URL params during lists filtering, the params are included only when the filter comes from dashboard cards
+
+```
