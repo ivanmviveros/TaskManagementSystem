@@ -398,4 +398,59 @@ describe("TaskDetailPage", () => {
     // Two matches once complete: the status badge and the completion-date label.
     expect(screen.getAllByText(/^completed$/i)).toHaveLength(2);
   });
+
+  function deletesRespondWith(response: () => Response) {
+    const record = { count: 0 };
+    server.use(
+      http.delete(`${BASE}/tasks/${TASK_ID}/`, () => {
+        record.count += 1;
+        return response();
+      }),
+    );
+    return record;
+  }
+
+  it("deletes after confirmation and returns to the task list", async () => {
+    signedInAs(SUPERVISOR);
+    taskDetail({ can_delete: true });
+    const deletes = deletesRespondWith(() => new HttpResponse(null, { status: 204 }));
+    await renderApp(`/tasks/${TASK_ID}`);
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: /^delete$/i }));
+    const dialog = screen.getByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: /^delete$/i }));
+    expect(await screen.findByRole("heading", { name: /^tasks$/i })).toBeInTheDocument();
+    expect(deletes.count).toBe(1);
+  });
+
+  it("stays on the task when the confirmation is cancelled", async () => {
+    signedInAs(SUPERVISOR);
+    taskDetail({ can_delete: true });
+    const deletes = deletesRespondWith(() => new HttpResponse(null, { status: 204 }));
+    await renderApp(`/tasks/${TASK_ID}`);
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: /^delete$/i }));
+    await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: /cancel/i }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /review the brief/i })).toBeInTheDocument();
+    expect(deletes.count).toBe(0);
+  });
+
+  it("keeps the dialog open and shows the error when deletion fails", async () => {
+    signedInAs(SUPERVISOR);
+    taskDetail({ can_delete: true });
+    deletesRespondWith(() =>
+      HttpResponse.json(
+        { detail: "You can only delete tasks you created.", code: "permission_denied" },
+        { status: 403 },
+      ),
+    );
+    await renderApp(`/tasks/${TASK_ID}`);
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: /^delete$/i }));
+    const dialog = screen.getByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: /^delete$/i }));
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent(/only delete tasks you created/i);
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+  });
 });
