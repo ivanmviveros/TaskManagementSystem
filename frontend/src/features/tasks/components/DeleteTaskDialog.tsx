@@ -1,5 +1,6 @@
 import { Button } from "../../../components/Button";
 import { FormError } from "../../../components/FormError";
+import { useModalDialog } from "../../../components/useModalDialog";
 
 interface DeleteTaskDialogProps {
   task: { title: string };
@@ -22,8 +23,10 @@ export function DeleteTaskDialog({
   onConfirm,
   onCancel,
 }: DeleteTaskDialogProps) {
+  const dialogRef = useModalDialog<HTMLDivElement>(onCancel, !isDeleting);
   return (
     <div
+      ref={dialogRef}
       role="dialog"
       aria-modal="true"
       aria-labelledby="delete-task-title"
@@ -42,7 +45,7 @@ export function DeleteTaskDialog({
         </p>
         <FormError message={error} />
         <div className="flex justify-end gap-2">
-          <Button variant="secondary" onClick={onCancel} disabled={isDeleting}>
+          <Button variant="secondary" onClick={onCancel} disabled={isDeleting} data-autofocus>
             Cancel
           </Button>
           <Button variant="danger" onClick={onConfirm} disabled={isDeleting}>
