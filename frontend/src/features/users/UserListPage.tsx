@@ -1,6 +1,7 @@
+import { useCreateStore, useSelector } from "@tanstack/react-store";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import clsx from "clsx";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 
 import type { UserListSearch } from "../../app/search-params";
 import { ButtonLink } from "../../components/ButtonLink";
@@ -8,19 +9,19 @@ import { Pagination } from "../../components/Pagination";
 import { ApiError } from "../../lib/api-error";
 import { DEFAULT_PAGE_SIZE, type PageSize } from "../../lib/pagination";
 import { useSearchParamDraft } from "../../lib/useSearchParamDraft";
-import { useAuth } from "../auth/hooks/useAuth";
 import { ROLE_LABEL, ROLES, type Role } from "../auth/types";
 import { DeleteUserDialog } from "./components/DeleteUserDialog";
 import { UserCard } from "./components/UserCard";
 import { UserTable } from "./components/UserTable";
 import { useDeleteUser, useUsers } from "./hooks/useUsers";
-import type { UserDetail, UserFilters } from "./types";
+import type { UserFilters } from "./types";
+import { UserListProvider } from "./user-list-context";
+import { initialUserListState, userListActions } from "./user-list-store";
 
 type SearchUpdate = (prev: UserListSearch) => UserListSearch;
 type UserFilterPatch = Partial<Pick<UserListSearch, "role" | "is_active" | "search">>;
 
 export function UserListPage() {
-  const { user: currentUser } = useAuth();
   // The URL is the list's only state (D45). Annotated because the router is
   // not type-registered, so useSearch returns any.
   const search: UserListSearch = useSearch({ from: "/shell/users" });
@@ -35,8 +36,10 @@ export function UserListPage() {
     page,
     page_size: pageSize,
   };
-  const [pendingDelete, setPendingDelete] = useState<UserDetail | null>(null);
-  const [deleteError, setDeleteError] = useState<string | null>(null);
+  // The page's UI state (D87): one store per mount, so it starts clean on every visit.
+  const store = useCreateStore(initialUserListState, userListActions);
+  const pendingDelete = useSelector(store, (state) => state.delete.pending);
+  const deleteError = useSelector(store, (state) => state.delete.error);
 
   const { data, isPending, isError, error, isPlaceholderData } = useUsers(filters);
   const remove = useDeleteUser();
@@ -76,25 +79,22 @@ export function UserListPage() {
     });
   }, [pageOutOfRange, navigate]);
 
-  function beginDelete(user: UserDetail) {
-    setDeleteError(null);
-    setPendingDelete(user);
-  }
-
   async function confirmDelete() {
-    if (pendingDelete === null) return;
-    setDeleteError(null);
+    const target = store.state.delete.pending;
+    if (target === null) return;
+    store.actions.clearDeleteError();
     try {
-      await remove.mutateAsync(pendingDelete.id);
-      setPendingDelete(null);
+      await remove.mutateAsync(target.id);
+      store.actions.cancelDelete();
     } catch (caught) {
-      setDeleteError(
+      store.actions.failDelete(
         caught instanceof ApiError ? caught.message : "Could not deactivate that user.",
       );
     }
   }
 
   return (
+    <UserListProvider value={{ store }}>
     <section>
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <h1 className="text-xl font-semibold text-slate-900">Users</h1>
@@ -176,20 +176,11 @@ export function UserListPage() {
         >
           {/* The table collapses to stacked cards below md (spec §5.2). */}
           <div className="hidden overflow-x-auto md:block">
-            <UserTable
-              users={data.results}
-              onDelete={beginDelete}
-              currentUserId={currentUser?.id}
-            />
+            <UserTable users={data.results} />
           </div>
           <div className="md:hidden">
             {data.results.map((user) => (
-              <UserCard
-                key={user.id}
-                user={user}
-                onDelete={beginDelete}
-                currentUserId={currentUser?.id}
-              />
+              <UserCard key={user.id} user={user} />
             ))}
           </div>
 
@@ -209,9 +200,10 @@ export function UserListPage() {
           error={deleteError}
           isDeleting={remove.isPending}
           onConfirm={() => void confirmDelete()}
-          onCancel={() => setPendingDelete(null)}
+          onCancel={store.actions.cancelDelete}
         />
       )}
     </section>
+    </UserListProvider>
   );
 }

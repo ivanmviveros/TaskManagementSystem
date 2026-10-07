@@ -225,6 +225,33 @@ describe("UserListPage", () => {
     await waitFor(() => expect(within(dialog).getByRole("alert")).toHaveFocus());
   });
 
+  it("refocuses the alert when the same deactivation failure repeats (D75)", async () => {
+    usersRespondWith([operator()]);
+    server.use(
+      http.delete(`${BASE}/users/:id/`, () =>
+        HttpResponse.json(
+          { detail: "You cannot deactivate that user.", code: "permission_denied" },
+          { status: 403 },
+        ),
+      ),
+    );
+    await renderApp("/users");
+    const user = userEvent.setup();
+    const table = await screen.findByRole("table");
+    await user.click(
+      await within(table).findByRole("button", { name: /deactivate operator@demo.local/i }),
+    );
+    const dialog = await screen.findByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: /^deactivate$/i }));
+    await waitFor(() => expect(within(dialog).getByRole("alert")).toHaveFocus());
+
+    within(dialog).getByRole("button", { name: /cancel/i }).focus();
+    expect(within(dialog).getByRole("alert")).not.toHaveFocus();
+
+    await user.click(within(dialog).getByRole("button", { name: /^deactivate$/i }));
+    await waitFor(() => expect(within(dialog).getByRole("alert")).toHaveFocus());
+  });
+
   it("renders a card per user for narrow viewports", async () => {
     // jsdom applies no CSS, so BOTH presentations are in the DOM. That is why
     // the table assertions above are scoped, and why the card gets its own test

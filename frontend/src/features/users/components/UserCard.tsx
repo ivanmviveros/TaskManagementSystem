@@ -1,14 +1,6 @@
-
-import { Button } from "../../../components/Button";
-import { ButtonLink } from "../../../components/ButtonLink";
 import { ROLE_LABEL } from "../../auth/types";
 import type { UserDetail } from "../types";
-
-interface UserCardProps {
-  user: UserDetail;
-  onDelete: (user: UserDetail) => void;
-  currentUserId: string | undefined;
-}
+import { UserRowActions } from "./UserRowActions";
 
 /**
  * The below-`md` presentation of a row. A separate component rather than a CSS
@@ -16,7 +8,7 @@ interface UserCardProps {
  * header association and reads poorly to a screen reader — the same reasoning
  * as TaskCard (spec §5.2).
  */
-export function UserCard({ user, onDelete, currentUserId }: UserCardProps) {
+export function UserCard({ user }: { user: UserDetail }) {
   return (
     <article className="mb-3 rounded-lg bg-white p-4 shadow-sm">
       <h3 className="mb-2 font-medium">
@@ -30,26 +22,7 @@ export function UserCard({ user, onDelete, currentUserId }: UserCardProps) {
         <dt className="font-medium">Active</dt>
         <dd>{user.is_active ? "Yes" : "No"}</dd>
       </dl>
-      <div className="flex flex-wrap gap-2">
-        <ButtonLink
-          variant="secondary"
-          to="/users/$userId"
-          params={{ userId: user.id }}
-          aria-label={`Edit ${user.email}`}
-        >
-          Edit
-        </ButtonLink>
-        {/* D66, the UX mirror of IsNotSelf: never offer a refusal. */}
-        {user.id !== currentUserId && (
-          <Button
-            variant="danger"
-            aria-label={`Deactivate ${user.email}`}
-            onClick={() => onDelete(user)}
-          >
-            Deactivate
-          </Button>
-        )}
-      </div>
+      <UserRowActions user={user} />
     </article>
   );
 }

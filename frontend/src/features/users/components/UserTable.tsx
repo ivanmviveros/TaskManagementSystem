@@ -1,20 +1,16 @@
-
-import { Button } from "../../../components/Button";
-import { ButtonLink } from "../../../components/ButtonLink";
 import { ROLE_LABEL } from "../../auth/types";
 import type { UserDetail } from "../types";
+import { UserRowActions } from "./UserRowActions";
 
 interface UserTableProps {
   users: UserDetail[];
-  onDelete: (user: UserDetail) => void;
-  currentUserId: string | undefined;
 }
 
 /**
  * The ≥`md` presentation of the user list. Follows TaskTable's pattern but keeps
  * the `md` breakpoint (TaskTable starts at `lg`, D69).
  */
-export function UserTable({ users, onDelete, currentUserId }: UserTableProps) {
+export function UserTable({ users }: UserTableProps) {
   return (
     <table className="w-full border-collapse bg-white text-left text-sm shadow-sm">
       <thead>
@@ -46,26 +42,7 @@ export function UserTable({ users, onDelete, currentUserId }: UserTableProps) {
             <td className="p-3 text-slate-600">{ROLE_LABEL[user.role]}</td>
             <td className="p-3 text-slate-600">{user.is_active ? "Yes" : "No"}</td>
             <td className="p-3">
-              <div className="flex flex-wrap gap-2">
-                <ButtonLink
-                  variant="secondary"
-                  to="/users/$userId"
-                  params={{ userId: user.id }}
-                  aria-label={`Edit ${user.email}`}
-                >
-                  Edit
-                </ButtonLink>
-                {/* D66, the UX mirror of IsNotSelf: never offer a refusal. */}
-                {user.id !== currentUserId && (
-                  <Button
-                    variant="danger"
-                    aria-label={`Deactivate ${user.email}`}
-                    onClick={() => onDelete(user)}
-                  >
-                    Deactivate
-                  </Button>
-                )}
-              </div>
+              <UserRowActions user={user} />
             </td>
           </tr>
         ))}
