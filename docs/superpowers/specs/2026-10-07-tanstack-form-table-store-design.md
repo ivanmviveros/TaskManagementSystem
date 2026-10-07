@@ -19,7 +19,7 @@ message, focus move and ARIA attribute stays as it is today. The backend is not 
 | Area | Today | After |
 |---|---|---|
 | Forms | `LoginPage` (5 `useState`), `TaskForm` (10), `UserForm` (9). Each repeats `fieldErrors` / `formError` / `isSubmitting` and its own `ApiError` → field mapping | `useAppForm` with bound field components and one server-error mapper (§5) |
-| Filter panels | `TaskFilters`, and the filter `<section>` inline in `UserListPage`. Checkboxes and selects write the URL directly; typed text goes through `useSearchParamDraft` | `useAppForm` with the same field components in a compact density, and `useUrlFieldSync` (§5.5) |
+| Filter panels | `TaskFilters`, and the filter `<section>` inline in `UserListPage`. Checkboxes and selects write the URL directly; typed text goes through `useSearchParamDraft` | `useAppForm` with the same field components in a compact density, and `useUrlFieldSync` (§5.6) |
 | Tables | `TaskTable` (sort buttons through `sorting.ts`) and `UserTable`, hand-built. Cards render separately. `Pagination` takes `count` / `page` / `pageSize` and two callbacks | `useAppTable`, controlled from the URL. `TableView`, `SortHeader` and `Pagination` are registered table components. Cards render from the same row model (§6) |
 | Component state | `TaskListPage` (4 `useState`), `TaskDetailPage` (3), `UserListPage` (2), `AssigneeCombobox` (3), `AuthContext` (2) | One session store. Per-mount feature stores (§4) |
 | Dead code | `src/App.tsx`, the Vite template's counter, imported nowhere, and the files only it uses: `src/App.css`, `src/assets/hero.png`, `react.svg`, `vite.svg` | Deleted |
@@ -155,7 +155,7 @@ singleton.
 
 | Module | State | Actions | Created by |
 |---|---|---|---|
-| `lib/delete-flow.ts` (generic slice) | `{ pending: T \| null; error: string \| null }` | `begin(target)`, `cancel()`, `fail(message)` | Composed into the stores below |
+| `lib/delete-flow.ts` (generic slice) | `{ pending: T \| null; error: string \| null }` | `begin(target)`, `cancel()`, `fail(message)` | Composed into the stores below; under §4.0 its actions are written over the containing store's state, and the plan settles how |
 | `features/tasks/task-actions-store.ts` | delete flow over the task, plus `busyId: string \| null`, `actionError: string \| null` | the delete-flow actions, `startAction(id)`, `failAction(message)`, `endAction()` | `TaskListPage` and `TaskDetailPage`, one each |
 | `features/users/user-list-store.ts` | delete flow over `UserDetail` | the delete-flow actions | `UserListPage` |
 | `AssigneeCombobox` (per instance, no context) | `{ open, query: string \| null, activeIndex }` | `openAt(index)`, `close()`, `type(query)`, `moveTo(index)` | `AssigneeCombobox` |
@@ -339,7 +339,10 @@ export function useUrlFieldSync<TValue>(options: {
   before it are dropped, and the field is left alone, so an echo can never overwrite newer input.
   A queue rather than D50's single `lastWritten` matters for immediate fields: two quick checkbox
   clicks put two writes in flight, and the first echo must not briefly revert the second click.
-  Typed text keeps at most one write in flight, as before.
+  Typed text usually has one write in flight; the queue also covers a navigation slower than
+  the 300 ms quiet period.
+- A write equal to the current `committed` value is committed but **not queued**: the URL does
+  not change, so no echo will ever arrive to remove it.
 - When `committed` equals no queued write, the change came from elsewhere (Back, a nav link,
   Clear, a dashboard card). The hook clears the queue, drops any pending commit, and writes the
   value into the field with `form.setFieldValue(name, committed, { dontRunListeners: true })`.
@@ -505,7 +508,13 @@ behaviour-neutral and justified in its commit message.
 | `components/Pagination.test.tsx` → `components/table/Pagination.test.tsx` | Mounts `Pagination` inside a small `useAppTable` harness; the same assertions |
 | `features/tasks/sorting.test.ts` | The `nextOrdering` cases become `orderingToSorting` / `sortingToOrdering` cases. The header-click cycle is already covered by `TaskListPage.test.tsx` |
 
-### 7.3 New tests, each written first and seen to fail
+### 7.3 New tests, each written first
+
+Each new test is written before the code it covers. A test for new code (a mapper, a store, the
+pagination router) must fail first in the usual way. Three tests guard behaviour that `main`
+already has and pass there by design: the re-submit test, the untouched user form, and
+per-mount isolation. Their red step is on the migrated code: each must fail with its protection
+removed (`clearServerErrors`, the snapshot, `useCreateStore`), which the commit records.
 
 - `toServerErrors`: one case per rule in §5.2, including D75's "only when no rendered field has
   an error", and that a key outside `renderedFields` never reaches `fields`.
@@ -647,4 +656,5 @@ concern per commit.
 | Table v9 is a recent major | Pinned to `^9.2.6`. The installed type declarations and the guides the package ships are the reference; the docs site returned HTTP 500 during research |
 | Unstable table inputs re-run the row model or loop | Features and columns at module scope, a constant empty-data fallback, state memoized on the URL values |
 | jsdom cannot see layout or visual drift | The §8 browser re-test at four widths, with screenshots |
+| A `useUrlFieldSync` queue entry is left behind when the router supersedes a navigation, so its echo never arrives. An external change (Back/Forward) to exactly that value, before our next echo, would then be taken as our own, and the field would stay out of step with the URL | Accepted: it needs a superseded navigation and then an external change to that exact value. Any later echo clears every entry queued before it, and any other external change clears the queue. Equal-value writes are never queued (§5.6) |
 | Bundle size grows | Measured and recorded (§7.4, §9.2). No threshold is set; the numbers are reported |
