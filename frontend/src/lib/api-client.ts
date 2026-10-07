@@ -16,7 +16,7 @@ const NO_REFRESH_PATHS = new Set([REFRESH_PATH, "/auth/login/"]);
 
 /**
  * The access token lives here, in module memory, and never in localStorage or
- * sessionStorage (root AGENTS.md § Authentication). AuthContext is the only
+ * sessionStorage (root AGENTS.md § Authentication). the session store is the only
  * writer; keeping the value out of React state avoids a second copy that could
  * disagree with what the imperative client actually sends.
  */
@@ -78,7 +78,7 @@ function refreshAccessToken(): Promise<string> {
 /**
  * Restore a session from the refresh cookie. Returns whether it worked.
  *
- * Exported so AuthContext's bootstrap reuses `refreshInFlight` instead of
+ * Exported so SessionProvider's bootstrap reuses `refreshInFlight` instead of
  * posting to /auth/refresh/ itself (spec §4.3.1). That matters: the endpoint is
  * in NO_REFRESH_PATHS and the promise is module-private, so a direct post would
  * NOT be deduplicated, and StrictMode's double-invoked effect would fire two
@@ -137,7 +137,7 @@ export const apiClient = {
   post: <T>(path: string, body: unknown) => request<T>(path, { method: "POST", body }),
   patch: <T>(path: string, body: unknown) => request<T>(path, { method: "PATCH", body }),
   delete: <T = void>(path: string) => request<T>(path, { method: "DELETE" }),
-  /** Called when a refresh fails: AuthContext uses it to sign the user out. */
+  /** Called when a refresh fails: SessionProvider wires it to the session store's `expire`. */
   onSessionExpired: (handler: () => void) => {
     sessionExpiredHandler = handler;
   },

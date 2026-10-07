@@ -33,7 +33,7 @@ export const handlers: RequestHandler[] = [
   /**
    * The default fixture represents a VALID session (spec §4.5).
    *
-   * Once AuthContext bootstraps refresh-first, this is the request that decides
+   * Once SessionProvider bootstraps refresh-first, this is the request that decides
    * whether a rendered test is signed in — `/users/me/` no longer is. Tests
    * that want an anonymous visitor override this with a 401, which
    * LoginPage.test.tsx already does.

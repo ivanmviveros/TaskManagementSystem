@@ -3,7 +3,7 @@ import { RouterProvider } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import type { ReactNode } from "react";
 
-import { AuthProvider } from "../features/auth/AuthContext";
+import { SessionProvider } from "../features/auth/SessionProvider";
 import { useAuth } from "../features/auth/hooks/useAuth";
 import { ApiError } from "../lib/api-error";
 import { createAppRouter } from "./router";
@@ -59,7 +59,7 @@ export function Providers({
   const client = useMemo(() => queryClient ?? createQueryClient(), [queryClient]);
   return (
     <QueryClientProvider client={client}>
-      <AuthProvider>{children ?? <RoutedApp />}</AuthProvider>
+      <SessionProvider>{children ?? <RoutedApp />}</SessionProvider>
     </QueryClientProvider>
   );
 }
