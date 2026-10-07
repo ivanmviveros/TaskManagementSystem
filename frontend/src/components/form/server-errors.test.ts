@@ -5,7 +5,7 @@ import { ApiError } from "../../lib/api-error";
 import { clearServerErrors, serverMessage, setServerErrors, toServerErrors } from "./server-errors";
 
 const OPTIONS = {
-  renderedFields: ["title", "due_date"],
+  renderedFields: ["title", "due_date", "assignee"],
   codeToField: { assignee_not_assignable: "assignee" },
   fallback: "Could not save. Try again.",
 } as const;
@@ -36,6 +36,18 @@ describe("toServerErrors", () => {
   it("routes a field-specific code to its field, by code alone", () => {
     const error = new ApiError(400, "Not assignable.", "assignee_not_assignable");
     expect(toServerErrors(error, OPTIONS)).toEqual({ fields: { assignee: "Not assignable." } });
+  });
+
+  it("sends a field-specific code to the alert when that field is not rendered (D75)", () => {
+    const error = new ApiError(400, "Not assignable.", "assignee_not_assignable");
+    expect(
+      toServerErrors(error, { ...OPTIONS, renderedFields: ["title", "due_date"] }),
+    ).toEqual({ form: "Not assignable.", fields: {} });
+  });
+
+  it("shows the form message for a validation error with no field errors", () => {
+    const error = new ApiError(400, "Invalid input.", "validation_error", null);
+    expect(toServerErrors(error, OPTIONS)).toEqual({ form: "Invalid input.", fields: {} });
   });
 
   it("shows any other API error's message as the form message", () => {
@@ -74,6 +86,7 @@ describe("setServerErrors and clearServerErrors", () => {
     const { form, title } = mountedForm();
     setServerErrors(form, { form: "Whole form.", fields: { title: "Blank." } });
     clearServerErrors(form);
+    expect(form.state.canSubmit).toBe(true);
     expect(serverMessage(form.state.errorMap)).toBeUndefined();
     expect(serverMessage(title.state.meta.errorMap)).toBeUndefined();
   });

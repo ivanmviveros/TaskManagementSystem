@@ -11,7 +11,10 @@ export interface ServerErrors {
 export interface ServerErrorOptions {
   /** The fields this form renders an error for. No other key reaches `fields`. */
   renderedFields: readonly string[];
-  /** Error codes that belong to one field, decided by `code`, never by parsing `detail`. */
+  /**
+   * Error codes that belong to one field, decided by `code`, never by parsing `detail`.
+   * Ignored for a field the form does not render: its message goes to the alert instead (D75).
+   */
   codeToField?: Readonly<Record<string, string>>;
   /** The message for anything that is not an ApiError. */
   fallback: string;
@@ -40,14 +43,17 @@ export function toServerErrors(
     return Object.keys(fields).length > 0 ? { fields } : { form: error.message, fields };
   }
   const field = codeToField[error.code];
-  if (field !== undefined) return { fields: { [field]: error.message } };
+  if (field !== undefined && renderedFields.includes(field)) {
+    return { fields: { [field]: error.message } };
+  }
   return { form: error.message, fields: {} };
 }
 
 /**
  * The only part of a form these helpers touch. A concrete `FormApi` is not
- * assignable to `AnyFormApi` (its `listeners` generics are invariant), a
- * `Pick` of the one method is.
+ * assignable to `AnyFormApi`: its `TSubmitMeta` is `never`, which surfaces through
+ * the contravariant `listeners` callbacks ("any is not assignable to never").
+ * The helpers only need `setErrorMap`, hence the `Pick`.
  */
 export type ServerErrorTarget = Pick<AnyFormApi, "setErrorMap">;
 
