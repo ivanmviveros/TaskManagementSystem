@@ -4,7 +4,7 @@
 **Builds on:** [2026-10-06-list-navigation-design.md](2026-10-06-list-navigation-design.md), and on
 iteration 4 (D59–D65, recorded in `README.md`)
 **Source:** [`docs/qa/2026-10-07-frontend-qa-report.md`](../../qa/2026-10-07-frontend-qa-report.md)
-**Branch:** `fix/iteration-5`, off `main` at `36ec3bc`
+**Branch:** `fix/iteration-5`, off `main` at `14d4e6b`
 **Status:** approved in brainstorming. Pending written-spec review.
 
 ---
@@ -19,14 +19,14 @@ Info items. I traced each one to its cause in the code before designing a fix.
 | F1 | Medium | An Admin can deactivate, delete or demote their own account | `UserService.update` / `delete` (`apps/users/services.py:40-67`) and `UserViewSet` have no self check; `UserTable`, `UserCard` and `UserForm` offer every control on the actor's own row |
 | F2 | Medium | Focus drops to `<body>` after a failed submit | The submit `Button` is `disabled` while in flight; disabling the focused element blurs it, and nothing moves focus once errors render |
 | F3 | Medium | No sorting below `md` | The only sort controls are `TaskTable`'s `<thead>` buttons; `TaskCard` has none |
-| F4 | Low | Not-found states are dead ends | `TaskDetailPage`, `TaskEditPage` and `UserEditPage` render the raw `ApiError` message with no link; the router has no `notFoundComponent`, so TanStack's bare `<p>Not Found</p>` renders outside the shell and logs a warning |
+| F4 | Low | Not-found states are dead ends | `TaskDetailPage` renders the raw `ApiError` message; `TaskEditPage` and `UserEditPage` render fixed text ("Could not load that task/user.") and never read `error`; none offers a link. The router has no not-found component, so TanStack's bare `<p>Not Found</p>` renders and logs a warning. Under the default `notFoundMode: "fuzzy"` it renders outside the shell for `/does-not-exist`, but inside `AppShell`'s `<main>` for `/tasks/a/b` |
 | F5 | Low | "Back to tasks" discards list state | `TaskDetailPage` links to a fixed `to="/tasks"`, and the post-delete `navigate` does the same |
 | F6 | Medium | Sort column and direction are never shown | `TaskTable` receives `ordering` (`TaskTable.tsx:31`) but only feeds it to `nextOrdering`; the header render never reads it, and no `<th>` carries `aria-sort` |
 | F7 | Low | Active nav item not visually marked | `AppShell`'s `Link`s pass a fixed `className` and no `activeProps`; TanStack adds `aria-current` and an `active` class that nothing styles |
 | F8 | Low | Task table cramped at 768–1023 px | Six columns plus two action buttons need about 850 px; `md` gives about 750 |
 | F9 | Low | An inverted date range silently shows an empty list | `TaskFilters` commits each bound independently and never compares them |
 | F10 | Low | `?status=["BOGUS"]` reaches the API and shows "Invalid input." | `validateTaskListSearch` uses `asArray` (`search-params.ts:29`), which accepts any string |
-| F11 | Low | An anonymous deep link mounts the page and fires its query before redirecting | **Confirmed:** `RoutedApp`'s effect calls `router.invalidate()` while `auth.isLoading` is still true. `invalidate` ends in `this.load()` (`@tanstack/router-core` `router.js:554`), `guard()` returns early while loading, and the page's matches are committed. When `RouterProvider` mounts, it renders them, and the page fetches before the second invalidate redirects |
+| F11 | Low | An anonymous deep link mounts the page and fires its query before redirecting | **Confirmed:** `RoutedApp`'s effect calls `router.invalidate()` while `auth.isLoading` is still true. `invalidate` ends in `this.load()` (`@tanstack/router-core` `router.js:554`), `guard()` returns early while loading, and the page's matches are committed. When `RouterProvider` mounts, it renders them, and the page fetches before the second invalidate redirects. The test harness (`src/test/render-app.tsx`, `AppAtPath`) copies the same effect verbatim, which is why no test caught it |
 | F12 | Low | Date-only due dates show an invented time | The form stores `${day}T12:00:00Z`; `TaskDetailPage` renders it with `toLocaleString()`. Lists use local `toLocaleDateString()`, which can shift the day for viewers far from UTC |
 | F13 | Info | Users screens show `OPERATOR`, the form shows "Operator" | `ROLE_LABEL` is private to `UserForm`; `UserTable`, `UserCard` and the role filter print the raw value |
 | F14 | Info | Header nav targets are 20 px tall | Text-only links and button with no padding |
@@ -55,10 +55,10 @@ Continues from D65.
 | D68 | **The table shows its sort state:** `aria-sort` on every sortable `<th>`, a ▲/▼ glyph and stronger style on the active one, a faint ↕ on the others. Button names describe the action they will take. | F6. An invisible toggle is a guess, and a screen reader got nothing. |
 | D69 | **Below `lg` the task list renders cards plus a "Sort by" `<select>`;** the table starts at `lg`. The Users list keeps `md`. | F3 and F8. This **overrides spec §11.6** ("the task table collapses to stacked cards below `md`") for this one table: at `md` the six columns do not fit (chosen by the project owner). The Users table has five short columns and fits. |
 | D70 | **Links from the task list carry its search in history state (`tasksSearch`).** Detail, edit and create forward it, and every "back to the list" path uses it, after running it through `validateTaskListSearch`. Without state, `/tasks` is the fallback. | F5. It is explicit (no hidden global), survives a reload of the same tab, and degrades cleanly for deep links. A React-context memory and `history.back()` were rejected (§5.1). |
-| D71 | **A shared `NotFoundPanel` handles every not-found state;** the router's `defaultNotFoundComponent` renders it inside a `ShellLayout` extracted from `AppShell`. | F4. A not-found page should keep the user inside the app and offer the way back. The router option is the framework's mechanism (AGENTS.md principle 12) and removes TanStack's console warning. |
+| D71 | **A shared `NotFoundPanel` handles every not-found state.** The router uses `notFoundMode: "root"` and a `defaultNotFoundComponent` that renders the panel inside a `ShellLayout` extracted from `AppShell`. | F4. A not-found page should keep the user inside the app and offer the way back. Under the default `"fuzzy"` mode, an unknown path below a known prefix (`/tasks/a/b`) renders inside `AppShell`'s `<Outlet>`, while `/does-not-exist` renders at the root. One component would then have to work in both places, and wrapping it in the shell would double the header for the first. `"root"` gives one place and one component. The router options are the framework's mechanism (AGENTS.md principle 12) and remove TanStack's console warning. |
 | D72 | **The 404 message never says *why*:** "It may have been deleted, or it isn't assigned to you." | §7.2 rule 5: a 404 must not confirm that a row exists. |
 | D73 | **`validateTaskListSearch` keeps only known statuses and orderings.** `TASK_STATUSES` is exported once from `features/tasks/types.ts`. | F10. This completes D48 for the two parameters it missed, and repeats D56's single-export move for `ROLES`. |
-| D74 | **`RoutedApp` does not invalidate the router while auth is loading.** | F11. `invalidate()` *loads*, and loading against a still-loading context commits matches the guard never judged. The first real load is `RouterProvider`'s own, with the settled context. |
+| D74 | **The router is not invalidated while auth is loading,** and the effect that syncs auth into the router becomes one hook, `useRouterAuthSync` (its own `src/app/useRouterAuthSync.ts`), used by both `RoutedApp` and the test harness. | F11. `invalidate()` *loads*, and loading against a still-loading context commits matches the guard never judged. The first real load is `RouterProvider`'s own, with the settled context. The harness copied the effect by hand, so the tests exercised a copy, not the app. Sharing the hook means the regression test runs production code. |
 | D75 | **After a failed submit, focus moves to the first `aria-invalid` field, or else to the form's alert** (`useFocusFirstError`). | F2. The errors were announced but unreachable without hunting. A failure counter makes a repeat failure with the same errors refocus. |
 | D76 | **Due dates render as the UTC calendar date with no time** (`formatDueDate`). `created_at` and `completed_at` stay in local time. | F12. The form edits exactly the UTC day (`due_date.slice(0, 10)`) and stores noon UTC, so every viewer sees the day the form would let them edit. The trade-off: a seeded due date carrying a real time shows its UTC day. |
 | D77 | **The active nav link is marked with a 2 px bottom border, and header targets are at least 44 px tall.** | F7 and F14. `activeProps` is TanStack's own mechanism. Moving the header's vertical padding into the targets keeps its height about the same. |
@@ -120,8 +120,10 @@ succeed. Names and password stay editable.
 
 ### 3.3 Error contract
 
-The §8.7 tables gain two rows. They are recorded in the README's error-code list, not in the
-original spec, as in iterations 3 and 4:
+The §8.7 tables gain two rows. The original spec is not edited. The README has no
+error-code list; codes are documented inline in their decision's section (as
+`delete_requires_creator` is under D27, and `assignee_immutable` under D65). These two go inline in
+the README's new D66 entry (§8):
 
 | Code | Status | Layer | Raised when |
 |---|---|---|---|
@@ -132,8 +134,9 @@ original spec, as in iterations 3 and 4:
 
 - `UserTable` and `UserCard` take a `currentUserId` prop from `UserListPage`
   (`useAuth().user?.id`) and omit **Deactivate** on that row. **Edit** stays.
-- `UserForm` in edit mode for the actor's own account (`user.id === currentUser.id`) renders Role
-  as text and omits the Active checkbox. One line explains it: "You can't change your own role or
+- `UserForm` calls `useAuth()` itself, as `TaskForm` already does for the role. In edit mode for
+  the actor's own account (`user.id === currentUser.id`) it renders Role as text and omits the
+  Active checkbox. One line explains it: "You can't change your own role or
   deactivate your own account." This is the same pattern as TaskForm's terminal-status line. It
   still submits `role` and `is_active` unchanged, which the service accepts (§3.2).
 - `UserForm` maps `cannot_change_own_access` to the form-level alert, as it does for any non-field
@@ -158,8 +161,9 @@ export const DEFAULT_ORDERING = "-created_at"; // the API's default, spec §8.3
 
 /** undefined → the default, so the default is displayed like any other order. */
 export function parseOrdering(ordering: string | undefined): { field: SortField; direction: SortDirection };
-/** A click on `field`: flips it if it is the active field, else starts ascending. */
-export function nextOrdering(current: string | undefined, field: SortField): string;
+/** A click on `field`: flips it if it is the active field, else starts ascending.
+ *  Returns undefined when the result is DEFAULT_ORDERING, so the URL stays canonical (D48). */
+export function nextOrdering(current: string | undefined, field: SortField): string | undefined;
 /** The six values the UI writes; anything else is dropped by validateSearch (D73). */
 export function isOrdering(value: unknown): value is string;
 
@@ -174,7 +178,10 @@ export const SORT_OPTIONS: { value: string; label: string }[] = [
 ];
 ```
 
-`nextOrdering` moves here from `TaskTable.tsx`. Because it now reads the **resolved** order, the
+`nextOrdering` moves here from `TaskTable.tsx`. Because it can now return `undefined`,
+`TaskTable`'s `onOrderingChange` prop widens to `(ordering: string | undefined) => void`.
+`TaskListPage`'s handler already writes the value straight into the search, so `undefined`
+removes the parameter. Because it now reads the **resolved** order, the
 first click on **Created** with no parameter gives `created_at`: ascending, because the list is
 already newest-first. The header shows the flip, so it no longer looks random.
 
@@ -200,8 +207,13 @@ tied by `useId`. Its value is `filters.ordering ?? DEFAULT_ORDERING`, its option
 `SORT_OPTIONS`, and `onChange(ordering)` writes `ordering` through `TaskListPage`'s existing
 `editSearch`: replace, `resetScroll: false`, page reset.
 
-Picking "Newest first" writes `undefined`, not `"-created_at"`, so the URL stays canonical
+Picking "Newest first" writes `undefined`, not `"-created_at"`. Clicking the Created header back
+to descending does the same through `nextOrdering`, so both controls produce one canonical URL
 (D48).
+
+The select renders **outside** the results block, directly under the filters and above the
+loading, empty and error states, with `lg:hidden`. It therefore does not disappear when a filter
+empties the list.
 
 ### 4.4 Breakpoint (F8, D69)
 
@@ -209,8 +221,8 @@ Picking "Newest first" writes `undefined`, not `"-created_at"`, so the URL stays
 
 - The table wrapper changes from `hidden overflow-x-auto md:block` to
   `hidden overflow-x-auto lg:block`.
-- The card stack changes from `md:hidden` to `lg:hidden`, and renders `TaskSortSelect` above the
-  cards.
+- The card stack changes from `md:hidden` to `lg:hidden`. `TaskSortSelect` uses the same
+  `lg:hidden` (§4.3).
 
 `TaskCard`'s and `TaskTable`'s comments citing "below `md`" are updated to `lg` and D69.
 `UserListPage` is unchanged.
@@ -252,6 +264,9 @@ export function useTasksBackSearch(): TaskListSearch;
 It reads `useLocation().state.tasksSearch` and returns
 `validateTaskListSearch(state ?? {})`. History state is as hand-editable as a URL.
 
+The result always has every key, with `undefined` where nothing is set. Navigation treats that
+as `{}`, but tests must compare with that in mind rather than `toEqual({})`.
+
 **Consumers and forwarding.**
 
 | Where | Change |
@@ -282,6 +297,8 @@ It renders a white card with an `h1`, the message, and a secondary `ButtonLink`.
 
 **Detail and edit pages.**
 
+- `TaskEditPage` and `UserEditPage` must first read `error` from `useTask`/`useUser`. Today they
+  destructure only `isPending` and `isError`.
 - When `error instanceof ApiError && error.status === 404`: render
   `NotFoundPanel("Task not found", "It may have been deleted, or it isn't assigned to you.", "/tasks", "Back to tasks", back)`.
 - Any other error keeps today's alert and gains the same back link beneath it.
@@ -294,7 +311,10 @@ It renders a white card with an `h1`, the message, and a secondary `ButtonLink`.
 - `AppShell`'s header and `<main>` wrapper are extracted into
   `src/app/layout/ShellLayout.tsx` (`{ children }`); `AppShell` becomes
   `<ShellLayout><Outlet /></ShellLayout>`.
-- `createAppRouter` passes a `defaultNotFoundComponent` that reads `useAuth()`:
+- `createAppRouter` passes `notFoundMode: "root"` (D71), so every unmatched path renders at
+  the root, outside `AppShell`. That covers `/does-not-exist` and `/tasks/a/b` alike, and never
+  doubles the header.
+- It also passes a `defaultNotFoundComponent` that reads `useAuth()`:
   - **signed in:** `<ShellLayout>` around `NotFoundPanel("Page not found", "There's nothing at this address.", "/", "Go to your home page")`. `/` already redirects to the role's landing page, so one link serves every role.
   - **signed out:** the bare panel linking to `/login`, "Sign in".
 - The root route's title fallback ("Task Management System") applies; no new page title is added.
@@ -307,7 +327,9 @@ Each nav `Link` in `ShellLayout` gets:
 - `activeProps={{ className: "border-status-progress text-slate-900" }}`.
 
 `activeOptions` keeps the default (prefix match), so "Tasks" stays marked on `/tasks/:id` and
-`/tasks/new`. This section and §6.5 (F14) are one change to the same element.
+`/tasks/new`. The default also compares search params (`includeSearch`, a partial match). The
+nav link carries no search, so "Tasks" stays marked on a filtered `/tasks?status=…`. A test pins
+this. This section and §6.5 (F14) are one change to the same element.
 
 ### 5.4 URL whitelist (F10, D73)
 
@@ -322,20 +344,32 @@ Each nav `Link` in `ShellLayout` gets:
 
 ### 5.5 Router bootstrap (F11, D74)
 
-In `src/app/providers.tsx`:
+The effect moves out of `src/app/providers.tsx` into its own module,
+`src/app/useRouterAuthSync.ts`. It must not be exported from `providers.tsx`: that file is a
+`.tsx` module, so `react/only-export-components` (enabled in `.oxlintrc.json`) would add a new
+lint warning and break §7.4's "no new warnings" gate. A `.ts` file with no components is not
+subject to the rule.
 
 ```ts
-useEffect(() => {
-  // invalidate() LOADS (router-core), and while auth is loading guard() returns early —
-  // so a load now would commit the page's matches unjudged, and the page would mount
-  // and fetch before the redirect. RouterProvider's first load uses the settled context.
-  if (auth.isLoading) return;
-  void router.invalidate();
-}, [router, auth.user, auth.isLoading]);
+/** Re-runs the route guards whenever auth changes. Context changes alone do not re-run
+ *  beforeLoad. Used by RoutedApp and by the test harness, so tests run this exact code. */
+export function useRouterAuthSync(router: AppRouter, auth: AuthState) {
+  useEffect(() => {
+    // invalidate() LOADS (router-core), and while auth is loading guard() returns early —
+    // so a load now would commit the page's matches unjudged, and the page would mount
+    // and fetch before the redirect. RouterProvider's first load uses the settled context.
+    if (auth.isLoading) return;
+    void router.invalidate();
+  }, [router, auth.user, auth.isLoading]);
+}
 ```
 
-`isLoading` goes from true to false exactly once, so every later sign-in, sign-out or session
-expiry still invalidates as today.
+- `RoutedApp` imports and calls `useRouterAuthSync(router, auth)` in place of its inline effect.
+- `src/test/render-app.tsx` (`AppAtPath`) imports and calls it too, replacing its hand copy
+  ("Mirrors RoutedApp"). Without this, the F11 test (§7.2) would exercise the copy and the production fix
+  would go untested.
+- `isLoading` goes from true to false exactly once, so every later sign-in, sign-out or session
+  expiry still invalidates as today.
 
 ---
 
@@ -421,7 +455,7 @@ Each fix starts with a test that fails against `main` (the convention since iter
 |---|---|
 | `test_services.py` | Self role change gives `CannotChangeOwnAccess`. Self `is_active=False` gives the same. Self update of names and password, with `role` and `is_active` unchanged, succeeds. Another Admin's role and `is_active` can still be changed |
 | `test_api_users.py` | `DELETE /users/{self}/` gives 403 `cannot_delete_self` and the row is still live. `DELETE` of another user gives 204. `PATCH /users/{self}/` `{"role": "OPERATOR"}` gives 400 `cannot_change_own_access`. `PATCH /users/{self}/` `{"first_name": …, "role": "ADMIN", "is_active": true}` gives 200 |
-| permission classes | `IsNotSelf` raises with the code; returns True for another row |
+| `apps/core/tests/test_exceptions.py` (where `IsTaskCreator`'s raise is already covered) | `IsNotSelf` raises `PermissionDenied` with `cannot_delete_self` for the actor's own row; returns True for another row |
 
 Coverage of `apps/` stays at 100 %.
 
@@ -430,23 +464,24 @@ Coverage of `apps/` stays at 100 %.
 | Finding | Test |
 |---|---|
 | F1 | `UserListPage`: no Deactivate for the signed-in Admin's own row (table and card), present for others. `UserForm`: own account renders Role read-only and no Active checkbox; a `cannot_change_own_access` response shows the alert |
-| F6 | `sorting.test.ts`: parse (incl. default), toggle, whitelist, options. `TaskListPage`: with no `ordering`, Created has `aria-sort="descending"`; after clicking Due date, it has `aria-sort="ascending"` and the next-action name. Others have `none` |
-| F3 / F8 | The sort select shows "Newest first" by default; choosing "Due date, latest first" writes `ordering=-due_date` and resets the page. Wrapper classes are `lg:block` and `lg:hidden` (jsdom applies no CSS; layout is verified in §7.3) |
+| F6 | `sorting.test.ts`: parse (incl. default), toggle, whitelist, options, and `nextOrdering` returning `undefined` for the default. `TaskListPage`: with no `ordering`, Created has `aria-sort="descending"`; after clicking Due date, it has `aria-sort="ascending"` and the next-action name. Others have `none`. Clicking Created twice leaves no `ordering` in the URL |
+| F3 / F8 | The sort select shows "Newest first" by default; choosing "Due date, latest first" writes `ordering=-due_date` and resets the page. It is still present on an empty result. Wrapper classes are `lg:block` and `lg:hidden` (jsdom applies no CSS; layout is verified in §7.3) |
 | F10 | `search-params.test.ts`: `["BOGUS"]` becomes `undefined`; `["PENDING","BOGUS"]` becomes `["PENDING"]`; an unknown `ordering` is dropped and a known one kept |
-| F11 | `auth-routing.test.tsx`: an anonymous visit to `/dashboard` makes exactly one request (the refresh) and none to `/tasks/stats/`, then lands on `/login`. Must fail before §5.5 |
+| F11 | `auth-routing.test.tsx`: an anonymous visit to `/dashboard` makes exactly one request (the refresh) and none to `/tasks/stats/`, then lands on `/login`. Must fail before §5.5. The harness's switch to `useRouterAuthSync` lands in the same commit, so the test runs production code |
 | F5 | From `/tasks?status=…&page=3`, open a task, click **Back to tasks**, and the URL search is restored. The same through Edit → Save and through Delete. Opening the detail page directly gives a link to plain `/tasks` |
-| F4 | A detail 404 renders "Task not found" and a working back link; an edit 404 does the same; a user-edit 404 renders "User not found". An unknown path renders inside the shell with the home link. The setup's console guard proves the TanStack warning is gone |
-| F7 / F14 | `AppShell.test.tsx`: the current route's link has `aria-current="page"` and the active border class; the others do not. Nav links and Sign out carry `min-h-11` |
+| F4 | A detail 404 renders "Task not found" and a working back link; an edit 404 does the same; a user-edit 404 renders "User not found". A top-level unknown path (`/does-not-exist`) **and** a multi-segment one under a known prefix (`/tasks/a/b`) each render exactly one header, plus the home link. The test asserts exactly one `navigation` named "Main"; a `banner` count is not reliable for a `<header>` nested inside `<main>`. Signed out, the panel links to `/login`. The setup's console guard proves the TanStack warning is gone |
+| F7 / F14 | `AppShell.test.tsx`: the current route's link has `aria-current="page"` and the active border class; the others do not. "Tasks" stays active on `/tasks?status=["PENDING"]` and on `/tasks/:id`. Nav links and Sign out carry `min-h-11` |
 | F2 | For `LoginPage`, `TaskForm` and `UserForm`: after a 400 with field errors, `document.activeElement` is the first invalid input; after an error with no field errors, it is the alert; a second identical failure refocuses |
 | F9 | Inverted drafts render the message and `aria-invalid` on Due before; `min` and `max` mirror the other draft; a valid range shows no message |
-| F12 | `dates.test.ts` with `TZ=America/Bogota` (Vitest `test.env`): `formatDueDate("2026-01-01T23:30:00Z")` gives the 1 Jan 2026 date string with no time. The detail page renders the due date without a time component |
+| F12 | `dates.test.ts`, with the zone stubbed **in that file only** (`vi.stubEnv("TZ", …)` in `beforeEach`, `vi.unstubAllEnvs()` after; no suite-wide `test.env`). The inputs must cross midnight in the stubbed zone, so local formatting (today's bug) gives a different day and fails. Under `Asia/Tokyo` (UTC+9), `formatDueDate("2026-01-01T20:00:00Z")` must give the 1 Jan 2026 date string; local formatting would give 2 Jan. Under `America/Bogota` (UTC−5), `formatDueDate("2026-01-01T02:00:00Z")` must give 1 Jan; local would give 31 Dec. Neither string contains a time. The plan checks first that the zone stub takes effect in this Node and Vitest version, by asserting `new Date("2026-01-01T20:00:00Z").getDate() === 2` under Tokyo. The detail page renders the due date without a time component |
 | F13 | Table, card and filter show "Operator", not `OPERATOR` |
 
 Budgeted changes to existing tests:
 
 - sort-button names in `TaskListPage.test.tsx`;
 - any assertion on raw role text in `UserListPage.test.tsx`;
-- the `AppShell` tests where the header markup moves into `ShellLayout`.
+- the `AppShell` tests where the header markup moves into `ShellLayout`;
+- `src/test/render-app.tsx`, which switches to `useRouterAuthSync` (§5.5).
 
 ### 7.3 Browser re-test (Playwright)
 
@@ -475,8 +510,8 @@ every suite green:
 1. F1 backend.
 2. F1 UI.
 3. F11.
-4. F10.
-5. F6.
+4. F6 (introduces `sorting.ts`, including `isOrdering`).
+5. F10 (uses `isOrdering`).
 6. F3 + F8.
 7. F5.
 8. F4.
@@ -490,9 +525,16 @@ every suite green:
 
 **Documentation:**
 
-- `README.md` gains "Fixes from the QA report (D66–D78)", summarising each decision as the
-  D59–D63 section does. It also gains the two error codes, the D69 override in the "Deliberate
-  overrides" table, and the GenAI prompt record (root AGENTS.md §7).
+- `README.md` gains "Fixes from the QA report (D66–D78)", after "No assignee and not yours to
+  choose are different (D65)", summarising each decision as the D59–D63 section does. Within it:
+  - **the D66 entry** states the two error codes and their statuses inline, the way D27's section
+    states `delete_requires_creator`;
+  - **the D69 entry** says plainly that it departs from design spec §11.6's "below `md`". It is
+    **not** added to "Deliberate overrides of AGENTS.md": that table is for AGENTS.md overrides,
+    and AGENTS.md sets no table breakpoint;
+  - "Known limitations and exit criteria → Accepted risks" gains a row for the declined
+    last-Admin rule (§9).
+- The GenAI prompt and validation record (root AGENTS.md §7) is updated.
 - The original design spec is not edited.
 
 ---
