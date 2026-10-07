@@ -92,6 +92,14 @@ describe("TaskListPage", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(/database is down/i);
   });
 
+  it("exposes the router it rendered with, for the URL tests below", async () => {
+    signedInAs(SUPERVISOR);
+    tasksRespondWith([task()]);
+    const { router } = await renderApp("/tasks?page=2");
+    await screen.findByRole("table");
+    expect(router.state.location.search).toEqual({ page: 2 });
+  });
+
   it("sends status as repeated query parameters for a multi-select", async () => {
     signedInAs(SUPERVISOR);
     tasksRespondWith([task()]);
