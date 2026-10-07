@@ -1,4 +1,5 @@
 import {
+  HeadContent,
   Outlet,
   createRootRouteWithContext,
   createRoute,
@@ -47,10 +48,24 @@ export interface RouterContext {
   auth: AuthState;
 }
 
+const APP_NAME = "Task Management System";
+
+/** A route's tab title: the page first, so it survives a narrow tab (D57). */
+function pageTitle(page: string) {
+  return () => ({ meta: [{ title: `${page} · ${APP_NAME}` }] });
+}
+
 // The root route needs an explicit component: without one it renders nothing and
-// no child route ever appears.
+// no child route ever appears. HeadContent renders the deepest match's title, and
+// React 19 hoists it into <head>; the root's own title is the fallback (D57).
 const rootRoute = createRootRouteWithContext<RouterContext>()({
-  component: () => <Outlet />,
+  component: () => (
+    <>
+      <HeadContent />
+      <Outlet />
+    </>
+  ),
+  head: () => ({ meta: [{ title: APP_NAME }] }),
 });
 
 /** Redirect to /login when nobody is signed in, or to the role's landing page. */
@@ -70,6 +85,7 @@ const loginRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/login",
   component: LoginPage,
+  head: pageTitle("Sign in"),
   beforeLoad: ({ context }) => {
     // Already signed in: there is nothing to log in to.
     const { user, isLoading } = context.auth;
@@ -99,6 +115,7 @@ const dashboardRoute = createRoute({
   path: "/dashboard",
   component: StatsPage,
   beforeLoad: guard("/dashboard"),
+  head: pageTitle("Dashboard"),
 });
 
 const tasksRoute = createRoute({
@@ -106,6 +123,7 @@ const tasksRoute = createRoute({
   path: "/tasks",
   component: TaskListPage,
   beforeLoad: guard("/tasks"),
+  head: pageTitle("Tasks"),
   /**
    * The list's filters, sort, page and page size live in the URL (D45), which
    * is what makes the dashboard drill-through links, Back and a shared link
@@ -122,6 +140,7 @@ const usersRoute = createRoute({
   path: "/users",
   component: UserListPage,
   beforeLoad: guard("/users"),
+  head: pageTitle("Users"),
   validateSearch: validateUserListSearch,
   search: { middlewares: [stripSearchParams({ page: 1, page_size: DEFAULT_PAGE_SIZE })] },
 });
@@ -133,6 +152,7 @@ const taskCreateRoute = createRoute({
   path: "/tasks/new",
   component: TaskCreatePage,
   beforeLoad: guard("/tasks/new"),
+  head: pageTitle("New task"),
 });
 
 const taskDetailRoute = createRoute({
@@ -140,6 +160,7 @@ const taskDetailRoute = createRoute({
   path: "/tasks/$taskId",
   component: TaskDetailPage,
   beforeLoad: guard("/tasks/$taskId"),
+  head: pageTitle("Task details"),
 });
 
 const taskEditRoute = createRoute({
@@ -147,6 +168,7 @@ const taskEditRoute = createRoute({
   path: "/tasks/$taskId/edit",
   component: TaskEditPage,
   beforeLoad: guard("/tasks/$taskId"),
+  head: pageTitle("Edit task"),
 });
 
 // Again the static segment first, so "new" is never read as a user id.
@@ -155,6 +177,7 @@ const userCreateRoute = createRoute({
   path: "/users/new",
   component: UserCreatePage,
   beforeLoad: guard("/users/new"),
+  head: pageTitle("New user"),
 });
 
 const userEditRoute = createRoute({
@@ -162,6 +185,7 @@ const userEditRoute = createRoute({
   path: "/users/$userId",
   component: UserEditPage,
   beforeLoad: guard("/users/$userId"),
+  head: pageTitle("Edit user"),
 });
 
 const routeTree = rootRoute.addChildren([
