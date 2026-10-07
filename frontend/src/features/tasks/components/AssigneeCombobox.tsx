@@ -53,12 +53,15 @@ export function AssigneeCombobox({ id, label, value, onChange, error }: Assignee
   const optionId = (option: UserMinimal | null) =>
     `${id}-option-${option === null ? "none" : option.id}`;
   const activeOption = open && active >= 0 ? options[active] : undefined;
+  const activeOptionId = activeOption === undefined ? undefined : optionId(activeOption);
 
+  // Only when the active option changes: on every render, a page loaded by
+  // scrolling would pull the list back up to it.
   useEffect(() => {
-    if (activeOption === undefined) return;
+    if (activeOptionId === undefined) return;
     // Optional call: jsdom implements no scrolling.
-    document.getElementById(optionId(activeOption))?.scrollIntoView?.({ block: "nearest" });
-  });
+    document.getElementById(activeOptionId)?.scrollIntoView?.({ block: "nearest" });
+  }, [activeOptionId]);
 
   const canLoadMore = assignable.hasNextPage && !assignable.isFetchingNextPage;
   function loadMore() {
@@ -138,7 +141,7 @@ export function AssigneeCombobox({ id, label, value, onChange, error }: Assignee
           aria-autocomplete="list"
           aria-expanded={open}
           aria-controls={listboxId}
-          aria-activedescendant={activeOption === undefined ? undefined : optionId(activeOption)}
+          aria-activedescendant={activeOptionId}
           aria-invalid={error === undefined ? undefined : true}
           aria-describedby={error === undefined ? undefined : errorId}
           value={query ?? (value === null ? "" : userLabel(value))}

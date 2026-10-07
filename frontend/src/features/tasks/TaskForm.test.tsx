@@ -1,8 +1,8 @@
 import { focusManager } from "@tanstack/react-query";
-import { act, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { formatDueDate } from "../../lib/dates";
 import { server } from "../../test/msw-server";
@@ -259,6 +259,32 @@ describe("TaskForm", () => {
     expect(requests.map((url) => url.searchParams.get("page"))).toEqual(["1", "2"]);
     // The picker stays open, with focus on its input, after loading more.
     expect(screen.getByRole("combobox", { name: /assignee/i })).toHaveFocus();
+  });
+
+  it("loads the next page when the list is scrolled to its end, without jumping back to the top", async () => {
+    // jsdom implements no scrolling: record what the picker asks to scroll into view.
+    const scrolledIntoView = vi.fn();
+    Element.prototype.scrollIntoView = scrolledIntoView;
+    try {
+      signedInAs(SUPERVISOR);
+      const requests = assignableUsers(Array.from({ length: 45 }, (_, i) => operatorNo(i)));
+      await renderApp("/tasks/new");
+      const user = userEvent.setup();
+      await user.click(await screen.findByRole("combobox", { name: /assignee/i }));
+      const listbox = await screen.findByRole("listbox", { name: /assignee/i });
+      await waitFor(() => expect(within(listbox).getAllByRole("option")).toHaveLength(21));
+      scrolledIntoView.mockClear();
+
+      // jsdom lays nothing out, so every scroll position counts as the end.
+      fireEvent.scroll(listbox);
+      await waitFor(() => expect(within(listbox).getAllByRole("option")).toHaveLength(41));
+      expect(requests.map((url) => url.searchParams.get("page"))).toEqual(["1", "2"]);
+      // The active option ("Unassigned") did not change, so nothing may pull the
+      // list back to it: the new page appears below where the user scrolled to.
+      expect(scrolledIntoView).not.toHaveBeenCalled();
+    } finally {
+      delete (Element.prototype as Partial<Element>).scrollIntoView;
+    }
   });
 
   it("loads the next page when the keyboard reaches the last loaded user", async () => {
