@@ -389,7 +389,7 @@ export const sessionActions = ({ setState }: StoreApi<SessionState>) => ({
 export const createSessionStore = () => createStore(initialSessionState, sessionActions);
 export type SessionStore = ReturnType<typeof createSessionStore>;
 
-/** What useAuth() returns: the same shape AuthContext provided (D86). */
+/** What useAuth() returns: the same shape the old auth context provided (D86). */
 export interface AuthState {
   user: CurrentUser | null;
   /** True until the initial "who am I?" probe settles, so guards can wait. */
@@ -4933,6 +4933,8 @@ Run (from `frontend/`): `npm test -- --coverage` — note the file and test coun
 
 - [ ] **Step 2: `docs/TECHNICAL-DECISIONS.md` — header and counts**
 
+Both replacements below are **substring** replacements: the last quoted line of each continues in the file ("Each decision's full design context…", "The numbered log is mostly…"), and that rest of the line must stay.
+
 Replace
 
 ```
@@ -4998,7 +5000,7 @@ In "Deliberate overrides of AGENTS.md", replace the whole row that starts with `
 | **State ownership** | frontend §4 (A43): three kinds of state — server state in TanStack Query, shared client state in Context, local UI state in `useState` | Server state in TanStack Query. List view state (filters, sort, page, page size) in the URL, owned by the router. Form drafts in TanStack Form. The session, and each page's UI state, in TanStack Store, one store per page mount. `useState` only inside DOM and timing primitives | A list's view must survive refresh, Back and a shared link, and the dashboard's cards must be able to open it; only the URL does all four (D45). Form and Store replaced three copies of one submit-and-error lifecycle and the per-component flags (D79–D88), and per-mount stores keep `useState`'s lifetime while letting a row select only what it renders. Typed text keeps a short-lived draft in its form field (D82). | Engineer + AI |
 ```
 
-In "Sources", replace the row `| — | D79–D88 | Reserved by the TanStack Form, Table and Store refactor design, on branch …; not yet merged | — |` with:
+In "Sources", delete the row `| — | D79–D88 | Reserved by the TanStack Form, Table and Store refactor design, on branch …; not yet merged | — |`, and add this row **after** the `| 6. Structured logging | …` row, so the iterations stay in order:
 
 ```markdown
 | 7. TanStack Form, Table and Store | D79–D88 | [tanstack-form-table-store-design](superpowers/specs/2026-10-07-tanstack-form-table-store-design.md) | [plan](superpowers/plans/2026-10-07-tanstack-form-table-store.md) |
@@ -5084,6 +5086,10 @@ Replace the state table that follows "Each kind of state has exactly one home:" 
 | Access token | `lib/api-client.ts` module memory | never `localStorage` or `sessionStorage` |
 ```
 
+Two more lines in the same file:
+- near the top, replace `(D1–D78 and D89–D93).` with `(D1–D93).`;
+- in the containers diagram, replace `        UI["React SPA<br/>TanStack Router + Query"]` with `        UI["React SPA<br/>TanStack Router, Query, Form, Table and Store"]`.
+
 - [ ] **Step 6: `frontend/README.md` — the layout**
 
 In the `src/` tree, replace the `components/` line with
@@ -5103,15 +5109,58 @@ and the `lib/` line with
   are driven from the URL; the session and each page's UI state live in TanStack Stores.
 ```
 
-In the same file, replace `all 84 numbered decisions` with `all 94 numbered decisions`, and in the "Documentation" table replace `every decision (D1–D78 and D89–D93)` with `every decision (D1–D93)`.
+In the same file:
+- replace `all 84 numbered decisions` with `all 94 numbered decisions`;
+- in the "Documentation" table, replace `every decision (D1–D78 and D89–D93)` with `every decision (D1–D93)`;
+- in "Tech stack", replace `| Frontend | React 19, TypeScript, Vite, TanStack Router and TanStack Query, Tailwind CSS |` with `| Frontend | React 19, TypeScript, Vite, TanStack Router, Query, Form, Table and Store, Tailwind CSS |`;
+- in "Running the tests and checks", replace `303 tests pass.` with the Step 1 count (`<N> tests pass.`).
 
 `SUMMARY.md`:
 - line 27: replace `decisions D1–D78 and D89–D93` with `decisions D1–D93`;
-- "Frontend best practices", State bullet: replace `server state in TanStack Query, list state in the URL, the user in Context, and the token in module memory` with `server state in TanStack Query, list state in the URL, form drafts in TanStack Form, the session and each page's UI state in TanStack Store, and the token in module memory`;
-- "Key numbers": in the paragraph above the table, replace `the frontend figures are from \`main\` at \`59ce235\`, and the frontend has not changed since.` with `the frontend figures are from the TanStack refactor (iteration 7).`; set the Frontend tests row to the Step 1 counts and coverage; in the Static checks row replace `oxlint at its baseline of 5 warnings` with `oxlint at its baseline of 4 warnings`; set the Decisions row to `94: 10 Engineer, 30 Engineer + AI, 54 AI`; and in the Delivery row replace `6 iterations` with `7 iterations` and append `; 23 planned tasks in iteration 7`;
+- line 31: replace `of each of the first five iterations (iteration 6 went straight to tests and is recorded in the decision log)` with `of each iteration except the sixth (iteration 6 went straight to tests and is recorded in the decision log)`;
+- "Requirements checklist": replace `React 19, TanStack Router and Query` with `React 19, TanStack Router, Query, Form, Table and Store`;
+- "Frontend best practices", State bullet — the text is wrapped over two lines in the file:
+
+  ```
+  - **State:** server state in TanStack Query, list state in the URL, the user in Context, and the
+    token in module memory ([table](docs/ARCHITECTURE.md#frontend)).
+  ```
+
+  Replace those two lines with:
+
+  ```
+  - **State:** server state in TanStack Query, list state in the URL, form drafts in TanStack
+    Form, the session and each page's UI state in TanStack Store, and the token in module memory
+    ([table](docs/ARCHITECTURE.md#frontend)).
+  ```
+- "Key numbers": the paragraph above the table is wrapped over three lines:
+
+  ```
+  These were measured on 2026-10-07. The backend figures include iteration 6 (structured
+  logging); the frontend figures are from `main` at `59ce235`, and the frontend has not changed
+  since.
+  ```
+
+  Replace it with:
+
+  ```
+  These were measured on 2026-10-07. The backend figures include iteration 6 (structured
+  logging); the frontend figures are from the TanStack refactor (iteration 7).
+  ```
+
+  Then set the Frontend tests row to the Step 1 counts and coverage; in the Static checks row replace `oxlint at its baseline of 5 warnings` with `oxlint at its baseline of 4 warnings`; set the Decisions row to `94: 10 Engineer, 30 Engineer + AI, 54 AI`; and in the Delivery row replace `6 iterations` with `7 iterations` and append `; 23 planned tasks in iteration 7`;
 - "GenAI fluency", last bullet: replace `**The scale of the loop:** 6 iterations.` with `**The scale of the loop:** 7 iterations.`
 
 - [ ] **Step 8: `docs/GENAI-WORKFLOW.md`**
+
+In "How the output was validated", the current results are wrapped over two lines:
+
+```
+Current results: backend **432 tests, 100% coverage** (gate 80%); frontend **303 tests**,
+94.75% statement coverage; typecheck clean; lint at its 5-warning baseline.
+```
+
+Replace the frontend figures with Step 1's (test count and statement coverage) and `5-warning` with `4-warning`; keep the backend figures.
 
 In "The prompts" table, add after the iteration 6 row:
 
