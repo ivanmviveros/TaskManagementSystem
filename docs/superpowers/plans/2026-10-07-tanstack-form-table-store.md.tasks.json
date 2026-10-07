@@ -6,7 +6,7 @@
     { "id": 3, "subject": "Task 3: The session store replaces AuthContext (D86)", "status": "completed", "blockedBy": [2] },
     { "id": 4, "subject": "Task 4: The task-actions store for the task list and detail (D87)", "status": "completed", "blockedBy": [3] },
     { "id": 5, "subject": "Task 5: The user-list store (D87)", "status": "completed", "blockedBy": [4] },
-    { "id": 6, "subject": "Task 6: The assignee combobox's own store (D87)", "status": "pending", "blockedBy": [5] },
+    { "id": 6, "subject": "Task 6: The assignee combobox's own store (D87)", "status": "completed", "blockedBy": [5] },
     { "id": 7, "subject": "Task 7: The server-error mapper (D80)", "status": "pending", "blockedBy": [6] },
     { "id": 8, "subject": "Task 8: The app form: contexts, fields and form components (D79)", "status": "pending", "blockedBy": [7] },
     { "id": 9, "subject": "Task 9: LoginPage on the app form", "status": "pending", "blockedBy": [8] },
@@ -25,5 +25,5 @@
     { "id": 22, "subject": "Task 22: Re-run the QA report matrix in the browser", "status": "pending", "blockedBy": [21] },
     { "id": 23, "subject": "Task 23: Persist insights to claude-insights", "status": "pending", "blockedBy": [22] }
   ],
-  "lastUpdated": "2026-10-07T23:02:35+00:00"
+  "lastUpdated": "2026-10-07T23:17:20+00:00"
 }

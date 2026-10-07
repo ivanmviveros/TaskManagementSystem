@@ -98,8 +98,9 @@ primitives listed in D88.
 
 Every store module exports **two things**: its initial state and its actions factory. A component
 creates the store once per mount with `useCreateStore(initialState, actions)`, which returns a
-writable `Store<T, TActions>`. The module also exports `createXStore = () => createStore(initialState, actions)`,
-used **only** by unit tests.
+writable `Store<T, TActions>`. Where a unit test or a context's type needs it, the module also
+exports `createXStore = () => createStore(initialState, actions)`; no component calls it. (The
+combobox store, which has neither, does not.)
 
 Two rules follow from Store 0.11.2's types:
 
