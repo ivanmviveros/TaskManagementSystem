@@ -4,6 +4,7 @@ import type { FormEvent } from "react";
 import { Button } from "../../../components/Button";
 import { FormError } from "../../../components/FormError";
 import { TextField } from "../../../components/TextField";
+import { useFocusFirstError } from "../../../components/useFocusFirstError";
 import { ApiError } from "../../../lib/api-error";
 import { useAuth } from "../../auth/hooks/useAuth";
 import { ROLES, type Role } from "../../auth/types";
@@ -31,6 +32,7 @@ interface UserFormProps {
 }
 
 export function UserForm({ user, onSubmit, onCancel }: UserFormProps) {
+  const { ref: formRef, signalFailure } = useFocusFirstError<HTMLFormElement>();
   const isEdit = user !== undefined;
   const { user: currentUser } = useAuth();
   // D66: an Admin's own role and active flag are not theirs to change. The
@@ -66,13 +68,14 @@ export function UserForm({ user, onSubmit, onCancel }: UserFormProps) {
       } else {
         setFormError("Could not save. Try again.");
       }
+      signalFailure();
     } finally {
       setIsSubmitting(false);
     }
   }
 
   return (
-    <form onSubmit={handleSubmit} noValidate aria-label={isEdit ? "Edit user" : "New user"}>
+    <form ref={formRef} onSubmit={handleSubmit} noValidate aria-label={isEdit ? "Edit user" : "New user"}>
       <TextField
         id="email"
         label="Email"

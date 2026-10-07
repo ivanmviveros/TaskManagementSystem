@@ -120,6 +120,31 @@ const COMPLETED = {
 };
 
 describe("TaskForm", () => {
+  it("moves focus to the first invalid field after a failed save, every time (D75)", async () => {
+    signedInAs(SUPERVISOR);
+    server.use(
+      http.post(`${BASE}/tasks/`, () =>
+        HttpResponse.json(
+          {
+            detail: "Invalid input.",
+            code: "validation_error",
+            errors: { title: ["This field may not be blank."] },
+          },
+          { status: 400 },
+        ),
+      ),
+    );
+    await renderApp("/tasks/new");
+    const user = userEvent.setup();
+    const submit = await screen.findByRole("button", { name: /create task/i });
+    const title = screen.getByLabelText(/title/i);
+    await user.click(submit);
+    await waitFor(() => expect(title).toHaveFocus());
+    // Clicking moves focus to the button; identical errors must still refocus.
+    await user.click(submit);
+    await waitFor(() => expect(title).toHaveFocus());
+  });
+
   it("creates a task and invalidates the list", async () => {
     signedInAs(SUPERVISOR);
     assignableUsers();
@@ -756,5 +781,20 @@ describe("TaskDetailPage", () => {
     await user.click(within(dialog).getByRole("button", { name: /^delete$/i }));
     expect(await within(dialog).findByRole("alert")).toHaveTextContent(/only delete tasks you created/i);
     expect(screen.getByRole("dialog")).toBeInTheDocument();
+  });
+
+  it("keeps focus inside the dialog when deletion fails (D75)", async () => {
+    signedInAs(SUPERVISOR);
+    taskDetail({ can_delete: true });
+    deletesRespondWith(() =>
+      HttpResponse.json({ detail: "Refused.", code: "permission_denied" }, { status: 403 }),
+    );
+    await renderApp(`/tasks/${TASK_ID}`);
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: /^delete$/i }));
+    const dialog = screen.getByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: /^delete$/i }));
+    await within(dialog).findByRole("alert");
+    await waitFor(() => expect(dialog).toContainElement(document.activeElement as HTMLElement));
   });
 });

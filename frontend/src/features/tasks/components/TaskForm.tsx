@@ -4,6 +4,7 @@ import type { FormEvent } from "react";
 import { Button } from "../../../components/Button";
 import { FormError } from "../../../components/FormError";
 import { TextField } from "../../../components/TextField";
+import { useFocusFirstError } from "../../../components/useFocusFirstError";
 import { ApiError } from "../../../lib/api-error";
 import { useAuth } from "../../auth/hooks/useAuth";
 import type { UserMinimal } from "../../users/types";
@@ -40,6 +41,7 @@ interface TaskFormProps {
 
 export function TaskForm({ task, onSubmit, onCancel }: TaskFormProps) {
   const { user } = useAuth();
+  const { ref: formRef, signalFailure } = useFocusFirstError<HTMLFormElement>();
   const isEdit = task !== undefined;
   // D15/D16: an Operator cannot choose an assignee — on create it defaults to
   // self, on update it is immutable. Rendering the field would offer a choice
@@ -102,13 +104,14 @@ export function TaskForm({ task, onSubmit, onCancel }: TaskFormProps) {
       } else {
         setFormError("Could not save. Try again.");
       }
+      signalFailure();
     } finally {
       setIsSubmitting(false);
     }
   }
 
   return (
-    <form onSubmit={handleSubmit} noValidate aria-label={isEdit ? "Edit task" : "New task"}>
+    <form ref={formRef} onSubmit={handleSubmit} noValidate aria-label={isEdit ? "Edit task" : "New task"}>
       <TextField
         id="title"
         label="Title"

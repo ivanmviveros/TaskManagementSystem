@@ -38,6 +38,25 @@ beforeEach(() => {
 });
 
 describe("UserForm", () => {
+  it("moves focus to the email field when the address is taken (D75)", async () => {
+    server.use(
+      http.post(`${BASE}/users/`, () =>
+        HttpResponse.json(
+          { detail: "A user with this email address already exists.", code: "email_already_in_use", errors: null },
+          { status: 400 },
+        ),
+      ),
+    );
+    await renderApp("/users/new");
+    const user = userEvent.setup();
+    await user.type(await screen.findByLabelText(/^email$/i), "dupe@demo.local");
+    await user.type(screen.getByLabelText(/first name/i), "D");
+    await user.type(screen.getByLabelText(/last name/i), "Upe");
+    await user.type(screen.getByLabelText(/^password$/i), "a-strong-password-1");
+    await user.click(screen.getByRole("button", { name: /create user/i }));
+    await waitFor(() => expect(screen.getByLabelText(/^email$/i)).toHaveFocus());
+  });
+
   it("creates a user", async () => {
     let body: Record<string, unknown> | null = null;
     server.use(
