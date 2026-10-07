@@ -10,11 +10,17 @@ import os
 from celery import Celery
 from celery.schedules import crontab
 
+from apps.core.celery_context import connect_request_id_signals
+
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings.local")
 
 app = Celery("task_management")
 app.config_from_object("django.conf:settings", namespace="CELERY")
 app.autodiscover_tasks()
+
+# This module is imported by both the web process (which publishes) and the
+# worker (which runs tasks), so both ends of the broker get the handlers.
+connect_request_id_signals()
 
 app.conf.beat_schedule = {
     # Hourly cadence, daily dedupe window (spec §10.4): a task that goes overdue

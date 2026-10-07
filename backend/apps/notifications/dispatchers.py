@@ -57,7 +57,7 @@ class CeleryNotificationDispatcher(NotificationDispatcher):
     def _fan_out(event: str, task_id, history_id, actor_id) -> None:
         target = notification_target(task_id)
         if target is None:
-            logger.info("notifications.task_gone task=%s event=%s", task_id, event)
+            logger.info("notifications.task_gone", extra={"task_id": task_id, "event": event})
             return
         assignee_id, created_by_id, created_by_role = target
         recipients = resolve_recipients(

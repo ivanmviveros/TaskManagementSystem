@@ -28,7 +28,10 @@ class ApplicationError(APIException):
 def exception_handler(exc, context) -> Response | None:
     response = drf_exception_handler(exc, context)
     if response is None:
-        logger.exception("Unhandled exception in %s", context.get("view"))
+        view = context.get("view")
+        logger.exception(
+            "api.unhandled_exception", extra={"view": type(view).__name__ if view else None}
+        )
         return None  # fall through to Django's 500; never return the detail
 
     if isinstance(exc, DRFValidationError):
