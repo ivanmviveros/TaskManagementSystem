@@ -97,7 +97,7 @@ describe("UserListPage", () => {
     await waitFor(() => expect(lastQuery().get("search")).toBe("omar"));
   });
 
-  it("focuses Cancel in the deactivate dialog and closes it on Escape (D46)", async () => {
+  it("focuses Cancel in the deactivate dialog and closes it on Escape (D60)", async () => {
     usersRespondWith([operator()]);
     await renderApp("/users");
     const user = userEvent.setup();

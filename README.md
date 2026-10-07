@@ -916,6 +916,35 @@ Management System", page name first so it survives a narrow tab. `<HeadContent /
 route renders it. `index.html` deliberately has no `<title>`: React 19 hoists the route's title
 into `<head>` after any static one, and the browser shows the first.
 
+### Fixes from the browser check (D59–D63)
+
+A Playwright pass over the running app found five problems that the jsdom test suite could
+not see. Each fix has a test that failed first.
+
+- **The Compose frontend served stale code (D59).** A Docker bind mount on Windows (and often
+  macOS) does not deliver file-change events into the container, so after a `git pull` or a
+  branch switch Vite kept serving its cached modules — the merged dashboard rendered as the old
+  one until the container restarted. The Compose service sets `DEV_SERVER_POLLING=true`, which
+  turns on Vite's polling watcher; a native `npm run dev` keeps native file events.
+- **Dialogs did not take focus (D60).** Focus stayed on the button that opened the delete or
+  deactivate dialog, outside the `aria-modal` dialog, so a keyboard user tabbed through the whole
+  page to reach Cancel, and Escape did nothing. A shared `useModalDialog` hook focuses Cancel
+  (the safe default for a destructive action), closes on Escape unless a request is in flight,
+  keeps Tab inside the dialog, and returns focus to the opener when it still exists.
+- **The assignee picker stopped at 100 users (D61).** It paged `/users/` at its 100-row cap and
+  filtered Admins out in the browser, so with more users everyone past the first page was
+  unassignable, and D17 was re-derived on the client. `GET /users/assignable/` (Supervisor only)
+  returns the whole assignable set, unpaginated, with the minimal fields a Supervisor already
+  sees. The picker offers exactly what it reports — the same "report the rule, don't re-derive
+  it" approach as `can_delete` and `allowed_transitions`.
+- **Link-styled buttons took two Tab stops (D62).** Seven places wrapped a `<Button>` in a
+  router `<Link>` — a `<button>` inside an `<a>`, which is invalid HTML and two Tab stops for one
+  control. `ButtonLink` is one element with the button's look; a source-scan test fails if the
+  nesting comes back.
+- **Deleting from a task's page refetched it (D63).** Invalidating the `["tasks"]` prefix also
+  refetched the deleted task's own detail query — a guaranteed 404, logged just before
+  navigating to `/tasks`. The detail query is now removed before the rest is invalidated.
+
 ## Deliberate overrides of AGENTS.md
 
 | Override | AGENTS.md says | This project does | Why |

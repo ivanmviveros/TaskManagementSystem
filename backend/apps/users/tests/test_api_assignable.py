@@ -1,4 +1,4 @@
-"""GET /users/assignable/ — the assignee picker's options (D47).
+"""GET /users/assignable/ — the assignee picker's options (D61).
 
 The picker used to page /users/ at the 100-row cap and filter Admins out in the
 SPA: users past the first page could never be chosen, and D17 was re-derived on

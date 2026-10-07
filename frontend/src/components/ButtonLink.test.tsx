@@ -17,7 +17,7 @@ describe("links that look like buttons", () => {
   it("never nest a <Button> inside a <Link>", () => {
     // Nesting is invalid HTML (interactive content inside <a>) and costs keyboard
     // users two Tab stops for one control — found in the browser check on the
-    // dashboard's "New task" (D48). Use <ButtonLink> instead.
+    // dashboard's "New task" (D62). Use <ButtonLink> instead.
     const offenders = Object.entries(SOURCES)
       .filter(([path]) => !path.endsWith(".test.tsx"))
       .filter(([, source]) => LINK_WRAPPING_BUTTON.test(source))

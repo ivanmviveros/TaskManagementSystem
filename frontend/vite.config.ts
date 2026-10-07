@@ -12,7 +12,7 @@ export default defineConfig({
     // events into the container, so the watcher never sees edits made on the host
     // and Vite keeps serving its cached modules — stale after every pull or branch
     // switch. Only the Compose service opts in to polling; a native `npm run dev`
-    // keeps native file events, which are faster and cheaper.
+    // keeps native file events, which are faster and cheaper (D59).
     watch: process.env.DEV_SERVER_POLLING === "true" ? { usePolling: true, interval: 300 } : undefined,
   },
   test: {

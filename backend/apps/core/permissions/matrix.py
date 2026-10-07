@@ -40,7 +40,7 @@ MATRIX: Final[dict[tuple[str, str], frozenset[str]]] = {
     # "me" is identity, not user management: every authenticated role needs it to
     # route the SPA and render the right navigation.
     (Resource.USER, "me"): ALL_ROLES,
-    # The assignee picker's options (D47). Supervisor only: an Operator cannot
+    # The assignee picker's options (D61). Supervisor only: an Operator cannot
     # choose an assignee (D15/D16) and an Admin has no task surface (D13).
     (Resource.USER, "assignable"): frozenset({SUPERVISOR}),
     # D13: Admin has no task surface whatsoever, stats included.

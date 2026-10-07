@@ -46,7 +46,7 @@ function signedInAs(user: typeof OPERATOR | typeof SUPERVISOR) {
   server.use(http.get(`${BASE}/users/me/`, () => HttpResponse.json(user)));
 }
 
-/** GET /users/assignable/ answers with a plain list, not a page (D47). */
+/** GET /users/assignable/ answers with a plain list, not a page (D61). */
 function assignableUsers() {
   server.use(http.get(`${BASE}/users/assignable/`, () => HttpResponse.json([OPERATOR, SUPERVISOR])));
 }
@@ -116,7 +116,7 @@ describe("TaskForm", () => {
   });
 
   it("offers every assignable user the API reports, beyond one page", async () => {
-    // D47: the picker used to page /users/ at its 100-row cap, so everyone past
+    // D61: the picker used to page /users/ at its 100-row cap, so everyone past
     // the first page was unassignable. Which users are assignable (never an
     // Admin, D17) is now the server's answer, tested in test_api_assignable.py.
     signedInAs(SUPERVISOR);
@@ -396,7 +396,7 @@ describe("TaskDetailPage", () => {
   it("does not refetch the task it just deleted", async () => {
     // Invalidating the whole ["tasks"] prefix used to refetch the deleted task's
     // own detail query — a guaranteed 404 against the real API, logged to the
-    // console just before navigating away (D49).
+    // console just before navigating away (D63).
     signedInAs(SUPERVISOR);
     let detailGets = 0;
     server.use(

@@ -22,7 +22,7 @@ ButtonAnchor.displayName = "ButtonAnchor";
 const RouterButtonLink = createLink(ButtonAnchor);
 
 /**
- * A router link that looks like a Button (D48). ONE element, so ONE Tab stop:
+ * A router link that looks like a Button (D62). ONE element, so ONE Tab stop:
  * wrapping <Button> in <Link> nests a <button> inside an <a> — invalid HTML, and
  * two Tab stops for one control. Takes the router's typed `to`/`params`/`search`.
  */

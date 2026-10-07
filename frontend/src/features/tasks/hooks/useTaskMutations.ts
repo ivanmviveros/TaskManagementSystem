@@ -45,7 +45,7 @@ export function useDeleteTask() {
     onSuccess: (_data, id) => {
       // Drop the deleted task's own detail query BEFORE invalidating the
       // ["tasks"] prefix, which would otherwise refetch it: a guaranteed 404,
-      // logged while the detail page is still mounted on its way to /tasks (D49).
+      // logged while the detail page is still mounted on its way to /tasks (D63).
       queryClient.removeQueries({ queryKey: taskKeys.detail(id), exact: true });
       invalidateTasks(queryClient);
     },

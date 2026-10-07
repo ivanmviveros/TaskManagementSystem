@@ -27,7 +27,7 @@ export const updateUser = (id: string, input: UserUpdateInput) =>
 export const deleteUser = (id: string) => apiClient.delete(`/users/${id}/`);
 
 /**
- * Users who may hold a task: the assignee picker's options (D47).
+ * Users who may hold a task: the assignee picker's options (D61).
  *
  * A dedicated, unpaginated endpoint: paging /users/ at its 100-row cap made
  * everyone past the first page unassignable. The server applies D17 (never an

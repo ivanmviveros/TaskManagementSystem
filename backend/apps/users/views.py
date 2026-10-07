@@ -65,7 +65,7 @@ class UserViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.Gen
     @extend_schema(responses={200: UserMinimalSerializer(many=True)})
     @action(detail=False, methods=["get"], pagination_class=None)
     def assignable(self, request):
-        """Every user a task may be assigned to — the assignee picker's options (D47).
+        """Every user a task may be assigned to — the assignee picker's options (D61).
 
         Unpaginated on purpose: a picker needs the whole set, and paging /users/
         at its 100-row cap made everyone past the first page unassignable. D17

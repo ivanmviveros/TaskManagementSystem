@@ -10,7 +10,7 @@ const FOCUSABLE = [
 ].join(", ");
 
 /**
- * Keyboard behaviour for a modal dialog (D46), shared by the confirmation
+ * Keyboard behaviour for a modal dialog (D60), shared by the confirmation
  * dialogs. Attach the returned ref to the element with role="dialog".
  *
  * - On open, focus moves into the dialog: onto the element marked

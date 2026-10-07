@@ -314,7 +314,7 @@ describe("task deletion from the list", () => {
     expect(screen.getByRole("dialog")).toBeInTheDocument();
   });
 
-  describe("keyboard (D46)", () => {
+  describe("keyboard (D60)", () => {
     // Found in the browser check: focus stayed on the row's Delete button, so a
     // keyboard user had to Tab through the whole list to reach the dialog.
     it("moves focus into the dialog, onto Cancel", async () => {
