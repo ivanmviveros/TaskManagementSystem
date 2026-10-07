@@ -1,9 +1,10 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider, createMemoryHistory } from "@tanstack/react-router";
 import { render } from "@testing-library/react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 import { createAppRouter, type AppRouter } from "../app/router";
+import { useRouterAuthSync } from "../app/useRouterAuthSync";
 import { AuthProvider } from "../features/auth/AuthContext";
 import { useAuth } from "../features/auth/hooks/useAuth";
 import { clearAccessToken } from "../lib/api-client";
@@ -17,7 +18,7 @@ interface RouterHolder {
  * Mounts the REAL router and the REAL providers at `initialPath`, so routing
  * tests exercise the actual guards rather than a stub of them.
  *
- * Mirrors RoutedApp in app/providers.tsx: the router is created once and the
+ * Like RoutedApp in app/providers.tsx, and sharing its useRouterAuthSync: the router is created once and the
  * live auth state arrives through RouterProvider's `context` prop, and nothing
  * routed renders until the auth probe settles.
  */
@@ -31,10 +32,7 @@ function AppAtPath({ initialPath, holder }: { initialPath: string; holder: Route
     return created;
   });
 
-  // Mirrors RoutedApp: context changes alone do not re-run beforeLoad.
-  useEffect(() => {
-    void router.invalidate();
-  }, [router, auth.user, auth.isLoading]);
+  useRouterAuthSync(router, auth);
 
   if (auth.isLoading) return <div role="status">Loading…</div>;
   return <RouterProvider router={router} context={{ auth }} />;

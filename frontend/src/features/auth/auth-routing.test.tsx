@@ -107,6 +107,24 @@ describe("session bootstrap requests", () => {
     expect(failures).toEqual(["POST /api/v1/auth/refresh/"]);
   });
 
+  it.each(["/dashboard", "/tasks", "/users"])(
+    "loads no page data for an anonymous deep link to %s — only the refresh (D74)",
+    async (path) => {
+      server.use(
+        http.get(ME, () => HttpResponse.json({ detail: "x", code: "x" }, { status: 401 })),
+        http.post(`${BASE}/auth/refresh/`, () =>
+          HttpResponse.json(
+            { detail: "no cookie", code: "refresh_cookie_missing" },
+            { status: 401 },
+          ),
+        ),
+      );
+      await renderApp(path);
+      expect(await screen.findByLabelText(/email/i)).toBeInTheDocument();
+      expect(requests).toEqual(["POST /api/v1/auth/refresh/"]);
+    },
+  );
+
   it("restores a session from a valid cookie with no failed request", async () => {
     // The default fixture is a valid session: refresh answers with a token.
     await renderApp("/");

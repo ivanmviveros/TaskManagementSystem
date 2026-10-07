@@ -1,12 +1,13 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import type { ReactNode } from "react";
 
 import { AuthProvider } from "../features/auth/AuthContext";
 import { useAuth } from "../features/auth/hooks/useAuth";
 import { ApiError } from "../lib/api-error";
 import { createAppRouter } from "./router";
+import { useRouterAuthSync } from "./useRouterAuthSync";
 
 export function createQueryClient() {
   return new QueryClient({
@@ -36,14 +37,7 @@ export function RoutedApp() {
   // reading a ref during render is not safe.
   const [router] = useState(() => createAppRouter(auth));
 
-  // Updating the router's context does NOT re-run beforeLoad on its own, so
-  // without this a user who just signed in would sit on /login, and a user
-  // whose session expired would sit on a page they can no longer load. The
-  // invalidate re-evaluates the guards, which keeps every redirect rule in
-  // router.tsx rather than scattering navigate() calls through the features.
-  useEffect(() => {
-    void router.invalidate();
-  }, [router, auth.user, auth.isLoading]);
+  useRouterAuthSync(router, auth);
 
   if (auth.isLoading) {
     return (
