@@ -128,8 +128,10 @@ POSTGRES_PORT=5442 uv run --directory backend pytest -q
 ```
 
 `pytest` carries `--cov=apps --cov-report=term-missing --cov-fail-under=80` in `addopts`,
-so a local run and CI apply the same gate rather than two thresholds that can drift. The
-suite currently sits at 100% of `apps/`; 80 is a floor, not a target.
+so every full-suite run — a local run, the pre-push script and CI's `backend` job — applies
+the same gate rather than two thresholds that can drift. Only `compat`'s one-module smoke
+step opts out, with `--no-cov`. The suite currently sits at 100% of `apps/`; 80 is a floor,
+not a target.
 
 Frontend checks run from `frontend/`:
 
@@ -579,7 +581,9 @@ it exists only because of the unusual combination D1–D4 chose. It has three st
 1. Resolve the pinned set including the git source, assert Python ≥ 3.14 with a working
    `uuid.uuid7()`, assert Django is 6.0.x, import the two at-risk packages, and boot Django.
 2. Run the login round-trip, which is the single most load-bearing claim in D3 — that the
-   git-pinned simplejwt actually issues and verifies a token on Django 6.0.
+   git-pinned simplejwt actually issues and verifies a token on Django 6.0. It runs with
+   `--no-cov`: it is a smoke test of one module, and the 80% gate is a whole-suite
+   measurement that belongs to the `backend` job.
 3. Generate and validate the OpenAPI document, which is the equivalent claim for D4.
 
 This job is **deliberately temporary and risk-specific**. When a simplejwt release
