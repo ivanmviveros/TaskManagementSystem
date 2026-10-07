@@ -158,6 +158,33 @@ describe("LoginPage", () => {
     expect(screen.getByRole("button", { name: /signing in/i })).toBeDisabled();
   });
 
+  it("lets a second attempt through after a failed one (D80)", async () => {
+    let attempts = 0;
+    server.use(
+      http.post(`${BASE}/auth/login/`, () => {
+        attempts += 1;
+        if (attempts === 1) {
+          return HttpResponse.json(
+            {
+              detail: "No active account found with the given credentials.",
+              code: "no_active_account",
+              errors: null,
+            },
+            { status: 401 },
+          );
+        }
+        signedIn = true;
+        return HttpResponse.json({ access: "fresh-access-token", user: SUPERVISOR });
+      }),
+    );
+    await renderApp("/login");
+    const user = await fillAndSubmit();
+    expect(await screen.findByRole("alert")).toHaveTextContent(/no active account/i);
+    await user.click(screen.getByRole("button", { name: /sign in/i }));
+    expect(await screen.findByRole("heading", { name: /dashboard/i })).toBeInTheDocument();
+    expect(attempts).toBe(2);
+  });
+
   it("never writes the access token to localStorage or sessionStorage", async () => {
     server.use(loginSucceeds("secret-access-token"));
     await renderApp("/login");
