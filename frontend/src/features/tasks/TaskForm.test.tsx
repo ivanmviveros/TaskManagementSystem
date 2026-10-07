@@ -302,6 +302,30 @@ describe("TaskForm", () => {
     expect(creates.bodies[0]).toMatchObject({ assignee: SUPERVISOR.id });
   });
 
+  it("chooses nothing on Enter right after typing, until an arrow key picks an option (D64)", async () => {
+    signedInAs(SUPERVISOR);
+    assignableUsers();
+    await renderApp("/tasks/new");
+    const user = userEvent.setup();
+    const picker = await screen.findByRole("combobox", { name: /assignee/i });
+    await user.type(picker, "sam");
+    const listbox = await screen.findByRole("listbox", { name: /assignee/i });
+    await waitFor(() =>
+      expect(within(listbox).queryByRole("option", { name: /omar operator/i })).not.toBeInTheDocument(),
+    );
+    await within(listbox).findByRole("option", { name: /sam supervisor/i });
+    expect(picker).not.toHaveAttribute("aria-activedescendant");
+
+    await user.keyboard("{Enter}");
+    expect(picker).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByRole("listbox", { name: /assignee/i })).toBeInTheDocument();
+    expect(picker).toHaveValue("sam");
+
+    await user.keyboard("{ArrowDown}{Enter}");
+    expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+    expect(picker).toHaveValue("Sam Supervisor (supervisor@demo.local)");
+  });
+
   it("chooses an assignee with the mouse", async () => {
     signedInAs(SUPERVISOR);
     assignableUsers();
