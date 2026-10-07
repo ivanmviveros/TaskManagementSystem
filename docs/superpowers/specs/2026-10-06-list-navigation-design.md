@@ -61,15 +61,15 @@ Continues from D44.
 |---|---|---|
 | D45 | **URL search params are the single source of truth for list view state** — filters, ordering, page and page size — on both lists. A page derives its API filters from `useSearch` and writes every change through `navigate`; there is no `useState` copy. | The seed-once copy is why the URL goes stale. A mirrored copy would need syncing in both directions, with echo handling for every field. With the URL as the only copy, back/forward, refresh, shared links and dashboard cards all take one code path. A generic `useListSearch` hook was considered and deferred: there are two lists, and TanStack's typed `from` makes a generic hook awkward. |
 | D46 | **Changes are applied as patches through `navigate`'s updater form**, `search: (prev) => …`. `TaskFilters` emits `onChange(patch)` and `onClear()` rather than a full snapshot. | A debounced commit (D50) runs up to 300 ms after it was scheduled. A snapshot captured then would silently undo any change made in between. |
-| D47 | **Page moves push a history entry and reset scroll; filter, sort and page-size changes replace the current entry and keep scroll.** | Back should undo navigation, not each checkbox. Pushing on every edit would bury the previous page under them. Keeping scroll means toggling a filter does not jump the page. |
+| D47 | **Page moves push a history entry and reset scroll; every other list navigation replaces the current entry and passes `resetScroll: false`.** That covers filter, sort, page-size and draft commits, and D54's recovery. | Back should undo navigation, not each checkbox. Pushing on every edit would bury the previous page under them. The router resets window scroll after **every** navigation, replaces included, unless told not to (`router-core` `router.js`: `resetScroll ?? true`). Without the flag, toggling a filter would jump the page to the top. |
 | D48 | **URLs are canonical.** Both list routes use `stripSearchParams({ page: 1, page_size: DEFAULT_PAGE_SIZE })`, and empty filters are written as `undefined`. `validateSearch` drops what it cannot use: a page that is not a positive integer, a page size outside `PAGE_SIZES`, an unknown role. | One view, one URL. A framework middleware rather than omitting defaults by hand at each call site (AGENTS.md principle 12). An unlisted page size would leave the select showing no option. |
 | D49 | **Page window: first, last, and current ±2**, with a gap marker wherever pages are skipped — including a single skipped page, as in the approved preview. Below `sm` the page numbers give way to "Page X of Y"; First / Prev / Next / Last remain. | Chosen by the project owner. Up to thirteen controls do not fit a phone. |
-| D50 | **Text-entry controls edit a local draft committed to the URL after 300 ms without input.** These are the users Search box and the task Due after / Due before inputs. A committed value the draft did not write (Back, a nav link, Clear filters) replaces the draft and cancels a pending commit. A pending commit is cancelled on unmount. | §1.2.1. With a 300 ms quiet period at most one write is in flight, so "did I write this?" is a single-value comparison. It also turns one request per keystroke into one per pause. Cancelling on unmount stops a late commit from navigating back to a list the user has left. |
+| D50 | **Text-entry controls edit a local draft committed to the URL after 300 ms without input.** These are the users Search box and the task Due after / Due before inputs. A committed value the draft did not write (Back, a nav link) replaces the draft and cancels a pending commit. Clear filters cancels both date drafts' pending commits explicitly. A pending commit is cancelled on unmount. | §1.2.1. With a 300 ms quiet period at most one write is in flight, so "did I write this?" is a single-value comparison. It also turns one request per keystroke into one per pause. Cancelling on unmount stops a late commit from navigating back to a list the user has left. |
 | D51 | **The page-size select lives in the pager bar.** `PAGE_SIZES = [10, 20, 50, 100]` and `DEFAULT_PAGE_SIZE = 20` mirror `DefaultPageNumberPagination` (`page_size = 20`, `max_page_size = 100`). A change returns to page 1; Clear filters keeps the size. | Chosen by the project owner, and built once in the shared component. Page size is a view preference, not a filter. The backend still enforces the cap; the constants only choose what to offer. |
 | D52 | **The pager is driven by `count`:** `totalPages = max(1, ceil(count / pageSize))`. The `hasNext` / `hasPrevious` props go. `Pagination` moves to `src/components/`, with its pure helpers in `src/lib/pagination.ts`. | Numbered pages need the total, which the `next` / `previous` links cannot give; `count` comes from the same response. Two features import the component, so it is no longer feature code (frontend AGENTS.md §3). |
 | D53 | **Lists keep the previous page on screen while the next one loads** — `placeholderData: keepPreviousData` in `useTasks` and `useUsers`. The results region carries `aria-busy` and dims meanwhile. | §1.2.2. Without it, every page click unmounts the pager and drops keyboard focus. |
 | D54 | **A 404 for a page above 1 replaces the URL with page 1**, without showing the error. | §1.2.3. Page 1 never 404s (`allow_empty_first_page`), so this cannot loop. Stepping back one page at a time could take many requests for a stale bookmark. |
-| D55 | **The current page is a button with `aria-current="page"` whose click does nothing** — not a disabled button, not a `<span>`. Number buttons are keyed by page number. | A clicked number becomes the current page; disabling or replacing that element would drop focus to `<body>`. |
+| D55 | **The current page is a button with `aria-current="page"` whose click does nothing** — not a disabled button, not a `<span>`. Number buttons are keyed by page number. First / Prev / Next / Last still become `disabled` at the ends. | A clicked number becomes the current page; disabling or replacing that element would drop focus to `<body>`. At the ends the same focus drop is accepted: Prev and Next already behave that way today, and a disabled "Next" on the last page is the signal users expect. |
 | D56 | **`ROLES` is exported once from `features/auth/types.ts`**, beside `Role`, and used by the router, `UserListPage` and `UserForm`. | The `/users` search schema would otherwise add a third private copy of the list. |
 
 ---
@@ -135,7 +135,10 @@ interface PaginationProps {
   four are disabled and the window is `1`.
 - The page numbers are a `<ul className="hidden sm:flex">`. Gaps are `<li aria-hidden="true">…</li>`.
   The current page uses the primary `Button` variant with `aria-current="page"` and a no-op click
-  (D55); the rest use the secondary variant, with a narrower `px-3`.
+  (D55); the rest use the secondary variant. All of them are compact: `Button` gains a
+  `size?: "md" | "sm"` prop (default `"md"`, today's `px-4 py-2`; `"sm"` is `px-3 py-1.5`). A
+  `className="px-3"` would not work, because `Button` merges classes with plain `clsx` and
+  Tailwind emits `.px-4` after `.px-3`.
 - "Page X of Y" is a `<span className="sm:hidden">`.
 - **Rows per page** is a `<label>` and `<select>` tied by `useId`, offering exactly `PAGE_SIZES`.
 - The range text is unchanged: "first–last of count".
@@ -148,12 +151,15 @@ pager:
 ```tsx
 <Pagination
   count={data.count}
-  page={filters.page}
-  pageSize={filters.page_size}
+  page={page}
+  pageSize={pageSize}
   onPageChange={goToPage}
   onPageSizeChange={setPageSize}
 />
 ```
+
+`page: number` and `pageSize: PageSize` are locals resolved from the URL (§4.2). `Filters.page` and
+`Filters.page_size` are optional, so passing them directly would not typecheck.
 
 ---
 
@@ -202,27 +208,33 @@ New parsers sit beside the existing `asArray` and `asString`:
 
 ```ts
 const search = useSearch({ from: "/shell/tasks" });
+const navigate = useNavigate({ from: "/tasks" });
+const page = search.page ?? 1;
+const pageSize: PageSize = search.page_size ?? DEFAULT_PAGE_SIZE;
 const filters: Filters = {
   status: search.status as Filters["status"],
   due_date_after: search.due_date_after,
   due_date_before: search.due_date_before,
   overdue: search.overdue,
   ordering: search.ordering,
-  page: search.page ?? 1,
-  page_size: search.page_size ?? DEFAULT_PAGE_SIZE,
+  page,
+  page_size: pageSize,
 };
 ```
+
+`useSearch` takes the route **id** (`/shell/tasks`). `useNavigate` takes a **path** (`/tasks`): given
+the id, it logs a dev `console.warn`, which the test setup's console guard turns into a failure.
 
 `filters` reaches `useTasks(filters)` exactly as today, so the query key keeps its shape and the
 existing `useTasks` tests are unaffected. Every write is a `navigate` with the updater form (D46):
 
 | Action | `search: (prev) => …` | History | Scroll |
 |---|---|---|---|
-| Filter patch (`TaskFilters.onChange`) | `{ ...prev, ...patch, page: undefined }` | replace | kept |
-| Clear filters (`TaskFilters.onClear`) | `{ page_size: prev.page_size }` — drops filters **and** ordering, as today | replace | kept |
-| Sort (`TaskTable.onOrderingChange`) | `{ ...prev, ordering, page: undefined }` | replace | kept |
-| Page size | `{ ...prev, page_size, page: undefined }` | replace | kept |
-| Page move | `{ ...prev, page }` | **push** | reset to top |
+| Filter patch (`TaskFilters.onChange`) | `{ ...prev, ...patch, page: undefined }` | replace | `resetScroll: false` |
+| Clear filters (`TaskFilters.onClear`) | `{ page_size: prev.page_size }` — drops filters **and** ordering, as today | replace | `resetScroll: false` |
+| Sort (`TaskTable.onOrderingChange`) | `{ ...prev, ordering, page: undefined }` | replace | `resetScroll: false` |
+| Page size | `{ ...prev, page_size, page: undefined }` | replace | `resetScroll: false` |
+| Page move | `{ ...prev, page }` | **push** | default (reset to top) |
 
 `TaskFilters` changes contract:
 
@@ -255,17 +267,21 @@ export function useSearchParamDraft(
   committed: string,
   commit: (value: string) => void,
   delayMs = 300,
-): [draft: string, setDraft: (value: string) => void];
+): { draft: string; setDraft: (value: string) => void; cancel: () => void };
 ```
 
-1. The draft starts as `committed`.
+1. The draft starts as `committed`, and so does the last written value.
 2. `setDraft(value)` sets the draft and restarts the timer. When the timer fires, it records
    `value` as the last value written, then calls `commit(value)`.
 3. When `committed` changes to a value other than the last written, the change came from
    elsewhere: the draft takes the new value, which becomes the last written, and any pending
    timer is cancelled.
 4. Unmounting cancels a pending timer.
-5. `commit` is read through a ref, so the timer always calls the latest closure.
+5. `cancel()` drops a pending timer and resets the draft to `committed`. Rule 3 cannot catch a
+   reset that leaves this field's URL value unchanged: for example, picking a Due after date while
+   none is set, then clicking Clear filters within 300 ms. `TaskFilters` therefore calls both date
+   drafts' `cancel()` before `onClear()`.
+6. `commit` is read through a ref, so the timer always calls the latest closure.
 
 | Field | `committed` | `commit(value)` |
 |---|---|---|
@@ -276,9 +292,13 @@ export function useSearchParamDraft(
 The due-soon dashboard card writes a full timestamp (`isoDay(0)`). The draft compares the sliced
 day, so the echo of its own commit is recognised whatever the time part.
 
-**Accepted edge:** typing and then pressing Back within 300 ms, onto an entry whose value equals
-the last written one, lets the pending commit land on that entry. Leaving the list altogether
-unmounts the page and cancels the commit.
+**Accepted edges.** Two cases leave this field's URL value unchanged, so rule 3 never fires and
+the pending commit still lands:
+- typing, then pressing Back within 300 ms onto an entry whose value equals the last written one;
+- typing into an empty Search, then clicking the "Users" nav link within 300 ms, which is a
+  same-location navigation.
+
+Leaving the list altogether unmounts the page and cancels the commit.
 
 ### 4.4 Loading and out-of-range pages (D53, D54)
 
@@ -288,7 +308,7 @@ unmounts the page and cancels the commit.
   "Loading tasks…" / "Loading users…" now appears only before the first response.
 - Each page computes
   `pageOutOfRange = error instanceof ApiError && error.status === 404 && filters.page > 1`.
-  An effect replaces the URL with `{ ...prev, page: undefined }` when it is true, and the error
+  An effect replaces the URL with `{ ...prev, page: undefined }` (`resetScroll: false`) when it is true, and the error
   alert is not rendered for that case. Any other error renders as today.
 
 ### 4.5 Dashboard
@@ -346,12 +366,13 @@ The README is the reviewer's primary deliverable (root AGENTS.md §7):
 | `Pagination` | Shows "81–100 of 187" and "Page 5 of 10" |
 | Tasks, URL → API | `/tasks?page=2&page_size=50&overdue=true` requests `page=2`, `page_size=50`, `overdue=true`; page 2 is current and the select shows 50 |
 | Tasks, invalid URL | `page_size=37` requests `page_size=20`; `page=0` and `page=abc` request `page=1` |
-| Tasks, UI → URL | Ticking Pending puts `status` in the location, without `page`; history length is unchanged (replace) |
+| Tasks, UI → URL | From `/tasks?page=2`, ticking Pending puts `status` in the location and drops `page`; history length is unchanged (replace) |
 | Tasks, paging | Clicking "Page 2" puts `page=2` in the location and adds a history entry; `history.back()` requests page 1 again and marks it current |
-| Tasks, page size | Choosing 50 requests `page_size=50&page=1`; the location has `page_size=50` and no `page` |
+| Tasks, page size | From `/tasks?page=2`, choosing 50 requests `page_size=50&page=1`; the location has `page_size=50` and no `page` |
 | Tasks, canonical | Returning to page 1 or size 20 removes them from the location |
 | Tasks, Clear filters | Drops filters and ordering, keeps `page_size` |
 | Tasks, date draft | Typing a Due after date sends exactly one request carrying `due_date_after`, and the location gains it |
+| Tasks, Clear during a draft | Entering a Due after date and clicking Clear filters within 300 ms leaves the input empty, and no request ever carries `due_date_after` |
 | Tasks, out of range | `/tasks?page=3`, answered 404 for page 3, re-requests page 1, drops `page` from the location, and shows no alert |
 | Tasks, previous page kept | With the page-2 response held back, the table stays rendered inside `aria-busy="true"` until it arrives |
 | Users, URL → API | `/users?role=OPERATOR&search=omar&page_size=10` requests all three; the Search box shows "omar" |
@@ -364,6 +385,13 @@ The README is the reviewer's primary deliverable (root AGENTS.md §7):
 **Test helper.** `renderApp` returns the router it created alongside the render result, so tests
 can assert `router.state.location.search` and `router.history.length`, and call
 `router.history.back()`.
+- The router is created inside `AppAtPath`'s `useState`, so it reaches `renderApp` through a holder
+  object passed down as a prop.
+- The return value keeps every field of the render result. `StatsPage.test.tsx` calls `unmount()`
+  on it.
+- `router.history.back()` runs `router.load()` synchronously and updates router stores. Tests wrap
+  it in `act()`; otherwise React's "not wrapped in act" `console.error` fails the test through
+  the console guard in `setup.ts`.
 
 **Budgeted changes to existing tests.**
 
