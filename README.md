@@ -350,8 +350,6 @@ validated and corrected is in [docs/GENAI-WORKFLOW.md](docs/GENAI-WORKFLOW.md).
 - **One `401` from `POST /api/v1/auth/refresh/` on the login page is expected.** On every load, the
   app asks whether a refresh cookie can restore the session; for a visitor who is not signed in,
   the answer is no. A signed-in user sees no failed request.
-- **Console noise from `chrome-extension://`** (`MaxListenersExceededWarning`, `ObjectMultiplex`)
-  comes from the MetaMask browser extension, not from this app.
 - **A `500` at login, with `relation "users_user" does not exist`** in the backend log, means
   `migrate` has not run yet: `docker compose exec backend python manage.py migrate`.
 - **Login answers `429`:** sign-in is limited to 5 attempts a minute per IP. Wait a minute.

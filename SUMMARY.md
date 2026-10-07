@@ -34,8 +34,8 @@ in the [README](README.md).
 ## 2. Suggested reading order
 
 1. **User story.** Start with [spec §1.3](docs/superpowers/specs/2026-10-05-task-management-system-design.md#13-user-story):
-   - a Supervisor assigns work and watches what is overdue;
-   - an Operator sees only their own queue;
+   - a Supervisor assigns tasks and watches what is overdue;
+   - an Operator sees only their own tasks;
    - an Admin manages accounts **without** touching the work.
 
    The third clause shapes the whole permission design.
@@ -49,9 +49,6 @@ in the [README](README.md).
      for example A9 (layering), A20 (permissions), A35 (TDD and 80% coverage) and A45 (no
      duplicated rules in the UI);
    - the [brief's baseline](docs/TECHNICAL-DECISIONS.md#the-baseline-the-engineer-set).
-
-   Then pick a few decisions from the log, such as D11, D27, D28 and D45, and note each one's
-   origin.
 4. **Try it.** Follow the demo walkthrough in §3.
 5. **GenAI.** [GENAI-WORKFLOW.md](docs/GENAI-WORKFLOW.md) and the prompt logs show:
    - the prompt;
@@ -65,22 +62,22 @@ in the [README](README.md).
 Start the stack and seed it first ([Quick start](README.md#quick-start)). Every account's password
 is `DemoPass!2026`.
 
-| Step | Do | What to notice |
-|---|---|---|
-| 1 | Sign in as `supervisor@demo.local` | Lands on the dashboard: status counts, **Overdue**, **Due in 7 days** |
-| 2 | **View tasks** on the Overdue card | The list matches the card's number; the filter is in the URL |
-| 3 | Sort by **Due date** twice; change the page size; refresh | ▲/▼ with `aria-sort`; the state survives a refresh because it lives in the URL |
-| 4 | Open a task, then **Back to tasks** | Returns to the same filtered, sorted page (D70) |
-| 5 | **New task**; type in the assignee box; save | The picker searches as you type. The task opens on its detail page |
-| 6 | Open MailHog at http://localhost:8025 | The assignment email, sent by the Celery worker after the commit |
-| 7 | Edit the task to *In progress*, then **Complete** | Completed is terminal: the status is read-only afterwards |
-| 8 | Narrow the window to phone width | Cards plus a **Sort by** select; no horizontal scroll |
-| 9 | Submit an empty **New task** form | Focus jumps to the first invalid field (D75) |
-| 10 | **Sign out**; sign in as `operator@demo.local` | Only tasks assigned to this Operator; **Delete** only on tasks they created (D27) |
-| 11 | Paste another user's task URL | "Task not found", which does not reveal whether it exists (D72) |
-| 12 | Sign in as `admin@demo.local` | Only **Users**, no Tasks menu (D13); no **Deactivate** on their own row (D66) |
+| Step | Do                                                                                                                                                                  | What to notice |
+|---|---------------------------------------------------------------------------------------------------------------------------------------------------------------------|---|
+| 1 | Sign in as `supervisor@demo.local` at http://localhost:5173                                                                                                                | Lands on the dashboard: status counts, **Overdue**, **Due in 7 days** |
+| 2 | **View tasks** on the Overdue card                                                                                                                                  | The list matches the card's number; the filter is in the URL |
+| 3 | Sort by **Due date** twice; change the page size; refresh                                                                                                           | ▲/▼ with `aria-sort`; the state survives a refresh because it lives in the URL |
+| 4 | Open a task, then **Back to tasks**                                                                                                                                 | Returns to the same filtered, sorted page (D70) |
+| 5 | **New task**; type in the assignee box; save                                                                                                                        | The picker searches as you type. The task opens on its detail page |
+| 6 | Open MailHog at http://localhost:8025                                                                                                                               | The assignment email, sent by the Celery worker after the commit |
+| 7 | Edit the task to *In progress*, then **Complete**                                                                                                                   | Completed is terminal: the status is read-only afterwards |
+| 8 | Narrow the window to phone width                                                                                                                                    | Cards plus a **Sort by** select; no horizontal scroll |
+| 9 | Submit an empty **New task** form                                                                                                                                   | Focus jumps to the first invalid field (D75) |
+| 10 | **Sign out**; sign in as `operator@demo.local`                                                                                                                      | Only tasks assigned to this Operator; **Delete** only on tasks they created (D27) |
+| 11 | Paste another user's task URL                                                                                                                                       | "Task not found", which does not reveal whether it exists (D72) |
+| 12 | Sign in as `admin@demo.local`                                                                                                                                       | Only **Users**, no Tasks menu (D13); no **Deactivate** on their own row (D66) |
 | 13 | Open Swagger UI at http://localhost:8000/api/v1/schema/swagger-ui/; run `POST /auth/login/` as the Admin, **Authorize** with the `access` token, then `GET /tasks/` | The OpenAPI 3 docs; the Admin's 403 and the `{detail, code, errors}` error shape |
-| 14 | Copy the `X-Request-ID` response header from step 5's save, then run `docker compose logs backend worker \| grep <id>` | The API lines and the worker's email lines share one request id (D89–D90) |
+| 14 | Copy the `X-Request-ID` response header from step 5's save, then run `docker compose logs backend worker \| grep <id>`                                              | The API lines and the worker's email lines share one request id (D89–D90) |
 
 Sign-in allows 5 attempts a minute per IP, so a few mistyped passwords lock you out for a
 minute.
