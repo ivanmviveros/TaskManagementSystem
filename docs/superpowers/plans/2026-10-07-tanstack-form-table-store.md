@@ -2197,7 +2197,7 @@ export function LoginPage() {
         ref={formRef}
         onSubmit={(event) => {
           event.preventDefault();
-          // D80: a standing server error would make the form refuse this submit.
+          // D80: a standing field error would make the form refuse this submit.
           clearServerErrors(form);
           void form.handleSubmit();
         }}
@@ -2421,7 +2421,7 @@ export function UserForm({ user, onSubmit, onCancel }: UserFormProps) {
       ref={formRef}
       onSubmit={(event) => {
         event.preventDefault();
-        // D80: a standing server error would make the form refuse this submit.
+        // D80: a standing field error would make the form refuse this submit.
         clearServerErrors(form);
         void form.handleSubmit();
       }}
@@ -2878,7 +2878,7 @@ export function TaskForm({ task, onSubmit, onCancel }: TaskFormProps) {
       ref={formRef}
       onSubmit={(event) => {
         event.preventDefault();
-        // D80: a standing server error would make the form refuse this submit.
+        // D80: a standing field error would make the form refuse this submit.
         clearServerErrors(form);
         void form.handleSubmit();
       }}

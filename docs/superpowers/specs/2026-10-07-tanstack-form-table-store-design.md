@@ -63,7 +63,7 @@ Continues from D78.
 | # | Decision | Rationale |
 |---|---|---|
 | D79 | **TanStack Form owns every form draft** (Login, Task, User) and both filter panels. Validation stays server-only: `noValidate`, no client validators, no schema library. | Removes three copies of the same submit and error state. `AGENTS.md` treats frontend checks as UX only, and a migration adds no rules. |
-| D80 | **Server errors live in Form's `onServer` error slot.** A pure `toServerErrors` maps an error to `{ form, fields }`, routing to `fields` **only** the keys the form renders an error for; `setServerErrors` writes the slot; `clearServerErrors` empties it, form and every field, **before every submit**. | One mapper replaces three. Clearing first is required: an `onServer` error leaves the form invalid, and form-core 1.33.5's `_handleSubmit` then silently refuses the next submit (`canSubmit` is false, and `validate("submit")` keeps `isValid` false). Routing only rendered keys keeps today's behaviour: `setErrorMap` writes to **every** registered field, so an error keyed on `description` would otherwise appear under a textarea that shows no error today, and D75 would focus it instead of the alert. |
+| D80 | **Field server errors live in Form's `onServer` error slot; the form-level message lives in a small store beside the form** (`formMessageStore(form)`, read by `ServerFormError`). A pure `toServerErrors` maps an error to `{ form, fields }`, routing to `fields` **only** the keys the form renders an error for; `setServerErrors` writes both; `clearServerErrors` empties both **before every submit**. | One mapper replaces three. Clearing first is required: a standing field-level `onServer` error leaves the field invalid, and form-core 1.33.5's `_handleSubmit` then silently refuses the next submit. The form-level message is kept out of the error map because form-core clears a form-level `onServer` error on the next change or blur validation, while today's forms keep the message until the next submit (found in Task 9's review). Routing only rendered keys keeps today's behaviour: `setErrorMap` writes to **every** registered field, so an error keyed on `description` would otherwise appear under a textarea that shows no error today, and D75 would focus it instead of the alert. |
 | D81 | **Every form's default values are a mount-time snapshot**, taken once with a lazy initializer: the task and user edit forms (from the detail query) and the two filter panels (from the URL). D40's status options, read-only switch and "did it change?" check read the task snapshot. | `useForm` calls `FormApi.update` on every render, and `update` replaces an untouched form's values whenever `defaultValues` change deeply. The detail queries refetch on window focus, so passing them live would let a refetch rewrite an open form, which today's `useState` initialisers never do and D40 forbids. For the filters, the snapshot leaves `useUrlFieldSync` (D82) as the one path from the URL into the fields. |
 | D82 | **The filter panels are Forms without a `<form>` element.** `useUrlFieldSync` replaces `useSearchParamDraft`, with the same echo, cancel and unmount rules (D46, D50). It owns a cancellable timer, tracks every write not yet echoed (a queue, not a single value), and also handles fields that commit immediately. | One visual identity (owner's choice). Form's own `onChangeDebounceMs` timer cannot be cancelled, and Clear must cancel a pending date. Form also does not solve the echo: our own commit landing in the URL must not overwrite newer typing. Keeping `<section aria-label="Filters">` keeps Enter inert and the region role the tests query. |
 | D83 | **Tables are built with `createTableHook` and own no state.** Sorting, pagination and column visibility are controlled from the URL (`manualSorting`, `manualPagination`, `autoResetPageIndex: false`); no client row models are registered. | D45: the URL is the only copy of list state. The `manual*` flags only bypass client processing; the server already sorts and pages. |
@@ -246,12 +246,14 @@ The rules are today's, moved into one place:
 4. Anything else: the form message is `fallback`.
 
 **Writing and clearing.** `setServerErrors(form, { form, fields })` calls
-`form.setErrorMap({ onServer: { form, fields } })`. That call writes `fields[name]` to every
-registered field, so fields not listed are set to `undefined`. `clearServerErrors(form)` calls
-`form.setErrorMap({ onServer: { form: undefined, fields: {} } })`. The `fields` key is required:
-form-core treats a value as form-and-fields only when it has one (`isGlobalFormValidationError`),
-and `{ onServer: undefined }` alone would clear the form-level message but leave every field
-error in place, still blocking the next submit.
+`form.setErrorMap({ onServer: { form: undefined, fields } })` and puts `form` in
+`formMessageStore(form)`. The `setErrorMap` call writes `fields[name]` to every registered
+field, so fields not listed are set to `undefined`. `clearServerErrors(form)` calls
+`form.setErrorMap({ onServer: { form: undefined, fields: {} } })` and empties the message store.
+The `fields` key is required: form-core treats a value as form-and-fields only when it has one
+(`isGlobalFormValidationError`), and `{ onServer: undefined }` alone would leave every field
+error in place, still blocking the next submit. The form-level message is not in the error map
+because form-core clears a form-level `onServer` error on the next change or blur validation.
 
 **Submit wiring, identical in all three forms:**
 
