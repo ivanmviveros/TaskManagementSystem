@@ -42,14 +42,14 @@ def send_task_event_email(*, event: str, task_id: str, recipient_id: str, dedupe
         # Soft-deleted or genuinely gone between enqueue and delivery. Not an
         # error: the default managers filter deleted rows, so this is the
         # designed outcome of deleting a task with pending notifications.
-        logger.info("notifications.target_missing key=%s", dedupe_key)
+        logger.info("notifications.target_missing", extra={"dedupe_key": dedupe_key})
         return
 
     notification = notifications.create_if_absent(
         dedupe_key=dedupe_key, task_id=task.pk, recipient_id=recipient.pk, event=event
     )
     if notification is None:
-        logger.info("notifications.duplicate_skipped key=%s", dedupe_key)
+        logger.info("notifications.duplicate_skipped", extra={"dedupe_key": dedupe_key})
         return
 
     try:
@@ -60,15 +60,15 @@ def send_task_event_email(*, event: str, task_id: str, recipient_id: str, dedupe
     except SMTPException, ConnectionError:
         # Transport failure: let autoretry_for handle it. The Notification row
         # stays PENDING, so create_if_absent returns it again on the retry.
-        logger.warning("notifications.transport_failure key=%s", dedupe_key)
+        logger.warning("notifications.transport_failure", extra={"dedupe_key": dedupe_key})
         raise
     except Exception as exc:
         notifications.mark_failed(notification, error=f"{type(exc).__name__}: {exc}")
-        logger.exception("notifications.send_failed key=%s", dedupe_key)
+        logger.exception("notifications.send_failed", extra={"dedupe_key": dedupe_key})
         return
 
     notifications.mark_sent(notification)
-    logger.info("notifications.sent key=%s event=%s", dedupe_key, event)
+    logger.info("notifications.sent", extra={"dedupe_key": dedupe_key, "event": event})
 
 
 @shared_task(name="apps.notifications.tasks.sweep_overdue_tasks")
@@ -106,5 +106,5 @@ def sweep_overdue_tasks() -> int:
             )
             enqueued += 1
 
-    logger.info("notifications.sweep_complete enqueued=%s date=%s", enqueued, today)
+    logger.info("notifications.sweep_complete", extra={"enqueued": enqueued, "date": today})
     return enqueued

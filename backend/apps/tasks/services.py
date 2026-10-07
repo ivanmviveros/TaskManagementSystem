@@ -51,7 +51,10 @@ class TaskService:
             self._tasks.add(task)
             if data.assignee is not None:
                 self._enqueue("task_assigned", task, actor)
-        logger.info("task.created id=%s by=%s assignee=%s", task.pk, actor.pk, task.assignee_id)
+        logger.info(
+            "task.created",
+            extra={"task_id": task.pk, "actor_id": actor.pk, "assignee_id": task.assignee_id},
+        )
         return task
 
     def update(self, *, task_id: UUID, data: TaskUpdateInput, actor: User) -> Task:
@@ -92,7 +95,10 @@ class TaskService:
         # sorted(fields), NOT sorted(data): a pydantic model iterates as
         # (name, value) pairs, so the latter would write submitted titles and
         # descriptions into the audit log (backend §28).
-        logger.info("task.updated id=%s fields=%s by=%s", task.pk, sorted(fields), actor.pk)
+        logger.info(
+            "task.updated",
+            extra={"task_id": task.pk, "fields": sorted(fields), "actor_id": actor.pk},
+        )
         return task
 
     def complete(self, *, task_id: UUID, actor: User) -> Task:
@@ -106,13 +112,13 @@ class TaskService:
             task.completed_at = timezone.now()
             self._tasks.save(task)
             self._enqueue("task_status_changed", task, actor)
-        logger.info("task.completed id=%s by=%s", task.pk, actor.pk)
+        logger.info("task.completed", extra={"task_id": task.pk, "actor_id": actor.pk})
         return task
 
     def delete(self, *, task: Task, actor: User) -> None:
         with transaction.atomic():
             self._tasks.soft_delete(task, by=actor)
-        logger.info("task.soft_deleted id=%s by=%s", task.pk, actor.pk)
+        logger.info("task.soft_deleted", extra={"task_id": task.pk, "actor_id": actor.pk})
 
     # ---------- rules ----------
 
