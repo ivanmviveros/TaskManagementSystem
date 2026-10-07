@@ -82,7 +82,8 @@ export function TaskTable({
                 to="/tasks/$taskId"
                 params={{ taskId: task.id }}
                 state={{ tasksSearch: listSearch }}
-                className="text-status-progress underline-offset-2 hover:underline">
+                className="text-status-progress underline-offset-2 hover:underline"
+              >
                 {task.title}
               </Link>
               {task.is_overdue && <OverdueBadge />}

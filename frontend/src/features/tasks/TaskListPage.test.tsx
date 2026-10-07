@@ -747,6 +747,37 @@ describe("returning to the list (F5, D70)", () => {
     expect(router.state.location.search).toEqual(EXPECTED);
   });
 
+  it("returns to the same list from Back to tasks when opened through a card", async () => {
+    signedInAs(SUPERVISOR);
+    const item = task();
+    serveTask(item);
+    const { router } = await renderApp(LIST);
+    const user = userEvent.setup();
+    await screen.findByRole("table");
+    await user.click(within(screen.getAllByRole("article")[0]).getByRole("link", { name: item.title }));
+    await screen.findByRole("heading", { level: 1, name: item.title });
+    await user.click(screen.getByRole("link", { name: /back to tasks/i }));
+    await screen.findByRole("table");
+    expect(router.state.location.search).toEqual(EXPECTED);
+  });
+
+  it("keeps the list through creating a task from New task", async () => {
+    signedInAs(SUPERVISOR);
+    const item = task();
+    serveTask(item);
+    server.use(http.post(`${BASE}/tasks/`, () => HttpResponse.json(detailOf(item), { status: 201 })));
+    const { router } = await renderApp(LIST);
+    const user = userEvent.setup();
+    await screen.findByRole("table");
+    await user.click(screen.getByRole("link", { name: /new task/i }));
+    await user.type(await screen.findByLabelText(/title/i), item.title);
+    await user.click(screen.getByRole("button", { name: /create task/i }));
+    await screen.findByRole("heading", { level: 1, name: item.title });
+    await user.click(screen.getByRole("link", { name: /back to tasks/i }));
+    await screen.findByRole("table");
+    expect(router.state.location.search).toEqual(EXPECTED);
+  });
+
   it("falls back to the plain list for a task opened directly", async () => {
     signedInAs(SUPERVISOR);
     const item = task();
