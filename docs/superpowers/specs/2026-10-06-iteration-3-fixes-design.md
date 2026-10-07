@@ -25,8 +25,11 @@ The PATCH itself succeeds today: the serializer accepts `COMPLETED`, and `TaskSe
 skips transition validation when the requested status equals the current one. The selector
 is what lies. The real hazard is acting on that lie:
 
-- On a **completed** task, choosing the "Pending" it displays sends `PENDING`, and the API
-  answers **409** — `TRANSITIONS[COMPLETED]` is empty.
+- On a **completed** task, "Pending" is displayed because React marks the first option
+  selected when the value matches none. Re-picking that already-selected option fires no
+  `change` event, so the state stays `COMPLETED` and a save still succeeds. But choosing
+  **In progress** or **Cancelled** sends that status, and the API answers **409** —
+  `TRANSITIONS[COMPLETED]` is empty. Every real choice the form offers is refused.
 - On a **cancelled** task the selector shows the right value but offers Pending and In
   progress, both of which also 409.
 
@@ -40,8 +43,10 @@ gate has failed `compat` since iteration 1 enabled it (`7f19592`); this push mer
 it. Reproduced locally with an identical 63.34% and exit 1, and `--no-cov` exits 0.
 
 Stage 3 (`spectacular --validate`) never ran in CI, because stage 2 failed first. It was run
-locally with the exact CI command and exits 0 with no warnings, so fixing stage 2 is expected
-to turn the whole job green — but §7 verifies that in Actions rather than assuming it.
+locally with the exact CI command and exits 0, so fixing stage 2 is expected to turn the whole
+job green — but §7 verifies that in Actions rather than assuming it. Note that `--validate`
+checks the generated document against the OpenAPI schema and does **not** fail on generator
+warnings; only `--fail-on-warn` does.
 
 ---
 
@@ -53,7 +58,7 @@ Continues from D37.
 |---|---|---|
 | D38 | **Task deletion confirms through a dedicated `DeleteTaskDialog`, mirroring `DeleteUserDialog`.** | Two dialogs do not yet justify a generic `ConfirmDialog`; extracting one would also touch the users feature and its tests for no behavioural gain. |
 | D39 | **The API reports `allowed_transitions` on the task detail; the SPA does not mirror `TRANSITIONS`.** | Same reasoning as `can_delete` (D27): a second copy of a business rule in TypeScript is how the UI and the API drift. `TRANSITIONS` stays the single source. |
-| D40 | **`status` is sent in a PATCH only when the user changed it; a task with no allowed transitions shows its status read-only.** | The PATCH then states only what the user did, and a terminal task offers no choice that the API would refuse. |
+| D40 | **`status` is sent in a PATCH only when the user changed it — compared with the status the form *opened* with, not the live task; a task with no allowed transitions shows its status read-only.** | The PATCH then states only what the user did, and a terminal task offers no choice that the API would refuse. Comparing with the live `task.status` would be wrong: the detail query refetches (30 s `staleTime`, refetch on focus), so a status someone else changed while the form was open would make an untouched select look "changed" and silently undo their change. |
 | D41 | **Dashboard cards are plain containers whose single "View tasks" CTA is a stretched link.** | A button inside a link is invalid HTML and breaks keyboard and screen-reader navigation. The CTA's `::after` covers the card, so the whole card stays clickable with exactly one link. |
 | D42 | **"Due in 7 days" spans the full row at every breakpoint.** | The six cards before it divide evenly into both 2 and 3 columns, so a full-width last card leaves no breakpoint with a lone narrow one. Chosen by the project owner. |
 | D43 | **`compat` stage 2 runs with `--no-cov`; the coverage gate stays in `addopts`.** | Stage 2 is a smoke test of one module, not a coverage measurement. Moving the gate out of `addopts` would break the README's promise that a local run and CI apply the same gate. |
@@ -91,7 +96,7 @@ interface DeleteTaskDialogProps {
 
 | Page | Today | After |
 |---|---|---|
-| `TaskListPage` | `onDelete={(id) => void runAction(id, remove.mutateAsync)}` for table and cards | `onDelete` sets `pendingDelete` (the task looked up from `data.results` by id). Confirm runs the delete; success closes the dialog; failure shows its message inside the dialog and keeps it open. |
+| `TaskListPage` | `onDelete={(id) => void runAction(id, remove.mutateAsync)}` for table and cards | `onDelete` looks the task up in `data.results` by id **at click time** and stores the **task object** in `pendingDelete` (guarding the `undefined` that `find` can return), and clears any previous dialog error — as `UserListPage`'s `beginDelete` does. Storing the object rather than the id means a refetch while the dialog is open cannot make it disappear. Confirm runs the delete; success closes the dialog; failure shows its message inside the dialog and keeps it open. |
 | `TaskDetailPage` | Delete runs `remove.mutateAsync` then navigates to `/tasks` | Delete opens the dialog. Confirm deletes, then navigates to `/tasks`; failure stays in the dialog. |
 
 `TaskRowActions`, `TaskTable` and `TaskCard` keep their `onDelete(id)` signature, so no
@@ -112,13 +117,20 @@ component outside the two pages changes. The existing `can_delete` gating is unt
 allowed_transitions = serializers.SerializerMethodField()
 
 def get_allowed_transitions(self, task) -> list[str]:
-    return sorted(TRANSITIONS[task.status])
+    # TaskStatus declaration order, not alphabetical: sorted() would put
+    # CANCELLED before IN_PROGRESS and the select would read oddly.
+    allowed = TRANSITIONS[task.status]
+    return [status for status in TaskStatus.values if status in allowed]
 ```
 
 - Added to `Meta.fields` after `"status"`. Detail serializer only — list rows do not offer a
   status change.
-- The `-> list[str]` hint is what lets drf-spectacular type the field; without it the schema
-  generator warns, and `compat` stage 3 runs `--validate`.
+- The `-> list[str]` hint is what lets drf-spectacular type the field. Without it the
+  generator emits a warning — which `compat`'s `--validate` would **not** catch, but which
+  breaks the README's "0 warnings" claim and fails `spectacular --fail-on-warn`. §7 runs that
+  locally for this reason.
+- `TRANSITIONS[task.status]` works for both a database-loaded `str` and an in-memory
+  `TaskStatus` member, as `TaskService` already relies on.
 - **Budgeted test change:** `test_detail_serializer_adds_the_detail_only_fields` in
   `apps/tasks/tests/test_serializers.py` asserts the serializer's **exact** field list, and
   must gain `allowed_transitions`.
@@ -127,15 +139,25 @@ def get_allowed_transitions(self, task) -> list[str]:
 
 - `TaskDetail` in `features/tasks/types.ts` gains `allowed_transitions: TaskStatus[]`.
 - `TaskForm`:
-  - **Options** are `[task.status, ...task.allowed_transitions]`. `EDITABLE_STATUSES` is
-    deleted.
+  - **Options** are the current status plus `allowed_transitions`, rendered in the fixed
+    display order `STATUS_LABEL` already declares (Pending, In progress, Completed,
+    Cancelled) — a display order, not a rule. `EDITABLE_STATUSES` is deleted.
   - **Read-only when `allowed_transitions` is empty:** instead of a select, the form shows the
     status (as a `StatusBadge`) with one line explaining that completed and cancelled tasks
     keep their status. Nothing to choose, so nothing to get wrong.
-  - **Submit** includes `status` only when it differs from `task.status`:
-    `...(isEdit && status !== task.status ? { status } : {})`.
-- **Budgeted test change:** the `DETAIL` fixture in `TaskForm.test.tsx` gains
-  `allowed_transitions`, as does any other msw fixture returning a task detail.
+  - **Submit** includes `status` only when it differs from the status the form **opened**
+    with, captured once: `const [initialStatus] = useState(task?.status)`, then
+    `...(isEdit && status !== initialStatus ? { status } : {})`. See D40 for why not the live
+    `task.status`.
+- **Budgeted test changes** in `TaskForm.test.tsx` — the only fixture typed as `TaskDetail`
+  (`TaskEditPage` is the only edit-mode caller, and `msw-handlers.ts` has no task-detail
+  default):
+  - `DETAIL` (a pending task) gains `allowed_transitions: ["IN_PROGRESS", "CANCELLED"]`, so
+    "never offers COMPLETED" still finds the Cancelled option. Terminal-status tests override
+    it with `allowed_transitions: []`.
+  - "surfaces a 409 invalid_status_transition" must **select In progress first**. Under D40
+    an untouched form sends no `status`, so the test would still pass against its mocked 409
+    while no longer modelling a real case.
 
 The existing test "never offers COMPLETED in the status select" stays and keeps passing:
 `COMPLETED` can only appear as the *current* status, which renders read-only.
@@ -170,8 +192,12 @@ task does not depend on stats loading.
   label, giving names like "View tasks — Overdue". Seven links named only "View tasks" would be
   indistinguishable in a screen reader's link list.
 - `focus-within` shows the focus ring on the card, since the focused element is the link.
-- The stretched `::after` would cover any other interactive element inside the card; there
-  is none, and the component comment says so.
+- The stretched `::after` would cover any other interactive element inside the card. The
+  unused `children` prop is **removed**, so that constraint is enforced by the type rather
+  than only by a comment.
+- The card's `relative` is required, not decorative: without it the `::after` escapes the
+  card and covers the page.
+- `StatusDistributionBar` sits outside the grid and is unaffected.
 
 ### 5.3 Layout
 
@@ -184,11 +210,24 @@ and lays the label, value and CTA out in one row. The grid itself is unchanged
 | < `lg` (2 columns) | 2 + 2 + 2, then "Due in 7 days" full width |
 | ≥ `lg` (3 columns) | 3 + 3, then "Due in 7 days" full width |
 
-### 5.4 Existing tests
+### 5.4 Existing tests need changes
 
-`StatsPage.test.tsx` finds tiles with `getByRole("link", { name })` using patterns such as
-`/all tasks/i` and `/due in 7 days/i`. The new accessible names contain the label, so those
-queries keep matching, and every href and API-query assertion stays as it is.
+`StatsPage.test.tsx` finds tiles through a `tile(name)` helper over `getByRole("link")`, and
+two of its assumptions break once the value moves out of the link:
+
+- **Anchored patterns stop matching.** `/^pending/i`, `/^completed/i` and `/^cancelled/i` are
+  anchored at the start, and the new names begin with "View tasks". Re-anchor them on the
+  label suffix (e.g. `/— pending$/i`).
+- **Value assertions fail.** "renders all six figures" asserts each number with
+  `toHaveTextContent` on the link; the number now sits on the card, outside it. The helper
+  returns the **card** for value assertions (the link's closest card container) and the link
+  for href assertions.
+- **"renders identically for a Supervisor and an Operator"** still passes, but it compares link
+  text, which no longer contains the numbers. It must compare card text so it still proves
+  what its name says.
+
+The href and API-query assertions themselves are unchanged. The new "New task" link creates
+no ambiguity: no existing pattern matches it.
 
 ---
 
@@ -209,13 +248,17 @@ The `backend` job, `scripts/run-backend-tests.sh` and plain local runs keep the 
 
 README, "The `compat` CI job" section, stage 2 gains one sentence: it runs without coverage
 because it is a smoke test of one module, and the gate is the `backend` job's responsibility.
+The "Running the checks" section's claim that "a local run and CI apply the same gate" is
+qualified to say the gate is applied by the full-suite runs — the `backend` job and the
+pre-push script — and not by `compat`'s smoke step.
 
 ---
 
 ## 7. Delivery and verification in Actions (D44)
 
 1. All work lands on `fix/iteration-3`.
-2. Before pushing, the exact stage-2 and stage-3 commands are run locally and must exit 0.
+2. Before pushing, the exact stage-2 and stage-3 commands are run locally and must exit 0,
+   plus `manage.py spectacular --fail-on-warn` — the check `--validate` does not make (§1.2).
 3. `git push -u origin fix/iteration-3`. The workflow triggers on `push` to any branch, so
    this runs all four jobs. **The push needs the project owner's approval** — pushes have
    been blocked by permission settings so far.
@@ -236,16 +279,27 @@ because it is a smoke test of one module, and the gate is the `backend` job's re
 | Delete, list page | Confirm sends exactly one `DELETE`, then closes the dialog |
 | Delete, list page | A failed `DELETE` shows its message inside the dialog, which stays open |
 | Delete, detail page | Confirm deletes and navigates to `/tasks`; Cancel stays on the page |
-| Status, backend | `allowed_transitions` for each of the four statuses equals `sorted(TRANSITIONS[status])`; the detail field list includes it |
+| Delete, detail page | A failed `DELETE` shows its message inside the dialog, which stays open |
+| Status, backend | `allowed_transitions` for each of the four statuses equals `TRANSITIONS[status]` in `TaskStatus` declaration order; the detail field list includes it. (A `COMPLETED` factory task needs `completed_at`, or the check constraint rejects it.) |
 | Status, form | A completed task shows its status read-only, with no status combobox |
 | Status, form | A cancelled task likewise |
 | Status, form | Saving a completed task sends a PATCH **without** `status` |
 | Status, form | A pending task offers Pending, In progress and Cancelled, and changing it sends `status` |
 | Status, form | Saving a pending task without touching the status sends no `status` |
+| Status, form | If the task's status changes underneath an open, untouched form (a refetch), saving still sends no `status` (D40) |
 | Dashboard | Each card has a "View tasks" link with the same href as before |
 | Dashboard | "New task" links to `/tasks/new` |
+| Dashboard | The header and "New task" render in the loading and error states too |
+| Dashboard | Each card shows its number (asserted on the card, §5.4) |
 | Dashboard | The due-soon card carries `col-span-full` |
 | CI | Stage 2 and stage 3 exit 0 locally with the CI commands; all four jobs green in Actions |
+
+**Query scoping in the delete tests.** jsdom renders both the table and the cards, so each
+row's "Delete <title>" button appears twice, and the dialog's own "Delete" button also matches
+`/^delete/i` — as does the detail page's Delete button. Dialog interactions are scoped with
+`within(screen.getByRole("dialog"))`, row buttons with `within(table)`. With
+`onUnhandledRequest: "error"`, every delete test registers an `http.delete` handler, which
+is also how "sends exactly one DELETE" and "sends no DELETE" are counted.
 
 jsdom applies no CSS, so `col-span-full` is asserted as a class rather than as a layout. The
 dashboard's visual result — the stretched link, the full-width row — is checked in a browser
