@@ -173,9 +173,10 @@ singleton.
 - **Rows read the store themselves.** `TaskRowActions` and `TaskCard` select their busy flag
   with `useSelector(store, (s) => s.busyId === task.id)` and call `useTaskActions()`. Their
   `onComplete`, `onDelete`, `busyId` and `isBusy` props are removed.
-  `UserRowActions` (new, the user table's actions cell) and `UserCard` have no busy flag, since the
-  user list tracks none. They call the user-list store's `begin(user)` and read `useAuth()` for
-  D66; their `onDelete` and `currentUserId` props are removed.
+  `UserRowActions` (new: the user table's actions cell, which `UserCard` also renders) has no busy
+  flag, since the user list tracks none. It calls the user-list store's `beginDelete(user)` and
+  reads `useAuth()` for D66; `UserTable`'s and `UserCard`'s `onDelete` and `currentUserId` props
+  are removed.
 - **The detail page keeps today's behaviour.** It tracks no busy state; "Mark complete" is not
   disabled while in flight, exactly as now.
 - **The combobox keeps its contract.** The WAI-ARIA pattern, `aria-activedescendant`,
