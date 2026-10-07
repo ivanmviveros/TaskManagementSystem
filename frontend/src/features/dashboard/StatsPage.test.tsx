@@ -215,7 +215,7 @@ describe("StatsPage", () => {
     expect(newTask.getAttribute("href")).toBe("/tasks/new");
   });
 
-  it("keeps New task available while stats load and when they fail", async () => {
+  it("keeps New task available when stats fail to load", async () => {
     signedInAs(SUPERVISOR);
     server.use(
       http.get(`${BASE}/tasks/stats/`, () =>

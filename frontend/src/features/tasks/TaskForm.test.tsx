@@ -343,7 +343,9 @@ describe("TaskForm", () => {
       expect(patches.bodies[0]).not.toHaveProperty("status");
     } finally {
       // Restores the shared singleton. isFocused() then resolves to true, which
-      // fires one more focus refetch — harmless, the handlers are still in place.
+      // fires one more focus refetch that may still be in flight when afterEach
+      // resets the MSW handlers. Other tests also end with refetches in flight;
+      // if this one ever flakes on onUnhandledRequest, look here first.
       focusManager.setFocused(undefined);
     }
   });

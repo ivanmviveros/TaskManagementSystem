@@ -55,8 +55,9 @@ export function TaskForm({ task, onSubmit, onCancel }: TaskFormProps) {
   const [initialStatus] = useState(task?.status);
   const [initialTransitions] = useState<TaskStatus[]>(task?.allowed_transitions ?? []);
   const [status, setStatus] = useState<TaskStatus>(task?.status ?? "PENDING");
-  // Declared AFTER `status`: the filter callback runs during render, so any
-  // reference to a later `const` would throw a temporal-dead-zone ReferenceError.
+  // Kept after `status` on purpose: the filter runs during render, so if it is
+  // ever changed to read `status`, a declaration above it would throw a
+  // temporal-dead-zone ReferenceError instead of failing the test that guards it.
   const statusOptions = STATUS_ORDER.filter(
     (option) => option === initialStatus || initialTransitions.includes(option),
   );
