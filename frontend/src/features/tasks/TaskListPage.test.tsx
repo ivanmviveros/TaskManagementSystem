@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { beforeEach, describe, expect, it } from "vitest";
@@ -63,6 +63,35 @@ function lastQuery(): URLSearchParams {
   return requested[requested.length - 1].searchParams;
 }
 
+/**
+ * Answers like DRF's PageNumberPagination: `count` rows in pages of the
+ * requested size, one row per page so each page is recognisable, and a 404
+ * past the last page.
+ */
+function tasksPaged(count: number) {
+  server.use(
+    http.get(`${BASE}/tasks/`, ({ request }) => {
+      const url = new URL(request.url);
+      requested.push(url);
+      const page = Number(url.searchParams.get("page") ?? "1");
+      const size = Number(url.searchParams.get("page_size") ?? "20");
+      const pages = Math.max(1, Math.ceil(count / size));
+      if (page > pages) {
+        return HttpResponse.json(
+          { detail: "Invalid page.", code: "not_found", errors: null },
+          { status: 404 },
+        );
+      }
+      return HttpResponse.json({
+        count,
+        next: page < pages ? `${BASE}/tasks/?page=${page + 1}` : null,
+        previous: page > 1 ? `${BASE}/tasks/?page=${page - 1}` : null,
+        results: [task({ id: `task-${page}`, title: `Task on page ${page}` })],
+      });
+    }),
+  );
+}
+
 describe("TaskListPage", () => {
   it("renders the page of tasks the API returned", async () => {
     signedInAs(SUPERVISOR);
@@ -125,8 +154,8 @@ describe("TaskListPage", () => {
 
   it("resets to page 1 when a filter changes", async () => {
     signedInAs(SUPERVISOR);
-    // Pagination is driven by the next/previous envelope, not by the count, so
-    // the handler must return a next link for the Next button to be enabled.
+    // The pager counts pages from `count` (D52): 40 rows at 20 a page is two
+    // pages, so Next is enabled on page 1.
     server.use(
       http.get(`${BASE}/tasks/`, ({ request }) => {
         const url = new URL(request.url);
@@ -283,5 +312,199 @@ describe("task deletion from the list", () => {
     await user.click(within(dialog).getByRole("button", { name: /^delete$/i }));
     expect(await within(dialog).findByRole("alert")).toHaveTextContent(/only delete tasks you created/i);
     expect(screen.getByRole("dialog")).toBeInTheDocument();
+  });
+});
+
+describe("TaskListPage URL state", () => {
+  it("reads the page, the page size and the filters from the URL", async () => {
+    signedInAs(SUPERVISOR);
+    tasksPaged(187);
+    await renderApp("/tasks?page=2&page_size=50&overdue=true");
+    await screen.findByRole("table");
+    expect(lastQuery().get("page")).toBe("2");
+    expect(lastQuery().get("page_size")).toBe("50");
+    expect(lastQuery().get("overdue")).toBe("true");
+    expect(screen.getByRole("button", { name: "Page 2" })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByLabelText(/rows per page/i)).toHaveValue("50");
+  });
+
+  it("falls back to the defaults for page values it cannot use", async () => {
+    signedInAs(SUPERVISOR);
+    tasksPaged(187);
+    await renderApp("/tasks?page=0&page_size=37");
+    await screen.findByRole("table");
+    expect(lastQuery().get("page")).toBe("1");
+    expect(lastQuery().get("page_size")).toBe("20");
+  });
+
+  it("writes a filter to the URL in place, and goes back to page 1", async () => {
+    signedInAs(SUPERVISOR);
+    tasksPaged(60);
+    const { router } = await renderApp("/tasks?page=2");
+    await screen.findByRole("table");
+    const entries = router.history.length;
+
+    await userEvent.setup().click(screen.getByRole("checkbox", { name: /pending/i }));
+
+    await waitFor(() => expect(router.state.location.search).toEqual({ status: ["PENDING"] }));
+    expect(router.history.length).toBe(entries);
+    await waitFor(() => expect(lastQuery().get("page")).toBe("1"));
+  });
+
+  it("adds a history entry for a page move, so Back returns to the previous page", async () => {
+    signedInAs(SUPERVISOR);
+    tasksPaged(60);
+    const { router } = await renderApp("/tasks");
+    await screen.findByRole("table");
+    const entries = router.history.length;
+
+    await userEvent.setup().click(screen.getByRole("button", { name: "Page 2" }));
+    await waitFor(() => expect(router.state.location.search).toEqual({ page: 2 }));
+    expect(router.history.length).toBe(entries + 1);
+    // Scoped to the table: jsdom applies no CSS, so the card renders the title too.
+    expect(
+      await within(await screen.findByRole("table")).findByText("Task on page 2"),
+    ).toBeInTheDocument();
+
+    // back() runs the router's load synchronously; outside act() React warns
+    // and the console guard fails the test.
+    act(() => router.history.back());
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Page 1" })).toHaveAttribute("aria-current", "page"),
+    );
+    expect(router.state.location.search).toEqual({});
+  });
+
+  it("goes back to page 1 when the page size changes, and keeps the size in the URL", async () => {
+    signedInAs(SUPERVISOR);
+    tasksPaged(187);
+    const { router } = await renderApp("/tasks?page=2");
+    await screen.findByRole("table");
+
+    await userEvent.setup().selectOptions(screen.getByLabelText(/rows per page/i), "50");
+
+    await waitFor(() => expect(router.state.location.search).toEqual({ page_size: 50 }));
+    await waitFor(() => expect(lastQuery().get("page_size")).toBe("50"));
+    expect(lastQuery().get("page")).toBe("1");
+  });
+
+  it("keeps the defaults out of the URL", async () => {
+    signedInAs(SUPERVISOR);
+    tasksPaged(187);
+    const { router } = await renderApp("/tasks?page=2&page_size=50");
+    await screen.findByRole("table");
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "Page 1" }));
+    await waitFor(() => expect(router.state.location.search).toEqual({ page_size: 50 }));
+
+    await user.selectOptions(screen.getByLabelText(/rows per page/i), "20");
+    await waitFor(() => expect(router.state.location.search).toEqual({}));
+  });
+
+  it("clears filters and ordering but keeps the page size", async () => {
+    signedInAs(SUPERVISOR);
+    tasksPaged(5);
+    const status = encodeURIComponent(JSON.stringify(["PENDING"]));
+    const { router } = await renderApp(
+      `/tasks?status=${status}&overdue=true&ordering=due_date&page_size=50`,
+    );
+    await screen.findByRole("table");
+
+    await userEvent.setup().click(screen.getByRole("button", { name: /clear filters/i }));
+
+    await waitFor(() => expect(router.state.location.search).toEqual({ page_size: 50 }));
+  });
+
+  it("commits a typed date once, after the typing stops", async () => {
+    signedInAs(SUPERVISOR);
+    tasksPaged(5);
+    const { router } = await renderApp("/tasks");
+    await screen.findByRole("table");
+    const input = screen.getByLabelText(/due after/i);
+
+    // What a date input fires while its year is typed digit by digit.
+    fireEvent.change(input, { target: { value: "0002-10-06" } });
+    fireEvent.change(input, { target: { value: "0020-10-06" } });
+    fireEvent.change(input, { target: { value: "2026-10-06" } });
+    expect(input).toHaveValue("2026-10-06");
+
+    await waitFor(() =>
+      expect(router.state.location.search).toEqual({
+        due_date_after: "2026-10-06T00:00:00.000Z",
+      }),
+    );
+    await waitFor(() => expect(lastQuery().has("due_date_after")).toBe(true));
+    expect(
+      requested
+        .filter((url) => url.searchParams.has("due_date_after"))
+        .map((url) => url.searchParams.get("due_date_after")),
+    ).toEqual(["2026-10-06T00:00:00.000Z"]);
+  });
+
+  it("does not bring a date back when Clear filters beats its commit", async () => {
+    signedInAs(SUPERVISOR);
+    tasksPaged(5);
+    await renderApp("/tasks");
+    await screen.findByRole("table");
+    const input = screen.getByLabelText(/due after/i);
+
+    fireEvent.change(input, { target: { value: "2026-10-06" } });
+    await userEvent.setup().click(screen.getByRole("button", { name: /clear filters/i }));
+    expect(input).toHaveValue("");
+
+    // Outlive the 300 ms debounce, so a surviving commit would have fired.
+    await act(() => new Promise((resolve) => setTimeout(resolve, 400)));
+    expect(input).toHaveValue("");
+    expect(requested.some((url) => url.searchParams.has("due_date_after"))).toBe(false);
+  });
+
+  it("lands on page 1, without an error, when the URL's page no longer exists", async () => {
+    signedInAs(SUPERVISOR);
+    tasksPaged(30); // two pages at 20
+    const { router } = await renderApp("/tasks?page=3");
+
+    expect(
+      await within(await screen.findByRole("table")).findByText("Task on page 1"),
+    ).toBeInTheDocument();
+    expect(router.state.location.search).toEqual({});
+    expect(requested.map((url) => url.searchParams.get("page"))).toEqual(["3", "1"]);
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("keeps the current page on screen while the next one loads", async () => {
+    signedInAs(SUPERVISOR);
+    let release: () => void = () => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    server.use(
+      http.get(`${BASE}/tasks/`, async ({ request }) => {
+        const url = new URL(request.url);
+        requested.push(url);
+        const page = url.searchParams.get("page") ?? "1";
+        if (page === "2") await held;
+        return HttpResponse.json({
+          count: 40,
+          next: null,
+          previous: null,
+          results: [task({ id: `task-${page}`, title: `Task on page ${page}` })],
+        });
+      }),
+    );
+    await renderApp("/tasks");
+    const table = await screen.findByRole("table");
+
+    await userEvent.setup().click(screen.getByRole("button", { name: "Page 2" }));
+    await waitFor(() => expect(lastQuery().get("page")).toBe("2"));
+
+    // The same element, not a remount, and the pager is still there (D53).
+    expect(screen.getByRole("table")).toBe(table);
+    expect(table.closest("[aria-busy]")).toHaveAttribute("aria-busy", "true");
+    expect(screen.getByRole("navigation", { name: /pagination/i })).toBeInTheDocument();
+
+    release();
+    expect(await within(table).findByText("Task on page 2")).toBeInTheDocument();
+    expect(table.closest("[aria-busy]")).toHaveAttribute("aria-busy", "false");
   });
 });
