@@ -14,6 +14,7 @@
 
 **Two deliberate deviations from the spec's wording**, both keeping its behaviour:
 - **Row actions arrive through context, not by calling `useTaskActions()` in each row** (spec §4.2). The page calls `useTaskActions(store)` once and puts `{ store, actions }` in context; rows read their busy flag from the store and call `actions`. One mutation observer per page instead of one per row.
+- **The delete-flow actions are named `beginDelete`, `cancelDelete`, `failDelete`, plus `clearDeleteError`** (spec §4.2 says `begin`, `cancel`, `fail`): the prefixes keep them distinct when spread beside `startAction`/`failAction`, and `clearDeleteError` is today's "reset the error before each attempt".
 - **`SortHeader` is a plain component taking `column`**, not a registered `headerComponent` (spec §6.1). A registered header component needs `table.AppHeader` around each `<th>` to read its context; passing the column needs nothing. Markup, `aria-sort` and behaviour are as specified.
 
 ---
@@ -143,7 +144,7 @@ type Row = { id: string; title: string };
 type State = { delete: DeleteFlow<Row>; other: number };
 
 const ROW: Row = { id: "r1", title: "First" };
-const actions = (api: StoreApi<State>) => deleteFlowActions<State, Row>(api);
+const actions = (api: StoreApi<State>) => deleteFlowActions(api);
 const initial: State = { delete: IDLE_DELETE, other: 7 };
 const make = () => createStore(initial, actions);
 
@@ -214,14 +215,20 @@ import type { StoreApi } from "./store-api";
  */
 export type DeleteFlow<T> = { pending: T | null; error: string | null };
 
-export const IDLE_DELETE: DeleteFlow<never> = { pending: null, error: null };
+/** The idle dialog. Frozen, because every store's initial state shares this one object. */
+export const IDLE_DELETE: DeleteFlow<never> = Object.freeze({ pending: null, error: null });
 
-/** Actions over the `delete` slice of any store whose state has one. */
-export function deleteFlowActions<S extends { delete: DeleteFlow<T> }, T>({ setState }: StoreApi<S>) {
+/**
+ * Actions over the `delete` slice of any store whose state has one. The target's
+ * type comes from the store's own state, so a wrong target cannot be passed.
+ * (Amended by Task 2's code review: a second type parameter could not be
+ * inferred, so a wrong target type compiled silently.)
+ */
+export function deleteFlowActions<S extends { delete: DeleteFlow<unknown> }>({ setState }: StoreApi<S>) {
   return {
-    beginDelete: (target: T) =>
+    beginDelete: (target: NonNullable<S["delete"]["pending"]>) =>
       setState((state) => ({ ...state, delete: { pending: target, error: null } })),
-    cancelDelete: () => setState((state) => ({ ...state, delete: { pending: null, error: null } })),
+    cancelDelete: () => setState((state) => ({ ...state, delete: IDLE_DELETE })),
     /** Before each attempt, so a repeat failure with the same message still refocuses (D75). */
     clearDeleteError: () =>
       setState((state) => ({ ...state, delete: { ...state.delete, error: null } })),
@@ -621,7 +628,7 @@ export const initialTaskActionsState: TaskActionsState = {
 };
 
 export const taskActions = (api: StoreApi<TaskActionsState>) => ({
-  ...deleteFlowActions<TaskActionsState, DeleteTarget>(api),
+  ...deleteFlowActions(api),
   startAction: (id: string) => api.setState((state) => ({ ...state, busyId: id, actionError: null })),
   failAction: (message: string) => api.setState((state) => ({ ...state, actionError: message })),
   endAction: () => api.setState((state) => ({ ...state, busyId: null })),
@@ -1172,7 +1179,7 @@ export type UserListState = { delete: DeleteFlow<UserDetail> };
 export const initialUserListState: UserListState = { delete: IDLE_DELETE };
 
 export const userListActions = (api: StoreApi<UserListState>) =>
-  deleteFlowActions<UserListState, UserDetail>(api);
+  deleteFlowActions(api);
 
 /** For unit tests. The page creates its own with useCreateStore (spec §4.0). */
 export const createUserListStore = () => createStore(initialUserListState, userListActions);

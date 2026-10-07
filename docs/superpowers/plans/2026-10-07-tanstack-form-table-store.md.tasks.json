@@ -1,8 +1,8 @@
 {
   "planPath": "docs/superpowers/plans/2026-10-07-tanstack-form-table-store.md",
   "tasks": [
-    { "id": 1, "subject": "Task 1: Dependencies and dead code", "status": "pending" },
-    { "id": 2, "subject": "Task 2: The store helper and the delete-flow slice", "status": "pending", "blockedBy": [1] },
+    { "id": 1, "subject": "Task 1: Dependencies and dead code", "status": "completed" },
+    { "id": 2, "subject": "Task 2: The store helper and the delete-flow slice", "status": "completed", "blockedBy": [1] },
     { "id": 3, "subject": "Task 3: The session store replaces AuthContext (D86)", "status": "pending", "blockedBy": [2] },
     { "id": 4, "subject": "Task 4: The task-actions store for the task list and detail (D87)", "status": "pending", "blockedBy": [3] },
     { "id": 5, "subject": "Task 5: The user-list store (D87)", "status": "pending", "blockedBy": [4] },
@@ -25,5 +25,5 @@
     { "id": 22, "subject": "Task 22: Re-run the QA report matrix in the browser", "status": "pending", "blockedBy": [21] },
     { "id": 23, "subject": "Task 23: Persist insights to claude-insights", "status": "pending", "blockedBy": [22] }
   ],
-  "lastUpdated": "2026-10-07T00:00:00Z"
+  "lastUpdated": "2026-10-07T22:11:56+00:00"
 }
