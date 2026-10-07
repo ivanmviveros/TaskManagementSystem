@@ -1,4 +1,5 @@
 import pytest
+from django.utils import timezone
 from rest_framework.test import APIRequestFactory
 
 from apps.tasks.exceptions import AssigneeImmutableForRole, AssigneeNotAssignable
@@ -44,6 +45,7 @@ def test_detail_serializer_adds_the_detail_only_fields():
         "id",
         "title",
         "status",
+        "allowed_transitions",
         "due_date",
         "assignee",
         "is_overdue",
@@ -54,6 +56,34 @@ def test_detail_serializer_adds_the_detail_only_fields():
         "completed_at",
         "updated_at",
     }
+
+
+@pytest.mark.parametrize(
+    ("status", "expected"),
+    [
+        (TaskStatus.PENDING, ["IN_PROGRESS", "CANCELLED"]),
+        (TaskStatus.IN_PROGRESS, ["PENDING", "CANCELLED"]),
+        (TaskStatus.COMPLETED, []),
+        (TaskStatus.CANCELLED, []),
+    ],
+)
+def test_detail_reports_the_allowed_transitions(status, expected):
+    """D39: reported so the SPA never offers a status change the API would
+    refuse. Declaration order, not alphabetical; COMPLETED never appears, since
+    only the complete action reaches it.
+
+    The expectations are written out rather than computed from TRANSITIONS, so
+    the test is an independent oracle instead of restating the implementation.
+    """
+    # The check constraint requires completed_at exactly when COMPLETED.
+    completed_at = timezone.now() if status == TaskStatus.COMPLETED else None
+    task = TaskFactory(status=status, completed_at=completed_at)
+    assert TaskDetailSerializer(task).data["allowed_transitions"] == expected
+
+
+def test_the_list_payload_does_not_carry_allowed_transitions():
+    # List rows offer no status change, so the field would be dead weight.
+    assert "allowed_transitions" not in TaskListSerializer(TaskFactory()).data
 
 
 def test_nested_assignee_uses_the_minimal_shape():

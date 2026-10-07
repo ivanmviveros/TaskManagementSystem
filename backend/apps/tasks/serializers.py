@@ -12,7 +12,7 @@ from rest_framework import serializers
 from apps.core.permissions.classes import may_delete_task
 from apps.core.roles import Role
 from apps.tasks.exceptions import AssigneeImmutableForRole, AssigneeNotAssignable
-from apps.tasks.models import Task, TaskStatus
+from apps.tasks.models import TRANSITIONS, Task, TaskStatus
 from apps.users.models import User
 from apps.users.serializers import UserMinimalSerializer
 
@@ -56,6 +56,17 @@ class TaskDetailSerializer(serializers.ModelSerializer):
         request = self.context.get("request")
         return may_delete_task(getattr(request, "user", None), task)
 
+    # D39: reported, not re-derived — the can_delete reasoning (D27) applied to
+    # D19's transition table, so the SPA never offers a status change the API
+    # would refuse. COMPLETED never appears: only the complete action reaches
+    # it, and TRANSITIONS never lists it as a target. Declaration order rather
+    # than sorted(), which would put CANCELLED before IN_PROGRESS.
+    allowed_transitions = serializers.SerializerMethodField()
+
+    def get_allowed_transitions(self, task) -> list[str]:
+        allowed = TRANSITIONS[task.status]
+        return [status for status in TaskStatus.values if status in allowed]
+
     class Meta:
         model = Task
         fields = [
@@ -63,6 +74,7 @@ class TaskDetailSerializer(serializers.ModelSerializer):
             "title",
             "description",
             "status",
+            "allowed_transitions",
             "due_date",
             "assignee",
             "created_by",
