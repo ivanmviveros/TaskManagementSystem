@@ -54,7 +54,12 @@ export function useModalDialog<T extends HTMLElement>(onCancel: () => void, canC
       }
       if (event.key !== "Tab") return;
       const items = focusables();
-      if (items.length === 0) return;
+      if (items.length === 0) {
+        // While every control is disabled there is nowhere to move, but focus
+        // must not leave an aria-modal dialog.
+        event.preventDefault();
+        return;
+      }
       const first = items[0];
       const last = items[items.length - 1];
       const current = document.activeElement instanceof HTMLElement ? document.activeElement : null;

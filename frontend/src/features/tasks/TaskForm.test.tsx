@@ -824,6 +824,39 @@ describe("TaskDetailPage", () => {
     expect(dialog).toContainElement(document.activeElement as HTMLElement);
   });
 
+  it("swallows Tab while the request is pending and every control is disabled (D60)", async () => {
+    signedInAs(SUPERVISOR);
+    taskDetail({ can_delete: true });
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    server.use(
+      http.delete(`${BASE}/tasks/${TASK_ID}/`, async () => {
+        await gate;
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+    await renderApp(`/tasks/${TASK_ID}`);
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: /^delete$/i }));
+    const dialog = screen.getByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: /^delete$/i }));
+    await within(dialog).findByRole("button", { name: /deleting/i });
+    // jsdom keeps focus on the disabled button; what matters is that the trap
+    // cancels the Tab, so the browser's own tab order cannot leave the dialog.
+    let prevented = false;
+    const probe = (event: KeyboardEvent) => {
+      if (event.key === "Tab") prevented = event.defaultPrevented;
+    };
+    document.addEventListener("keydown", probe);
+    await user.tab();
+    document.removeEventListener("keydown", probe);
+    expect(prevented).toBe(true);
+    release();
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  });
+
   it.each([
     ["Shift+Tab", true],
     ["Tab", false],
