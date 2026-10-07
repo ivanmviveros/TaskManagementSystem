@@ -80,130 +80,6 @@ Continue with tasks planning considering DoD and conventions provided in backend
 
 ```
 
-# Implementation
-
-The implementation was executed from `docs/superpowers/plans/2026-10-06-task-management-system.md`
-by the single prompt recorded under "Executing plan" above. No further prompts were issued per
-task; the plan itself carried the code, the commands and the expected output, and this section
-records where the generated plan turned out to be wrong against the real toolchain.
-
-## Phase 1 — scaffold and dependency proof
-
-**What the plan got right, and it was the risky part.** D2's bet that the whole dependency set
-would resolve on Python 3.14 held on the first try: `uv sync` resolved Django 6.0.9, DRF 3.18.1,
-drf-spectacular 0.30.0, django-simple-history 3.13.0, django-filter 26.2, Celery, psycopg 3.3.6
-and the D3 git pin (`5.5.1.post36+ga7cb077ea`) with no conflict. The documented fallback —
-Python 3.13 plus `uuid-utils` — was not needed. `ruff` 0.16.10 accepted
-`target-version = "py314"`, so the `py313` fallback was not needed either. The backend image
-builds on `python:3.14-slim` and `manage.py check` is clean both on the host and inside it.
-
-**Three corrections the plan needed.**
-
-1. *Redundant `# noqa: F403` directives.* The plan's `pyproject.toml` ignores `F403`/`F405` for
-   `config/settings/*` **and** its settings code carries `# noqa: F403` on the star imports. With
-   `RUF` selected, `RUF100` flags the now-unused directives — three errors on a file the plan
-   says is clean. Resolved ruff's own way: dropped the comments, left `pyproject.toml` as
-   specified.
-
-2. *`ruff format --check` fails on Django's own output.* The plan expects it to pass immediately
-   after `django-admin startproject`, but the generated `manage.py`, `wsgi.py`, `asgi.py` and
-   `urls.py` are single-quoted and ruff-format rewrites them. Formatted them and folded the
-   result into the commit that introduced them, so every commit is independently format-clean.
-
-3. *`ruff format .` edited a read-only brief.* ruff 0.16 formats Python code blocks embedded in
-   Markdown, so the first `ruff format .` rewrote the ORM examples inside `backend/AGENTS.md` —
-   a file the plan marks read-only. Reverted, then added `extend-exclude = ["AGENTS.md"]` under
-   `[tool.ruff]` so neither the CLI nor the `ruff`/`ruff-format` pre-commit hooks (which match
-   `^backend/`) can reach it again. This is a genuine gap in the plan: nothing in it anticipated
-   the formatter touching Markdown.
-
-**Three deviations from the plan's literal steps**, recorded here because none is visible in
-the diff:
-
-- The plan's Task 2 Step 6 repoints only `manage.py` at `config.settings.local`. `wsgi.py` and
-  `asgi.py` carry the same `config.settings` default, which stops resolving once the module
-  becomes a package, so all three were repointed. `setdefault` means the environment variable
-  still wins in Compose and in production.
-- Task 4 Step 5's `cp .env.example .env` could not run — writing `.env` is blocked by the
-  operator's permission settings, which deliberately protect secret files. The step's substance
-  was verified without it: the image build and the in-image `manage.py check` were run directly,
-  and `db`/`redis` were brought up with `--env-file .env.example`. **Creating `.env` therefore
-  remains a manual step for whoever runs the stack**, exactly as the Quick start in `README.md`
-  describes.
-- `pre-commit` was not on the machine and is not in the project's dependency groups; it was
-  installed as a uv tool (`uv tool install pre-commit`) so the plan's bare `pre-commit`
-  invocations work without perturbing the locked dependency set.
-
-## Phases 2–8 — the backend
-
-No further prompts. The plan's code was used as written except where it failed a real
-check; each correction is in the commit that made it.
-
-**Recurring friction, both from the plan assuming a looser toolchain than the one it
-configured.** `RUF012` fires on framework-declared class attributes — Django's
-`REQUIRED_FIELDS` and `Meta.constraints`/`indexes`, DRF's `Meta.fields`,
-`permission_classes`, `filter_backends` — which the plan anticipated for migrations only.
-Settled with per-file-ignores over the declaration-site modules, the same reasoning the
-plan already applied to migrations. And mypy without `django-stubs` reads a `TextChoices`
-member as the `tuple[str, str]` literal in the class body rather than the `str` the
-metaclass produces, so every annotated collection built from one is rejected. Settled on
-`str(TaskStatus.X)`, which typechecks and is runtime-correct, after first trying `cast`.
-
-**Two ruff false positives worth distinguishing from real findings.** `DJ012` reads
-`models.Manager()` as a *field* because it matches the `models.X(...)` pattern, so it saw
-"field after manager" in the soft-delete model. Declaring `all_objects` first silences it —
-and hands `_default_manager` to the **unfiltered** manager, which is how a soft-deleted user
-could still log in. The plan's order was kept and the lint suppressed. `DJ001` objects to
-`null=True` on `Notification.error`, where NULL is meaningful (no failure recorded) and a
-successful retry restores it; suppressed with that reason.
-
-**One genuine defect the plan deferred and then fixed.** Task 20 produced four
-drf-spectacular warnings, deferred to Task 40. One was real: `UserViewSet`'s
-`get_serializer_class()` read `request.user.role`, which throws during the request-less
-schema pass, so **the entire users viewset was being dropped from the API documentation**.
-`TaskViewSet.get_queryset()` had the same flaw via `scoped_tasks`. Both now tolerate a
-missing request, and `spectacular --validate` reports zero warnings.
-
-**A plan refinement that proved necessary.** `create_if_absent` returning `None` for *any*
-existing dedupe key would have made `autoretry_for` dead code, since the first attempt
-always inserts before sending. It returns `None` only for an already-`SENT` row.
-
-Verified against real infrastructure rather than mocks: migrations apply to Postgres 16, the
-Celery worker boots on Python 3.14 and registers its task, beat carries the hourly schedule
-in-container, and `seed_demo_data` loaded 5 users and 45 tasks into the running stack.
-
-## Phases 9–11 — the frontend and the gates
-
-**Two defects found by the plan's own tests**, both described in `README.md`'s validation
-record: the API client refreshing after a failed login, and nothing navigating after
-sign-in. The second was mine, not the plan's — re-creating the router whenever auth changed
-renders *nothing at all*, because handing `RouterProvider` a new instance does not re-run
-navigation. Diagnosed by bisecting with a throwaway probe: a minimal router worked, the real
-route tree with settled auth worked, so the remount was the fault. The router is now created
-once, auth arrives via `context`, and an explicit `router.invalidate()` re-runs the guards.
-
-**One gitignore trap.** The root `.gitignore`'s unanchored Python `lib/` rule silently
-swallowed `frontend/src/lib/`, so the API client was missing from its first commit. Caught
-from git's "paths are ignored" hint, then negated explicitly.
-
-**Two testing facts that shaped assertions.** jsdom applies no CSS, so the responsive table
-*and* the mobile cards are both in the DOM — desktop assertions scope with `within(table)`,
-and the card presentation gets its own test rather than being pretended away. And TanStack
-Router serialises an array search param as JSON (`status=["PENDING"]`), not repeated keys,
-so the plan's assertion on the link's `href` was testing the wrong layer: the SPA URL format
-is internal, and the repeated form the backend needs is produced when the list calls the
-API. Replaced with an end-to-end test that follows the tile and asserts what the API
-receives.
-
-**Coverage was treated as judgement, not a number.** Every gap in the report was a real
-branch — manager guards, the retry re-raise, the no-op update, the raise-through on a
-non-dedupe integrity error — so each got a test. Only `__str__` reprs and Protocol stubs are
-excluded, with the reason recorded next to them. The suite reached 100% of `apps/` with the
-gate set at the specified floor of 80, and the gate was verified to fail at an unreachable
-threshold.
-
-
-
 ## Refinement
 ```
 After reviewveng current code and application features, I need to implement new iteration of brainstorming, planning and refinement regarding the following concerns:
@@ -278,3 +154,15 @@ I have a potential issue to add to findings, there its no indication of sort ord
 ```
 Based in @docs/qa/2026-10-07-frontend-qa-report.md  reasearch and plan fixes for each finding using /superpowers-extended-cc:brainstorming
 ```
+
+
+## Refactors
+
+```
+using a worktree and superpowers brainstorming /superpowers-extended-cc:brainstorming  /superpowers-extended-cc:using-git-worktrees , I want to explore possible refactor to implement tanstack table, form and store libraries replacing the manually made forms and tables, and the local state of component
+```
+
+```
+Implement structured logs in backend with request-id using context variables to help identify same request logs /superpowers-extended-cc:using-git-worktrees
+```
+
