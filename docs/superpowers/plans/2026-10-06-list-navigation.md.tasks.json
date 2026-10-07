@@ -6,7 +6,7 @@
     { "id": 3, "subject": "Task 3: The shared Pagination component", "status": "completed", "blockedBy": [1, 2] },
     { "id": 4, "subject": "Task 4: renderApp returns its router", "status": "completed" },
     { "id": 5, "subject": "Task 5: Search validation, canonical URLs and one ROLES", "status": "completed", "blockedBy": [2] },
-    { "id": 6, "subject": "Task 6: The text-entry draft hook", "status": "pending" },
+    { "id": 6, "subject": "Task 6: The text-entry draft hook", "status": "completed" },
     { "id": 7, "subject": "Task 7: The task list reads and writes the URL", "status": "pending", "blockedBy": [3, 4, 5, 6] },
     { "id": 8, "subject": "Task 8: The user list reads and writes the URL", "status": "pending", "blockedBy": [7] },
     { "id": 9, "subject": "Task 9: Page titles", "status": "pending", "blockedBy": [5] },
