@@ -27,14 +27,14 @@ DEMO_USERS = [
 # dependency group, and a management command is application code — importing a
 # dev-only package here would break a production install.
 FIRST_NAMES = [
-    "Ana", "Bruno", "Carla", "Diego", "Elena", "Felipe", "Gabriela", "Hugo",
-    "Irene", "Javier", "Karla", "Luis", "Marta", "Nestor", "Olivia", "Pablo",
-    "Rocio", "Sergio", "Teresa", "Ulises", "Valeria", "Wilson", "Ximena", "Yago",
+    "Alice", "Ben", "Chloe", "Daniel", "Emily", "Frank", "Grace", "Henry",
+    "Isla", "Jack", "Kate", "Liam", "Megan", "Noah", "Olivia", "Peter",
+    "Rachel", "Samuel", "Tessa", "Ursula", "Victor", "Wendy", "Xander", "Yvonne",
 ]  # fmt: skip
 LAST_NAMES = [
-    "Alvarez", "Bermudez", "Castillo", "Duarte", "Escobar", "Fuentes",
-    "Guzman", "Herrera", "Ibarra", "Jimenez", "Lozano", "Medina", "Navarro",
-    "Ortega", "Pardo", "Quintero", "Rios", "Salazar", "Trujillo", "Vargas",
+    "Anderson", "Baker", "Carter", "Davies", "Edwards", "Fletcher",
+    "Green", "Harris", "Irving", "Johnson", "Lewis", "Mitchell", "Nelson",
+    "Owens", "Parker", "Quinn", "Roberts", "Spencer", "Turner", "Walker",
 ]  # fmt: skip
 
 # One in four, so the assignee picker has variety and D27 has subjects.
