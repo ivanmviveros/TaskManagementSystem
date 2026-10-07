@@ -156,4 +156,4 @@ class TaskViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.Gen
     )
     @action(detail=False, methods=["get"], url_path="stats")
     def stats(self, request, *args, **kwargs):
-        return Response(task_stats(request.user))
+        return Response(task_stats(request.user).model_dump())

@@ -7,13 +7,13 @@ neither of which wants a join at all.
 """
 
 from datetime import timedelta
-from typing import Any
 from uuid import UUID
 
 from django.db.models import Count, Q, QuerySet
 from django.utils import timezone
 
 from apps.core.roles import Role
+from apps.tasks.dto import TaskStatsOutput
 from apps.tasks.models import OPEN_STATUSES, Task, TaskStatus
 from apps.users.models import User
 
@@ -62,7 +62,7 @@ def notification_target(task_id: UUID) -> tuple[UUID | None, UUID, str] | None:
     )
 
 
-def task_stats(user: User) -> dict[str, Any]:
+def task_stats(user: User) -> TaskStatsOutput:
     """The GET /tasks/stats/ payload, in ONE database round trip.
 
     Returns the finished nested shape rather than a queryset: aggregation is the
@@ -89,14 +89,14 @@ def task_stats(user: User) -> dict[str, Any]:
             "id", filter=Q(due_date__gte=now, due_date__lte=horizon) & still_open
         ),
     )
-    return {
-        "total": aggregated["total"],
-        "by_status": {
+    return TaskStatsOutput(
+        total=aggregated["total"],
+        by_status={
             str(TaskStatus.PENDING): aggregated["pending"],
             str(TaskStatus.IN_PROGRESS): aggregated["in_progress"],
             str(TaskStatus.COMPLETED): aggregated["completed"],
             str(TaskStatus.CANCELLED): aggregated["cancelled"],
         },
-        "overdue": aggregated["overdue"],
-        "due_next_7_days": aggregated["due_next_7_days"],
-    }
+        overdue=aggregated["overdue"],
+        due_next_7_days=aggregated["due_next_7_days"],
+    )

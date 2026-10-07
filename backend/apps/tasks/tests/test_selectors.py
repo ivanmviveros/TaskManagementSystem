@@ -3,6 +3,7 @@ from datetime import timedelta
 import pytest
 from django.utils import timezone
 
+from apps.tasks.dto import TaskStatsOutput
 from apps.tasks.models import TaskStatus
 from apps.tasks.selectors import overdue_candidates, scoped_tasks, task_stats
 from apps.tasks.tests.factories import TaskFactory
@@ -68,15 +69,15 @@ def test_stats_matches_the_response_contract(django_assert_num_queries):
     with django_assert_num_queries(1):
         stats = task_stats(supervisor)
 
-    assert stats["total"] == 4
-    assert stats["by_status"] == {
+    assert stats.total == 4
+    assert stats.by_status == {
         "PENDING": 1,
         "IN_PROGRESS": 1,
         "COMPLETED": 1,
         "CANCELLED": 1,
     }
-    assert stats["overdue"] == 1
-    assert stats["due_next_7_days"] == 1
+    assert stats.overdue == 1
+    assert stats.due_next_7_days == 1
 
 
 def test_due_next_7_days_excludes_terminal_and_undated_tasks():
@@ -84,4 +85,12 @@ def test_due_next_7_days_excludes_terminal_and_undated_tasks():
     now = timezone.now()
     TaskFactory(status=TaskStatus.COMPLETED, completed_at=now, due_date=now + timedelta(days=2))
     TaskFactory(status=TaskStatus.PENDING, due_date=None)
-    assert task_stats(SupervisorFactory())["due_next_7_days"] == 0
+    assert task_stats(SupervisorFactory()).due_next_7_days == 0
+
+
+def test_task_stats_returns_a_typed_model(supervisor):
+    stats = task_stats(supervisor)
+    assert isinstance(stats, TaskStatsOutput)
+    # The dashboard contract does not move: the dict the view puts on the wire
+    # is unchanged, which is what keeps the drf-spectacular annotation honest.
+    assert set(stats.model_dump()) == {"total", "by_status", "overdue", "due_next_7_days"}
