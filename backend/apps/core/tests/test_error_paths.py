@@ -15,6 +15,7 @@ from apps.core.roles import Role
 from apps.notifications.models import NotificationEvent
 from apps.notifications.repositories import DjangoNotificationRepository
 from apps.notifications.services import build_dedupe_key
+from apps.tasks.dto import TaskUpdateInput
 from apps.tasks.exceptions import TaskNotFound
 from apps.tasks.services import TaskService
 from apps.tasks.tests.fakes import FakeTaskRepository, RecordingDispatcher
@@ -126,7 +127,7 @@ class TestTaskServiceVanishedTask:
         with pytest.raises(TaskNotFound):
             service.update(
                 task_id=uuid.uuid7(),
-                data={"title": "Gone"},
+                data=TaskUpdateInput(title="Gone"),
                 actor=User(email="s@example.com", role=Role.SUPERVISOR),
             )
 

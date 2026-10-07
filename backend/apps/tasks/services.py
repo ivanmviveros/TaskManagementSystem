@@ -14,6 +14,7 @@ from django.utils import timezone
 
 from apps.core.roles import Role
 from apps.notifications.dispatchers import NotificationDispatcher
+from apps.tasks.dto import TaskCreateInput, TaskUpdateInput
 from apps.tasks.exceptions import (
     AssigneeNotAssignable,
     CompletionRequiresCompleteAction,
@@ -36,39 +37,48 @@ class TaskService:
 
     # ---------- use cases ----------
 
-    def create(self, *, data: dict, actor: User) -> Task:
-        assignee = data.get("assignee")
-        self._reject_admin_assignee(assignee)
+    def create(self, *, data: TaskCreateInput, actor: User) -> Task:
+        self._reject_admin_assignee(data.assignee)
         task = Task(
-            title=data["title"],
-            description=data.get("description", ""),
-            due_date=data.get("due_date"),
-            assignee=assignee,
+            title=data.title,
+            description=data.description,
+            due_date=data.due_date,
+            assignee=data.assignee,
             created_by=actor,
             status=TaskStatus.PENDING,
         )
         with transaction.atomic():
             self._tasks.add(task)
-            if assignee is not None:
+            if data.assignee is not None:
                 self._enqueue("task_assigned", task, actor)
         logger.info("task.created id=%s by=%s assignee=%s", task.pk, actor.pk, task.assignee_id)
         return task
 
-    def update(self, *, task_id: UUID, data: dict, actor: User) -> Task:
+    def update(self, *, task_id: UUID, data: TaskUpdateInput, actor: User) -> Task:
+        # D32: branch on what the caller actually SENT, never on truthiness or
+        # `is not None`. `assignee=None` unassigns and an omitted `assignee`
+        # leaves it alone; the value alone cannot tell those apart. Bound once
+        # here so all three branches below are visibly parallel.
+        fields = data.model_fields_set
+
         with transaction.atomic():
             task = self._tasks.get_for_update(task_id)
             if task is None:
                 raise TaskNotFound
             before = (task.assignee_id, task.status, task.due_date)
 
-            if "status" in data and data["status"] != task.status:
-                self._validate_transition(task.status, data["status"])
-            if "assignee" in data:
-                self._reject_admin_assignee(data["assignee"])
+            # `status` is the one mutable field with no meaningful null — the
+            # serializer's ChoiceField cannot produce one — so narrowing it here
+            # satisfies mypy without weakening the rule above for the others.
+            requested = data.status
+            if "status" in fields and requested is not None and requested != task.status:
+                self._validate_transition(task.status, requested)
+            if "assignee" in fields:
+                self._reject_admin_assignee(data.assignee)
 
             for field in _MUTABLE_FIELDS:
-                if field in data:
-                    setattr(task, field, data[field])
+                if field in fields:
+                    setattr(task, field, getattr(data, field))
             self._tasks.save(task)
 
             assignee_changed = task.assignee_id != before[0] and task.assignee_id is not None
@@ -79,7 +89,10 @@ class TaskService:
             if task.due_date != before[2]:
                 self._enqueue("task_due_date_changed", task, actor)
 
-        logger.info("task.updated id=%s fields=%s by=%s", task.pk, sorted(data), actor.pk)
+        # sorted(fields), NOT sorted(data): a pydantic model iterates as
+        # (name, value) pairs, so the latter would write submitted titles and
+        # descriptions into the audit log (backend §28).
+        logger.info("task.updated id=%s fields=%s by=%s", task.pk, sorted(fields), actor.pk)
         return task
 
     def complete(self, *, task_id: UUID, actor: User) -> Task:

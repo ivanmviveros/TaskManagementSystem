@@ -15,6 +15,7 @@ from apps.core.ordering import TiebrokenOrderingFilter
 from apps.core.permissions.classes import IsTaskCreator, RolePermission
 from apps.core.permissions.matrix import Resource
 from apps.notifications.dispatchers import CeleryNotificationDispatcher
+from apps.tasks.dto import TaskCreateInput, TaskUpdateInput
 from apps.tasks.filters import TaskFilterSet
 from apps.tasks.models import Task
 from apps.tasks.repositories import DjangoTaskRepository
@@ -87,7 +88,11 @@ class TaskViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.Gen
     def create(self, request, *args, **kwargs):
         serializer = TaskCreateSerializer(data=request.data, context={"request": request})
         serializer.is_valid(raise_exception=True)
-        task = self.get_service().create(data=serializer.validated_data, actor=request.user)
+        # Splat, never map field by field: splatting is what gives the DTO's
+        # extra="forbid" something to catch (D30, spec §3.1).
+        task = self.get_service().create(
+            data=TaskCreateInput(**serializer.validated_data), actor=request.user
+        )
         return Response(
             TaskDetailSerializer(task, context=self.get_serializer_context()).data,
             status=status.HTTP_201_CREATED,
@@ -111,7 +116,9 @@ class TaskViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.Gen
         )
         serializer.is_valid(raise_exception=True)
         updated = self.get_service().update(
-            task_id=task.pk, data=serializer.validated_data, actor=request.user
+            task_id=task.pk,
+            data=TaskUpdateInput(**serializer.validated_data),
+            actor=request.user,
         )
         return Response(TaskDetailSerializer(updated, context=self.get_serializer_context()).data)
 
