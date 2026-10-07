@@ -8,7 +8,13 @@
 
 **Tech Stack:** React 19, TypeScript 6, Vite 8, TanStack Query 5 / Router 1 (existing), `@tanstack/react-form` 1.33, `@tanstack/react-table` 9.2, `@tanstack/react-store` 0.11, Vitest 5 + Testing Library + MSW, oxlint.
 
-**Spec:** [`docs/superpowers/specs/2026-10-07-tanstack-form-table-store-design.md`](../specs/2026-10-07-tanstack-form-table-store-design.md). Decision numbers (D79–D88) refer to it.
+**Spec:** [`docs/superpowers/specs/2026-10-07-tanstack-form-table-store-design.md`](../specs/2026-10-07-tanstack-form-table-store-design.md). Decision numbers (D79–D88) refer to it; `docs/TECHNICAL-DECISIONS.md` on `main` reserves them for this branch.
+
+**Branch state:** `main` was merged into the branch at `607262f` (after the plan was written, `main` gained the docs reorganisation and structured logging, D89–D93; none of it touches `frontend/src`). If `main` moves again before Phase 5, merge it again first (Task 21 Step 0).
+
+**Two deliberate deviations from the spec's wording**, both keeping its behaviour:
+- **Row actions arrive through context, not by calling `useTaskActions()` in each row** (spec §4.2). The page calls `useTaskActions(store)` once and puts `{ store, actions }` in context; rows read their busy flag from the store and call `actions`. One mutation observer per page instead of one per row.
+- **`SortHeader` is a plain component taking `column`**, not a registered `headerComponent` (spec §6.1). A registered header component needs `table.AppHeader` around each `<th>` to read its context; passing the column needs nothing. Markup, `aria-sort` and behaviour are as specified.
 
 ---
 
@@ -18,8 +24,9 @@
 - **One command per Bash call** (no `&&` chains, no `$(...)`). `git` runs from the worktree; it is already on branch `refactor/tanstack-form-table-store`.
 - **Gates** (run at the end of every task unless the task says otherwise):
   - `npm run typecheck` → no output after the script line.
-  - `npm run lint` → exit 0 and **no warning in a file this plan creates or edits**. Today there are 5 warnings (`providers.tsx`, `StatusBadge.tsx`, `render-app.tsx` ×2, `AuthContext.tsx`); Task 3 deletes `AuthContext.tsx`, after which there are 4.
+  - `npm run lint` → exit 0 and **no new warning**. Today there are 5 (`providers.tsx`, `StatusBadge.tsx`, `render-app.tsx` ×2, `AuthContext.tsx`); Task 3 deletes `AuthContext.tsx`, after which the other 4 remain. oxlint also runs the React Compiler rules (immutability, refs, exhaustive-deps…) by default; they raised nothing on the prototype of this code.
   - `npm test` → all files pass. The baseline is **19 files, 303 tests**; each task's new tests add to it, so check "0 failed" rather than an exact count. The jsdom `Not implemented: Window's scrollTo()` lines are pre-existing noise.
+- **End-of-phase gates** (after Tasks 6, 12, 15 and 20), in addition: `npm run build` (succeeds) and `npm ls @tanstack/store` (one version, the rest `deduped`) — spec §7.4.
 - **Behaviour does not change.** The existing tests are the regression net. Edit an existing test only where a task says so; any other edit must be behaviour-neutral and explained in the commit message.
 - **Commit messages** end with:
   ```
@@ -64,7 +71,7 @@
 
 **Delete:** `src/App.tsx`, `src/App.css`, `src/assets/{hero.png,react.svg,vite.svg}`, `src/features/auth/AuthContext.tsx`, `src/lib/useSearchParamDraft.ts` (+ test), `src/components/Pagination.tsx` (+ test), `src/features/tasks/components/TaskTable.tsx`, `src/features/users/components/UserTable.tsx`.
 
-**Modify:** `providers.tsx`, `router.tsx`, `useRouterAuthSync.ts`, `test/render-app.tsx`, `hooks/useAuth.ts`, `components/TextField.tsx`, `LoginPage.tsx`, `UserForm.tsx`, `TaskForm.tsx`, `TaskFormPage.tsx`, `AssigneeCombobox.tsx`, `TaskFilters.tsx`, `TaskListPage.tsx`, `TaskDetailPage.tsx`, `TaskRowActions.tsx`, `TaskCard.tsx`, `UserListPage.tsx`, `UserCard.tsx`, `sorting.ts` (+ test), `lib/pagination.ts` (+ test), `lib/useDebouncedValue.ts` (comment), `package.json`/`package-lock.json`, tests named in tasks, `README.md`, `docs-external/PROMPT-LOGS.md`, `docs/qa/2026-10-07-frontend-qa-report.md`.
+**Modify:** `providers.tsx`, `router.tsx`, `useRouterAuthSync.ts`, `test/render-app.tsx`, `hooks/useAuth.ts`, `components/TextField.tsx`, `LoginPage.tsx`, `UserForm.tsx`, `TaskForm.tsx`, `TaskFormPage.tsx`, `AssigneeCombobox.tsx`, `TaskFilters.tsx`, `TaskListPage.tsx`, `TaskDetailPage.tsx`, `TaskRowActions.tsx`, `TaskCard.tsx`, `UserListPage.tsx`, `UserCard.tsx`, `sorting.ts` (+ test), `lib/pagination.ts` (+ test), `lib/useDebouncedValue.ts` (comment), comments in `lib/api-client.ts`, `app/layout/AppShell.test.tsx`, `test/msw-handlers.ts`, `package.json`/`package-lock.json`, tests named in tasks; docs: `docs/TECHNICAL-DECISIONS.md`, `docs/ARCHITECTURE.md`, `docs/GENAI-WORKFLOW.md`, `frontend/README.md`, `README.md`, `SUMMARY.md`, `docs-external/PROMPT-LOGS.md`, `docs/qa/2026-10-07-frontend-qa-report.md`.
 
 ---
 
@@ -506,7 +513,14 @@ with
 Delete the old context: `git rm src/features/auth/AuthContext.tsx`
 
 Run: `git grep -n "AuthContext\|AuthProvider" -- src`
-Expected: only comments remain (e.g. `test/msw-handlers.ts` "Once AuthContext bootstraps…"). Update that comment's word "AuthContext" to "SessionProvider".
+Expected: only comments remain, in five places. Update each so it names the new owner:
+- `src/lib/api-client.ts:19` — "AuthContext is the only" → "the session store is the only";
+- `src/lib/api-client.ts:81` — "so AuthContext's bootstrap reuses" → "so SessionProvider's bootstrap reuses";
+- `src/lib/api-client.ts:140` — "AuthContext uses it to sign the user out" → "SessionProvider wires it to the session store's `expire`";
+- `src/app/layout/AppShell.test.tsx:147` — "AuthContext drops the user" → "the session store drops the user";
+- `src/test/msw-handlers.ts:36` — "Once AuthContext bootstraps" → "Once SessionProvider bootstraps".
+
+Re-run the grep. Expected: no matches.
 
 - [ ] **Step 7: Gates**
 
@@ -2699,11 +2713,13 @@ git commit -m "feat: extract the task form's snapshot and payload as pure functi
 
 **Files:**
 - Modify: `src/features/tasks/components/TaskForm.tsx`, `src/features/tasks/TaskFormPage.tsx:5`
-- Test: `src/features/tasks/TaskForm.test.tsx` (one test added)
+- Test: `src/features/tasks/TaskForm.test.tsx` (two tests added)
 
-- [ ] **Step 1: Write the new test**
+- [ ] **Step 1: Write the two new tests**
 
-In `src/features/tasks/TaskForm.test.tsx`, inside `describe("TaskForm", …)` after "moves focus to the first invalid field after a failed save, every time (D75)", add:
+The existing D40 refetch test ("does not undo a status someone else changed…") does **not** guard the snapshot on its own: with live defaults an untouched form follows the refetch on both sides of the status comparison, sends no status, and still passes. The second test below pins what the snapshot really protects — an untouched form keeps the values it loaded.
+
+In `src/features/tasks/TaskForm.test.tsx`, inside `describe("TaskForm", …)` after "moves focus to the first invalid field after a failed save, every time (D75)", add both:
 
 ```tsx
   it("saves on a second attempt after a server error (D80)", async () => {
@@ -2734,10 +2750,41 @@ In `src/features/tasks/TaskForm.test.tsx`, inside `describe("TaskForm", …)` af
     await user.click(submit);
     await waitFor(() => expect(posts).toBe(2));
   });
+
+  it("keeps the values it loaded when a focus refetch brings newer ones (D81)", async () => {
+    signedInAs(SUPERVISOR);
+    assignableUsers();
+    let gets = 0;
+    server.use(
+      http.get(`${BASE}/tasks/${TASK_ID}/`, () => {
+        gets += 1;
+        return HttpResponse.json(gets === 1 ? DETAIL : { ...DETAIL, title: "Renamed elsewhere" });
+      }),
+    );
+    const patches = capturePatches();
+    await renderApp(`/tasks/${TASK_ID}/edit`);
+    await screen.findByRole("button", { name: /save changes/i });
+    try {
+      // The test client's staleTime of 0 makes a focus event refetch the task.
+      act(() => {
+        focusManager.setFocused(false);
+        focusManager.setFocused(true);
+      });
+      await waitFor(() => expect(gets).toBe(2));
+      expect(screen.getByLabelText(/title/i)).toHaveValue("Review the brief");
+      const user = userEvent.setup();
+      await user.click(screen.getByRole("button", { name: /save changes/i }));
+      await waitFor(() => expect(patches.bodies).toHaveLength(1));
+      expect(patches.bodies[0]).toMatchObject({ title: "Review the brief" });
+    } finally {
+      // Restores the shared singleton (see the D40 test below).
+      focusManager.setFocused(undefined);
+    }
+  });
 ```
 
 Run: `npm test -- src/features/tasks/TaskForm.test.tsx`
-Expected: PASS on the current form.
+Expected: PASS on the current form: its `useState` initialisers already act as a snapshot.
 
 - [ ] **Step 2: Rewrite TaskForm on the app form**
 
@@ -2895,13 +2942,13 @@ after the `./hooks/useTasksBackSearch` import.
 - [ ] **Step 3: Run the task form tests**
 
 Run: `npm test -- src/features/tasks/TaskForm.test.tsx`
-Expected: PASS — including "does not undo a status someone else changed while the form was open" (D40 refetch), "keeps Pending on offer after changing a pending task to In progress", "surfaces a 400 assignee_not_assignable against the assignee field", "surfaces a 409 invalid_status_transition as a form-level message", "shows the message in the alert, focused, when the errors name no rendered field (D75)", every combobox test, and the new one.
+Expected: PASS — including "does not undo a status someone else changed while the form was open" (D40 refetch), "keeps Pending on offer after changing a pending task to In progress", "surfaces a 400 assignee_not_assignable against the assignee field", "surfaces a 409 invalid_status_transition as a form-level message", "shows the message in the alert, focused, when the errors name no rendered field (D75)", every combobox test, and both new ones.
 
-- [ ] **Step 4: Prove the D40 refetch test guards the snapshot**
+- [ ] **Step 4: Prove the snapshot test guards D81**
 
 Temporarily replace `const [snapshot] = useState(() => taskSnapshot(task));` with `const snapshot = taskSnapshot(task);`.
-Run: `npm test -- src/features/tasks/TaskForm.test.tsx -t "someone else changed"`
-Expected: FAIL — the PATCH carries a `status`.
+Run: `npm test -- src/features/tasks/TaskForm.test.tsx -t "focus refetch brings newer"`
+Expected: FAIL — the Title input reads "Renamed elsewhere" (useForm re-applied the refetched defaults to the untouched form).
 Restore the `useState` line; re-run: PASS.
 
 - [ ] **Step 5: Gates, then commit**
@@ -2910,7 +2957,7 @@ Restore the `useState` line; re-run: PASS.
 git add src/features/tasks/components/TaskForm.tsx src/features/tasks/TaskFormPage.tsx src/features/tasks/TaskForm.test.tsx
 git commit -m "refactor: build the task form on the app form, from its snapshot (D79, D81)
 
-The D40 refetch test fails with live defaults.
+The new refetch test fails with live defaults.
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```
@@ -4858,7 +4905,7 @@ Expected: PASS — in particular the "sort state in the table header (F6)" group
 
 - [ ] **Step 6: Gates, then commit**
 
-Expected: lint shows 4 warnings, none in a file this plan touched.
+Expected: lint shows the 4 baseline warnings and no new one.
 
 ```bash
 git add -A src
@@ -4869,19 +4916,95 @@ git commit -m "refactor: render the task list from the app table; drop TaskTable
 
 # Phase 5 — Documentation
 
-### Task 21: README, prompt log and bundle size (spec §9.2)
+### Task 21: Decisions, architecture and the other docs (spec §9.2)
 
-**Files:**
-- Modify: `README.md` (repository root of the worktree), `docs-external/PROMPT-LOGS.md`
+**Files** (repository root of the worktree; `main` reorganised the docs, so the decisions no longer live in `README.md`):
+- Modify: `docs/TECHNICAL-DECISIONS.md`, `docs/ARCHITECTURE.md`, `docs/GENAI-WORKFLOW.md`, `frontend/README.md`, `README.md`, `SUMMARY.md`, `docs-external/PROMPT-LOGS.md`
 
-- [ ] **Step 1: Measure the bundle after the refactor**
+- [ ] **Step 0: Take any newer `main`**
 
-Run (from `frontend/`): `npm run build`
-Expected: the same table as Task 1 Step 1. Note the gzip size of the `dist/assets/index-*.js` line. The "before" figure is in Task 1's commit message: `git log --grep "Bundle baseline" --format=%B -n 1`.
+Run: `git log --oneline HEAD..main`
+Expected: empty. If not, run `git merge --no-edit main`; on a conflict in a doc, keep `main`'s structure and re-apply this branch's lines; then re-run the frontend gates.
 
-- [ ] **Step 2: Add the decision section**
+- [ ] **Step 1: Measure the bundle and the coverage after the refactor**
 
-In `README.md`, insert immediately **before** the line `## Deliberate overrides of AGENTS.md` (after the D78 bullet of "Fixes from the QA report (D66–D78)"), replacing `<before>` and `<after>` with the two gzip figures:
+Run (from `frontend/`): `npm run build` — note the gzip size of the `dist/assets/index-*.js` line. The "before" figure is in Task 1's commit: `git log --grep "Bundle baseline" --format=%B -n 1`.
+Run (from `frontend/`): `npm test -- --coverage` — note the file and test counts and the "All files" statements / branches / lines percentages.
+
+- [ ] **Step 2: `docs/TECHNICAL-DECISIONS.md` — header and counts**
+
+Replace
+
+```
+Every implementation decision in this project (D1–D78 and D89–D93), why it was made, and who
+made it. D79–D88 are reserved by the TanStack refactor design on its own branch. The
+[README](../README.md) lists only the headline ones.
+```
+
+with
+
+```
+Every implementation decision in this project (D1–D93), why it was made, and who made it. The
+[README](../README.md) lists only the headline ones.
+```
+
+Replace
+
+```
+Of the 84 numbered decisions (D1–D78, D89–D93 and D8a), 10 are **Engineer**, 24
+**Engineer + AI** and 50 **AI**.
+```
+
+with
+
+```
+Of the 94 numbered decisions (D1–D93 and D8a), 10 are **Engineer**, 30
+**Engineer + AI** and 54 **AI**.
+```
+
+In the frontend conventions table, replace A43's last cell `As written, plus the URL for list state, which is an override` with `Query for server state; the URL for list state; Form for drafts; Store for the session and each page's UI state — an override`.
+
+- [ ] **Step 3: `docs/TECHNICAL-DECISIONS.md` — the decision log**
+
+Insert immediately before `## Deliberate overrides of AGENTS.md` (after the "Structured logging (iteration 6)" table):
+
+```markdown
+### TanStack Form, Table and Store (iteration 7)
+
+From the [TanStack refactor design](superpowers/specs/2026-10-07-tanstack-form-table-store-design.md).
+The engineer chose the scope (forms, tables and component state), a mergeable migration with no
+change in behaviour, stores for component state rather than for shared state only, pagination
+through the table, and the form components in the filter panels.
+
+| # | Decision | Why | Origin |
+|---|---|---|---|
+| D79 | Every form draft is a TanStack Form; validation stays server-only | The engineer asked for TanStack Form in place of the hand-written forms. Three forms repeated one submit-and-error lifecycle, and frontend checks stay UX only (frontend §8). | Engineer + AI |
+| D80 | Server errors live in Form's `onServer` slot, routed only to fields that show one, and cleared before every submit | One mapper replaces three. A standing `onServer` error makes Form refuse to submit, and Form writes the error map to every registered field. | AI |
+| D81 | Every form's defaults are a mount-time snapshot | `useForm` re-applies changed defaults to an untouched form, and the detail queries refetch on focus. D40 depends on the snapshot. | AI |
+| D82 | The filter panels are Forms, kept in step with the URL by `useUrlFieldSync` | The engineer asked for the form components in the filters, for one visual identity. Form's own debounce cannot be cancelled, and D50's echo rules had to stay. | Engineer + AI |
+| D83 | Tables are built with `createTableHook` and own no state; the URL drives them | The engineer asked for TanStack Table in place of the hand-built tables. The URL stays the only copy of list state (D45). | Engineer + AI |
+| D84 | Table drives the sort cycle; two mappers replace `nextOrdering` | With removal off and ascending first, Table's cycle is exactly D67's. Columns that do not sort opt out, or they would announce `aria-sort`. | AI |
+| D85 | Pagination goes through the table; one handler chooses push or replace | The engineer chose one pagination model over the old props. Table's `setPageSize` keeps the top row in view, which is not D47's page-1 reset. | Engineer + AI |
+| D86 | One session store per app replaces `AuthContext`; `useAuth()` keeps its shape | Shared client state with selector reads. One store per mount keeps tests isolated, and no caller of `useAuth()` changes. | Engineer + AI |
+| D87 | Each page's UI state lives in a per-mount store; a row selects its own busy flag | The engineer chose stores for component state over `useState`, a broader override of frontend §4. One store per mount keeps `useState`'s lifetime. | Engineer + AI |
+| D88 | DOM and timing primitives keep their internal React state | A store would add indirection with no second reader. | AI |
+```
+
+- [ ] **Step 4: `docs/TECHNICAL-DECISIONS.md` — override, sources, rationale, risks**
+
+In "Deliberate overrides of AGENTS.md", replace the whole row that starts with `| **A fourth kind of state** |` with:
+
+```markdown
+| **State ownership** | frontend §4 (A43): three kinds of state — server state in TanStack Query, shared client state in Context, local UI state in `useState` | Server state in TanStack Query. List view state (filters, sort, page, page size) in the URL, owned by the router. Form drafts in TanStack Form. The session, and each page's UI state, in TanStack Store, one store per page mount. `useState` only inside DOM and timing primitives | A list's view must survive refresh, Back and a shared link, and the dashboard's cards must be able to open it; only the URL does all four (D45). Form and Store replaced three copies of one submit-and-error lifecycle and the per-component flags (D79–D88), and per-mount stores keep `useState`'s lifetime while letting a row select only what it renders. Typed text keeps a short-lived draft in its form field (D82). | Engineer + AI |
+```
+
+In "Sources", replace the row `| — | D79–D88 | Reserved by the TanStack Form, Table and Store refactor design, on branch …; not yet merged | — |` with:
+
+```markdown
+| 7. TanStack Form, Table and Store | D79–D88 | [tanstack-form-table-store-design](superpowers/specs/2026-10-07-tanstack-form-table-store-design.md) | [plan](superpowers/plans/2026-10-07-tanstack-form-table-store.md) |
+```
+
+Insert immediately before `## Known limitations and exit criteria` (after "Structured logs and the request id (D89–D93)"), replacing `<before>` and `<after>` with the Step 1 gzip figures:
 
 ```markdown
 ### TanStack Form, Table and Store (D79–D88)
@@ -4889,9 +5012,8 @@ In `README.md`, insert immediately **before** the line `## Deliberate overrides 
 The hand-written forms, tables and component state moved to TanStack Form 1.33, TanStack
 Table 9.2 and TanStack Store 0.11, with no change in behaviour: the existing tests pass
 unchanged apart from the three that tested replaced code directly (the URL draft hook, the
-pager, `nextOrdering`). The design is
-`docs/superpowers/specs/2026-10-07-tanstack-form-table-store-design.md`. Form and Table both
-run on Store, so all three share one `@tanstack/store` copy.
+pager, `nextOrdering`). Form and Table both run on Store, so all three share one
+`@tanstack/store` copy.
 
 - **Every form draft is a TanStack Form (D79).** The sign-in, task and user forms and both
   filter panels use one set of bound field components (`src/components/form/`), so they share
@@ -4927,63 +5049,105 @@ run on Store, so all three share one `@tanstack/store` copy.
 - **Bundle size:** the production JS went from <before> kB to <after> kB gzip.
 ```
 
-- [ ] **Step 3: Rewrite the state override row**
-
-In the "Deliberate overrides of AGENTS.md" table, replace the whole row that starts with `| **A fourth kind of state** |` with:
-
-```markdown
-| **State ownership** | frontend §4: three kinds of state — server state in TanStack Query, shared client state in Context, local UI state in `useState` | Server state in TanStack Query. List view state (filters, sort, page, page size) in the URL, owned by the router. Form drafts in TanStack Form. The session, and each page's UI state, in TanStack Store, one store per page mount. `useState` only inside DOM and timing primitives | A list's view must survive refresh, Back and a shared link, and the dashboard's cards must be able to open it; only the URL does all four (D45). Form and Store replaced three copies of one submit-and-error lifecycle and the per-component flags (D79–D88), and per-mount stores keep `useState`'s lifetime while letting a row select only what it renders. Typed text keeps a short-lived draft in its form field (D82). |
-```
-
-- [ ] **Step 4: Record the pre-1.0 risk and its exit criterion**
-
-In "Accepted risks", add this row at the end of the table:
+In "Accepted risks", add at the end of the table:
 
 ```markdown
 | **TanStack Store is pre-1.0** | The session and page stores use `createStore`, `useCreateStore`, `createStoreContext` and `useSelector` from `@tanstack/react-store` 0.11, and Form and Table depend on the same package. A 0.x minor release may change those APIs. | The `^0.11.2` range admits patch releases only, and Form and Table resolve to the same copy. See the exit criterion. |
 ```
 
-In "Exit criteria", add this row before the struck-through drf-spectacular row:
+In "Exit criteria", add before the struck-through drf-spectacular row:
 
 ```markdown
 | TanStack Store is pre-1.0 (D86–D88) | Store 1.0 ships: re-check `createStore`, `useCreateStore`, `createStoreContext` and `useSelector`, widen the range, and remove the accepted risk. |
 ```
 
-- [ ] **Step 5: Add to the GenAI record**
+- [ ] **Step 5: `docs/ARCHITECTURE.md` — the frontend section**
 
-At the end of the "GenAI prompt and validation record" section, append:
+In the mermaid diagram under `## Frontend`, replace
+`        COMP["components/<br/>TaskTable, TaskForm, ..."]` with
+`        COMP["components/<br/>TaskForm, TaskFilters, TaskCard, ..."]`
+and
+`    AUTH["features/auth/AuthContext<br/>current user"]` with
+`    AUTH["features/auth/SessionProvider<br/>session store: current user"]`.
+
+Replace the state table that follows "Each kind of state has exactly one home:" with:
 
 ```markdown
-**TanStack Form, Table and Store.** The design was checked against the installed packages
+| Kind | Home | Examples |
+|---|---|---|
+| Server state | TanStack Query | task list, task detail, user list, stats |
+| Session | TanStack Store, one session store from `SessionProvider` (D86) | the signed-in user |
+| List view state | the URL, owned by the router (D45) | filters, sort, page, page size |
+| Form drafts | TanStack Form (D79, D81) | the sign-in, task and user forms; the filter panels' fields, kept in step with the URL (D82) |
+| Table model | TanStack Table, controlled from the URL (D83–D85) | rows, sort display, page count |
+| Page UI state | TanStack Store, one store per page mount (D87) | the delete dialog's target and error, the busy row, the combobox's open state |
+| Access token | `lib/api-client.ts` module memory | never `localStorage` or `sessionStorage` |
+```
+
+- [ ] **Step 6: `frontend/README.md` — the layout**
+
+In the `src/` tree, replace the `components/` line with
+`├── components/   shared primitives (Button, ButtonLink, form error, focus helpers); form/ — the app form and its fields; table/ — the app table, TableView, Pagination`,
+the `auth/` line with
+`│   ├── auth/       sign-in page, session store and SessionProvider, auth service`,
+and the `lib/` line with
+`├── lib/          API client (token in memory, single-flight refresh), API errors, dates, pagination, URL field sync, store helpers`.
+
+- [ ] **Step 7: `README.md` and `SUMMARY.md`**
+
+`README.md`, "Key implementation decisions": after the bullet that starts `- **The URL holds list state (D45).**`, add:
+
+```markdown
+- **TanStack Form, Table and Store (D79–D88).** Every form and filter panel is a TanStack Form
+  built from shared field components; the tables are TanStack Tables that own no state and
+  are driven from the URL; the session and each page's UI state live in TanStack Stores.
+```
+
+In the same file, replace `all 84 numbered decisions` with `all 94 numbered decisions`, and in the "Documentation" table replace `every decision (D1–D78 and D89–D93)` with `every decision (D1–D93)`.
+
+`SUMMARY.md`:
+- line 27: replace `decisions D1–D78 and D89–D93` with `decisions D1–D93`;
+- "Frontend best practices", State bullet: replace `server state in TanStack Query, list state in the URL, the user in Context, and the token in module memory` with `server state in TanStack Query, list state in the URL, form drafts in TanStack Form, the session and each page's UI state in TanStack Store, and the token in module memory`;
+- "Key numbers": in the paragraph above the table, replace `the frontend figures are from \`main\` at \`59ce235\`, and the frontend has not changed since.` with `the frontend figures are from the TanStack refactor (iteration 7).`; set the Frontend tests row to the Step 1 counts and coverage; in the Static checks row replace `oxlint at its baseline of 5 warnings` with `oxlint at its baseline of 4 warnings`; set the Decisions row to `94: 10 Engineer, 30 Engineer + AI, 54 AI`; and in the Delivery row replace `6 iterations` with `7 iterations` and append `; 23 planned tasks in iteration 7`;
+- "GenAI fluency", last bullet: replace `**The scale of the loop:** 6 iterations.` with `**The scale of the loop:** 7 iterations.`
+
+- [ ] **Step 8: `docs/GENAI-WORKFLOW.md`**
+
+In "The prompts" table, add after the iteration 6 row:
+
+```markdown
+| 7. TanStack refactor | TanStack Form, Table and Store in place of the hand-written forms, tables and component state. The engineer chose a mergeable migration, stores for component state, pagination through the table, the form components in the filters, and a full browser QA re-test | A spec and a 23-task plan, both checked against the installed libraries with a typechecked prototype run under Node and jsdom; then execution in a git worktree and a Playwright re-test | D79–D88 |
+```
+
+At the end of "What the generated output got wrong", append:
+
+```markdown
+**TanStack refactor (iteration 7).** The design was checked against the installed packages
 before the plan was written: a prototype was typechecked and run under Node and jsdom. That
-caught four things the library documentation does not say plainly, each now a decision with
-a test that fails without it:
+caught four things the library documentation does not say plainly, each now a decision with a
+test that fails without it:
 - Form refuses to submit while a server error stands in its `onServer` slot, and clearing that
   slot with `{ onServer: undefined }` leaves every field's error in place (D80).
-- `useForm` re-applies changed `defaultValues` to an untouched form on every render, so the
-  user form needed the same snapshot the task form already had (D81).
+- `useForm` re-applies changed `defaultValues` to an untouched form on every render (D81).
 - Form writes a server error map to every registered field, so a generic mapper would have
   shown errors under fields that never displayed one (D80).
 - A Table accessor column is sortable unless it opts out, which would have given Title and
   Assignee `aria-sort="none"` (D84).
 
-The spec review caught the remaining design gaps, among them the user form's missing snapshot
-and a store-creation pattern that `useCreateStore` cannot express.
+The spec review then found the user form's missing snapshot and a store-creation pattern that
+`useCreateStore` cannot express. The plan review found a "prove it red" step that could not go
+red — the existing D40 test passes even without the snapshot, because both sides of its
+comparison follow the refetch — and that `main` had moved on under the branch with a docs
+reorganisation.
 ```
 
-If execution or the browser re-test (Task 22) found anything the plan got wrong, add one bullet per item here, in the same style as the sections above (what was claimed, what was true, how it was verified).
+If execution or the browser re-test (Task 22) found anything the plan got wrong, add one bullet per item to that paragraph: what was claimed, what was true, and how it was verified.
 
-- [ ] **Step 6: Record the prompts**
+- [ ] **Step 9: `docs-external/PROMPT-LOGS.md`**
 
-At the end of `docs-external/PROMPT-LOGS.md`, append (verbatim prompts, as the rest of the file does):
+Under `## Refactors`, immediately after the first block (the TanStack prompt that begins `using a worktree and superpowers brainstorming`), insert the two follow-up prompts, verbatim:
 
 ````markdown
-## TanStack Form, Table and Store
-
-```
-using a worktree and superpowers brainstorming /superpowers-extended-cc:brainstorming  /superpowers-extended-cc:using-git-worktrees , I want to explore possible refactor to implement tanstack table, form and store libraries replacing the manually made forms and tables, and the local state of component
-```
-
 ```
 apply 2 and 3, Rooute pagination via table to avoid reinventing the component for pagination and page size, and use the new form components in filters to keep visual identify
 ```
@@ -4993,15 +5157,15 @@ approved but since its a big change its worth to run again the qa report analysi
 ```
 ````
 
-- [ ] **Step 7: Check for stale references**
+- [ ] **Step 10: Check for stale references**
 
-Run: `git grep -n -e useSearchParamDraft -e AuthContext -e AuthProvider -e TaskTable -e UserTable -e nextOrdering -- README.md`
-Expected: matches only inside the new D79–D88 section, where the old names are mentioned on purpose (`useSearchParamDraft`, `nextOrdering`).
+Run: `git grep -n -e AuthContext -e TaskTable -e UserTable -e useSearchParamDraft -e nextOrdering -e "D79–D88 are reserved" -e "84 numbered" -- README.md SUMMARY.md docs/ARCHITECTURE.md frontend/README.md docs/TECHNICAL-DECISIONS.md docs/GENAI-WORKFLOW.md`
+Expected: matches only where the old names are history — the earlier iterations' decision entries and rationale (D45–D78) and the new D79–D88 text, which names what it replaced. `ARCHITECTURE.md`, `frontend/README.md`, `README.md` and `SUMMARY.md` have none.
 
-- [ ] **Step 8: Commit**
+- [ ] **Step 11: Commit**
 
 ```bash
-git add README.md docs-external/PROMPT-LOGS.md
+git add README.md SUMMARY.md docs/TECHNICAL-DECISIONS.md docs/ARCHITECTURE.md docs/GENAI-WORKFLOW.md frontend/README.md docs-external/PROMPT-LOGS.md
 git commit -m "docs: record the TanStack Form, Table and Store refactor (D79-D88)"
 ```
 
@@ -5022,8 +5186,11 @@ Use the Playwright MCP browser tools (`mcp__playwright__*`). Read `docs/qa/2026-
 Run: `docker compose --project-directory D:/VirtualWrapper/code/TaskManagementSystem ps`
 Expected: `backend`, `worker`, `beat`, `db`, `redis`, `mailhog` and `frontend` running. If not, run `docker compose --project-directory D:/VirtualWrapper/code/TaskManagementSystem up -d` and re-check.
 
-Run: `git -C D:/VirtualWrapper/code/TaskManagementSystem rev-parse --short HEAD`
-Expected: `59ce235` (the main checkout, which the Compose `frontend` service bind-mounts).
+Run: `git -C D:/VirtualWrapper/code/TaskManagementSystem rev-parse --abbrev-ref HEAD`
+Expected: `main` (the main checkout, which the Compose `frontend` service bind-mounts).
+
+Run: `git -C D:/VirtualWrapper/code/TaskManagementSystem diff --stat 59ce235 HEAD -- frontend/src`
+Expected: empty — `main`'s frontend is the one this refactor started from, so it is a valid baseline. (If not, note the commit and what changed in §8's metadata.)
 
 - [ ] **Step 2: Take the baseline from `main` (spec §8 step 1)**
 
@@ -5065,7 +5232,7 @@ For each failing row, use @superpowers-extended-cc:systematic-debugging: reprodu
 - [ ] **Step 7: Run the gates for the report**
 
 Run: `bash D:/VirtualWrapper/code/TaskManagementSystem/scripts/run-backend-tests.sh` (the backend is unchanged; this is the §7.2 gates table's first row).
-Run: `git diff --stat main -- ../backend` — expected: empty (no backend change).
+Run: `git diff --stat main -- ../backend` — expected: empty. The branch merged `main` (Task 21 Step 0) and changes no backend file, so the Compose backend, which runs `main`'s code, is the branch's backend too.
 Run from `frontend/`: `npm run typecheck`, `npm run lint`, `npm test`, `npm run build`. Record the counts: test files and tests, lint warnings, gzip size.
 
 - [ ] **Step 8: Write section 8 of the QA report**

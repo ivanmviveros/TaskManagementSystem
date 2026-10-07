@@ -5,7 +5,8 @@
 [2026-10-07-qa-fixes-iteration-5-design.md](2026-10-07-qa-fixes-iteration-5-design.md); the list
 navigation design (D45–D56), all recorded in `README.md`
 **Branch:** `refactor/tanstack-form-table-store`, off `main` at `59ce235`, in the worktree
-`.worktrees/refactor-tanstack`
+`.worktrees/refactor-tanstack`; `main` merged in at `607262f` (docs reorganisation and
+structured logging, no `frontend/src` change)
 **Status:** approved in brainstorming. Pending written-spec review.
 
 ---
@@ -519,8 +520,9 @@ removed (`clearServerErrors`, the snapshot, `useCreateStore`), which the commit 
 - `toServerErrors`: one case per rule in §5.2, including D75's "only when no rendered field has
   an error", and that a key outside `renderedFields` never reaches `fields`.
 - `clearServerErrors` clears field errors as well as the form message.
-- **An untouched user edit form keeps its loaded values across a focus refetch** (D81). Today's
-  `useState` initialisers give this; `TaskForm.test.tsx` already pins the task form's case.
+- **An untouched task or user edit form keeps its loaded values across a focus refetch** (D81).
+  Today's `useState` initialisers give this. The existing D40 test does not guard it on its own:
+  with live defaults, both sides of its status comparison follow the refetch and it still passes.
 - **Re-submit after a server error reaches the API**, for the task, user and login forms (D80).
   On `main` this passes trivially; it fails if `clearServerErrors` is left out.
 - `toTaskInput`: D32 (omitted vs `null` assignee), D40 (status only when changed), D76 (the
@@ -601,11 +603,16 @@ concern per commit.
 | 5 — Docs | §9.2 |
 | 6 — Browser QA | §8, and any fixes it calls for |
 
-### 9.2 README and repository docs
+### 9.2 Repository docs
 
-- **Key implementation decisions:** rows D79–D88, and a narrative section, "TanStack Form, Table
-  and Store (D79–D88)", after "Fixes from the QA report (D66–D78)". It includes the bundle sizes
-  before and after.
+`main` reorganised the docs after this spec was approved (merged into the branch at `607262f`):
+the decisions, overrides and limitations moved from `README.md` to `docs/TECHNICAL-DECISIONS.md`,
+which reserves D79–D88 for this work, and the GenAI record moved to `docs/GENAI-WORKFLOW.md`.
+The plan's Task 21 has the exact edits. In summary:
+
+- **Decisions:** D79–D88 in `docs/TECHNICAL-DECISIONS.md`'s decision log (with their origin) and
+  a rationale section "TanStack Form, Table and Store (D79–D88)", which includes the bundle sizes
+  before and after; the Sources row; the decision counts; a headline bullet in `README.md`.
 - **Deliberate overrides of AGENTS.md:** the "A fourth kind of state" row is rewritten as the
   state-ownership override. Frontend §4 names three kinds (Query, Context, `useState`); this
   project uses the URL for list view state, Form for drafts, Store for the session and per-mount
@@ -614,8 +621,10 @@ concern per commit.
 - **Known limitations:** Store is pre-1.0, an accepted risk. Exit criterion: at Store 1.0,
   re-check `createStore`, `useCreateStore`, `createStoreContext` and `useSelector`, then remove
   the note.
-- **GenAI prompt and validation record:** this work's prompt, and how its output was validated
-  (§7, §8).
+- **The state model elsewhere:** `docs/ARCHITECTURE.md`'s frontend diagram and state table,
+  `frontend/README.md`'s layout, and `SUMMARY.md`'s state bullet and key numbers.
+- **GenAI prompt and validation record:** the prompts in `docs-external/PROMPT-LOGS.md`, and how
+  the output was validated (§7, §8) in `docs/GENAI-WORKFLOW.md`.
 
 ---
 
