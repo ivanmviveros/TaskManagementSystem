@@ -36,7 +36,7 @@ docker compose exec -T -e DJANGO_SETTINGS_MODULE=config.settings.test backend py
 
 | File | Change | Responsibility |
 |---|---|---|
-| `.github/workflows/ci.yml` | modify | `compat` stage 2 gains `--no-cov` |
+| `.github/workflows/ci.yml` (stage 2, ~line 61) | modify | `compat` stage 2 gains `--no-cov` |
 | `README.md` | modify | compat stage-2 note; "same gate" sentence qualified |
 | `backend/apps/tasks/serializers.py` | modify | `allowed_transitions` on `TaskDetailSerializer` |
 | `backend/apps/tasks/tests/test_serializers.py` | modify | field-list test + transition tests |
@@ -58,7 +58,7 @@ docker compose exec -T -e DJANGO_SETTINGS_MODULE=config.settings.test backend py
 First, because it is independent and cheap — and the reproduction it starts with is the evidence the fix targets the right thing.
 
 **Files:**
-- Modify: `.github/workflows/ci.yml:62-64`
+- Modify: `.github/workflows/ci.yml` (stage-2 comment and step, from ~line 61)
 - Modify: `README.md` (compat section, stage 2; "Running the checks" gate sentence)
 
 - [ ] **Step 1: Reproduce the CI failure locally**
@@ -430,7 +430,7 @@ Expected: **five fail**, each for a stated reason —
 - the two read-only tests: a status combobox still exists;
 - "saves a completed task…", "saves an untouched pending task…" and the refetch test: the body still carries `status`.
 
-**Two pass already, by design:** "offers a pending task's status and its transitions…" and "keeps Pending on offer…". Today's static `EDITABLE_STATUSES` happens to produce the right options for a pending task. These are guards against a *wrong* new implementation (options derived from the select's state), and Step 6 proves they can fail.
+**Two pass already, by design:** "offers a pending task's status and its transitions…" and "keeps Pending on offer…". Today's static `EDITABLE_STATUSES` happens to produce the right options for a pending task. These are guards against a *wrong* new implementation (options derived from the select's state); Step 6 mutation-tests "keeps Pending on offer…", the sharper of the two.
 
 - [ ] **Step 4: Implement**
 
@@ -465,10 +465,12 @@ const STATUS_ORDER = Object.keys(STATUS_LABEL) as TaskStatus[];
   // silently undo a change someone else made meanwhile.
   const [initialStatus] = useState(task?.status);
   const [initialTransitions] = useState<TaskStatus[]>(task?.allowed_transitions ?? []);
+  const [status, setStatus] = useState<TaskStatus>(task?.status ?? "PENDING");
+  // Declared AFTER `status`: the filter callback runs during render, so any
+  // reference to a later `const` would throw a temporal-dead-zone ReferenceError.
   const statusOptions = STATUS_ORDER.filter(
     (option) => option === initialStatus || initialTransitions.includes(option),
   );
-  const [status, setStatus] = useState<TaskStatus>(task?.status ?? "PENDING");
 ```
 
 4. In `handleSubmit`, replace the status spread:
@@ -532,7 +534,7 @@ npm run --prefix frontend test -- TaskForm
 ```
 Expected: **"does not undo a status someone else changed…" FAILS** with `status: "PENDING"` in the body. Restore `initialStatus`.
 
-Then temporarily derive the options from the select's state instead of the snapshot — `option === status || initialTransitions.includes(option)` — and re-run. Expected: **"keeps Pending on offer…" FAILS**. Restore it. A test that cannot fail is decoration.
+Then temporarily derive the options from the select's state instead of the snapshot — change `option === initialStatus` to `option === status` — and re-run. Expected: **only "keeps Pending on offer…" fails**, with `Unable to find … role "option" and name "Pending"`; every other test passes. If *every* `TaskForm` test fails instead, `statusOptions` is declared above `status` and the render is crashing — fix the order (Step 4) rather than reading the crash as the guard working. Restore it. A test that cannot fail is decoration.
 
 - [ ] **Step 7: Whole suite, typecheck, lint**
 
@@ -977,7 +979,7 @@ and update `tile()`'s comment to: `/** The card's CTA link; its href is what the
 
 and the same for `operatorTiles`.
 
-5. Add:
+5. Add, inside `describe("StatsPage", …)`:
 
 ```ts
   it("gives every card a 'View tasks' link named after its card", async () => {
@@ -1093,6 +1095,8 @@ git commit -m "feat: give dashboard cards a View tasks call to action"
 - Test: `frontend/src/features/dashboard/StatsPage.test.tsx`
 
 - [ ] **Step 1: Write the failing tests**
+
+Inside `describe("StatsPage", …)`:
 
 ```ts
   it("offers New task in the header", async () => {
@@ -1238,7 +1242,7 @@ With `docker compose up -d`, open `http://localhost:5173/dashboard` as `supervis
 - "Due in 7 days" spans the full last row at both widths;
 - "New task" sits in the header.
 
-Then delete a task from the list and from its detail page, and edit a completed task.
+Then delete a task from the list and from its detail page, and edit a completed task. Expect a possible brief "Could not load that task." flash when deleting from the detail page: the cache invalidation refetches the now-deleted task (404) just before navigation. That is pre-existing behaviour, not a regression from this plan.
 
 **If no browser is available in the executing environment, do not claim this step.** Record it as unverified, with the checklist above, for the project owner to run.
 
