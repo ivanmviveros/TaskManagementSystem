@@ -337,6 +337,50 @@ describe("TaskForm", () => {
     expect(creates.bodies[0]).toMatchObject({ assignee: null });
   });
 
+  it("unassigns an assigned task when Unassigned is chosen on edit", async () => {
+    // An explicit null is how a PATCH unassigns; an omitted assignee means
+    // "leave it alone" (D32). The edit page used to drop the null.
+    signedInAs(SUPERVISOR);
+    assignableUsers();
+    taskDetail();
+    const patches = capturePatches();
+    await renderApp(`/tasks/${TASK_ID}/edit`);
+    const picker = await screen.findByRole("combobox", { name: /assignee/i });
+    expect(picker).toHaveValue("Omar Operator (operator@demo.local)");
+    const user = userEvent.setup();
+    await user.click(picker);
+    await user.click(await screen.findByRole("option", { name: /^unassigned$/i }));
+    await user.click(screen.getByRole("button", { name: /save changes/i }));
+    await waitFor(() => expect(patches.bodies).toHaveLength(1));
+    expect(patches.bodies[0]).toHaveProperty("assignee", null);
+  });
+
+  it("never sends an assignee for an Operator's edit", async () => {
+    // D15: any assignee on an Operator's update is refused — even an unchanged one.
+    signedInAs(OPERATOR);
+    taskDetail();
+    const patches = capturePatches();
+    await renderApp(`/tasks/${TASK_ID}/edit`);
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: /save changes/i }));
+    await waitFor(() => expect(patches.bodies).toHaveLength(1));
+    expect(patches.bodies[0]).not.toHaveProperty("assignee");
+  });
+
+  it("never sends an assignee for an Operator's new task", async () => {
+    // D16: the server assigns an Operator's task to them when assignee is
+    // omitted, and refuses an explicit null as a different assignee.
+    signedInAs(OPERATOR);
+    const creates = captureCreates();
+    taskDetail();
+    await renderApp("/tasks/new");
+    const user = userEvent.setup();
+    await user.type(await screen.findByLabelText(/title/i), "My own task");
+    await user.click(screen.getByRole("button", { name: /create task/i }));
+    await waitFor(() => expect(creates.bodies).toHaveLength(1));
+    expect(creates.bodies[0]).not.toHaveProperty("assignee");
+  });
+
   it("renders the status select in edit mode only", async () => {
     signedInAs(SUPERVISOR);
     assignableUsers();

@@ -18,7 +18,9 @@ export function TaskCreatePage() {
       title: values.title,
       description: values.description,
       due_date: values.due_date,
-      assignee: values.assignee,
+      // Omitted for an Operator, whose task the server assigns to them (D16);
+      // an explicit null would be refused as choosing a different assignee.
+      ...(values.assignee === undefined ? {} : { assignee: values.assignee }),
     });
     await navigate({ to: "/tasks/$taskId", params: { taskId: task.id } });
   }
@@ -53,9 +55,9 @@ export function TaskEditPage() {
       description: values.description,
       due_date: values.due_date,
       ...(values.status === undefined ? {} : { status: values.status }),
-      // assignee is sent only when the actor may choose it; TaskForm passes null
-      // for an Operator, and sending null would unassign the task.
-      ...(values.assignee === null ? {} : { assignee: values.assignee }),
+      // Omitted when the actor may not choose it (an Operator, D15); null is
+      // sent as-is, because null is how a PATCH unassigns (D32).
+      ...(values.assignee === undefined ? {} : { assignee: values.assignee }),
     });
     await navigate({ to: "/tasks/$taskId", params: { taskId } });
   }

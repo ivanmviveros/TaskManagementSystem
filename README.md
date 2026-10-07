@@ -971,6 +971,20 @@ UI component library to fit it into.
 - The form holds the chosen user, not just an id, so a task whose assignee is past the first
   page still shows their name without fetching anything.
 
+### "No assignee" and "not yours to choose" are different (D65)
+
+The API reads an omitted `assignee` as "leave it alone" (on update) or "assign it to me" (an
+Operator's create, D16), and an explicit `null` as "unassign" (D32). The task form used `null`
+for both meanings, which broke two things:
+
+- **A Supervisor could not unassign a task.** The edit page dropped a `null` assignee, so
+  choosing "Unassigned" saved the old assignee.
+- **An Operator could not create a task at all.** The create page sent `assignee: null`, which
+  the API refuses from an Operator with `400 assignee_immutable`.
+
+The form now leaves `assignee` out when the actor may not choose one, and sends `null` only
+when "Unassigned" was chosen.
+
 ## Deliberate overrides of AGENTS.md
 
 | Override | AGENTS.md says | This project does | Why |

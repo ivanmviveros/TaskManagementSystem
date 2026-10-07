@@ -22,7 +22,12 @@ export interface TaskFormValues {
   title: string;
   description: string;
   due_date: string | null;
-  assignee: string | null;
+  /**
+   * Absent when the actor may not choose an assignee (an Operator, D15/D16);
+   * null means "unassigned". The two must stay distinct: the API reads an
+   * omitted assignee as "leave it / default it" and null as "unassign" (D32).
+   */
+  assignee?: string | null;
   status?: TaskStatus;
 }
 
@@ -77,7 +82,7 @@ export function TaskForm({ task, onSubmit, onCancel }: TaskFormProps) {
         title,
         description,
         due_date: dueDate === "" ? null : new Date(`${dueDate}T12:00:00Z`).toISOString(),
-        assignee: canChooseAssignee ? (assignee?.id ?? null) : null,
+        ...(canChooseAssignee ? { assignee: assignee?.id ?? null } : {}),
         // Sent only when the user changed it (D40). TaskEditPage omits an
         // undefined status from the PATCH.
         ...(isEdit && status !== initialStatus ? { status } : {}),
