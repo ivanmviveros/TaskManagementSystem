@@ -27,10 +27,11 @@ export const updateUser = (id: string, input: UserUpdateInput) =>
 export const deleteUser = (id: string) => apiClient.delete(`/users/${id}/`);
 
 /**
- * Users who may hold a task: the assignee picker's options.
+ * Users who may hold a task: the assignee picker's options (D47).
  *
- * Admins are excluded client-side as well as server-side (D17) so the picker
- * never offers an assignee the API would reject with assignee_not_assignable.
+ * A dedicated, unpaginated endpoint: paging /users/ at its 100-row cap made
+ * everyone past the first page unassignable. The server applies D17 (never an
+ * Admin), so the picker offers exactly what the API reports — the rule is not
+ * re-derived here.
  */
-export const listAssignableUsers = () =>
-  apiClient.get<Paginated<UserMinimal>>("/users/?page_size=100");
+export const listAssignableUsers = () => apiClient.get<UserMinimal[]>("/users/assignable/");

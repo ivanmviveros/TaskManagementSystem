@@ -46,17 +46,9 @@ function signedInAs(user: typeof OPERATOR | typeof SUPERVISOR) {
   server.use(http.get(`${BASE}/users/me/`, () => HttpResponse.json(user)));
 }
 
+/** GET /users/assignable/ answers with a plain list, not a page (D47). */
 function assignableUsers() {
-  server.use(
-    http.get(`${BASE}/users/`, () =>
-      HttpResponse.json({
-        count: 2,
-        next: null,
-        previous: null,
-        results: [OPERATOR, SUPERVISOR],
-      }),
-    ),
-  );
+  server.use(http.get(`${BASE}/users/assignable/`, () => HttpResponse.json([OPERATOR, SUPERVISOR])));
 }
 
 function taskDetail(overrides: Partial<TaskDetail> = {}) {
@@ -112,7 +104,7 @@ describe("TaskForm", () => {
     expect(screen.queryByLabelText(/assignee/i)).not.toBeInTheDocument();
   });
 
-  it("renders the assignee field for a Supervisor, populated from GET /users/", async () => {
+  it("renders the assignee field for a Supervisor, populated from GET /users/assignable/", async () => {
     signedInAs(SUPERVISOR);
     assignableUsers();
     await renderApp("/tasks/new");
@@ -123,34 +115,23 @@ describe("TaskForm", () => {
     expect(select).toBeInTheDocument();
   });
 
-  it("never offers an Admin as an assignee", async () => {
-    // D17: assigning to an Admin would create a task nobody can open.
+  it("offers every assignable user the API reports, beyond one page", async () => {
+    // D47: the picker used to page /users/ at its 100-row cap, so everyone past
+    // the first page was unassignable. Which users are assignable (never an
+    // Admin, D17) is now the server's answer, tested in test_api_assignable.py.
     signedInAs(SUPERVISOR);
-    server.use(
-      http.get(`${BASE}/users/`, () =>
-        HttpResponse.json({
-          count: 2,
-          next: null,
-          previous: null,
-          results: [
-            OPERATOR,
-            {
-              id: "0199a0f0-0000-7000-8000-00000000ad01",
-              email: "admin@demo.local",
-              first_name: "Ada",
-              last_name: "Admin",
-              role: "ADMIN",
-            },
-          ],
-        }),
-      ),
-    );
+    const many = Array.from({ length: 150 }, (_, i) => ({
+      ...OPERATOR,
+      id: `0199a0f0-0000-7000-8000-${String(i).padStart(12, "0")}`,
+      email: `operator${i}@demo.local`,
+      first_name: `Op${i}`,
+    }));
+    server.use(http.get(`${BASE}/users/assignable/`, () => HttpResponse.json(many)));
     await renderApp("/tasks/new");
-    await screen.findByLabelText(/assignee/i);
-    await waitFor(() =>
-      expect(screen.getByRole("option", { name: /omar operator/i })).toBeInTheDocument(),
-    );
-    expect(screen.queryByRole("option", { name: /ada admin/i })).not.toBeInTheDocument();
+    const select = await screen.findByLabelText(/assignee/i);
+    // 150 users plus the "Unassigned" option.
+    await waitFor(() => expect(within(select).getAllByRole("option")).toHaveLength(151));
+    expect(within(select).getByRole("option", { name: /operator149@demo\.local/ })).toBeInTheDocument();
   });
 
   it("renders the status select in edit mode only", async () => {

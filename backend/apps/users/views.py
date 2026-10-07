@@ -3,6 +3,7 @@
 from django_filters.rest_framework import DjangoFilterBackend
 from drf_spectacular.utils import OpenApiResponse, extend_schema
 from rest_framework import mixins, status, viewsets
+from rest_framework.decorators import action
 from rest_framework.filters import SearchFilter
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -16,7 +17,7 @@ from apps.core.roles import Role
 from apps.users.dto import UserCreateInput, UserUpdateInput
 from apps.users.filters import UserFilterSet
 from apps.users.repositories import DjangoUserRepository
-from apps.users.selectors import scoped_users
+from apps.users.selectors import assignable_users, scoped_users
 from apps.users.serializers import (
     UserCreateSerializer,
     UserMinimalSerializer,
@@ -60,6 +61,19 @@ class UserViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.Gen
     def get_service(self) -> UserService:
         """The composition root: the only place a concrete repository is named."""
         return UserService(users=DjangoUserRepository())
+
+    @extend_schema(responses={200: UserMinimalSerializer(many=True)})
+    @action(detail=False, methods=["get"], pagination_class=None)
+    def assignable(self, request):
+        """Every user a task may be assigned to — the assignee picker's options (D47).
+
+        Unpaginated on purpose: a picker needs the whole set, and paging /users/
+        at its 100-row cap made everyone past the first page unassignable. D17
+        (never an Admin) is applied here by assignable_users(), so the SPA no
+        longer re-derives it. Minimal fields: the same shape a Supervisor gets
+        from /users/.
+        """
+        return Response(UserMinimalSerializer(assignable_users(), many=True).data)
 
     @extend_schema(
         request=UserCreateSerializer,
