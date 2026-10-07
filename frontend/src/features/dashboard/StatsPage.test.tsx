@@ -44,9 +44,15 @@ beforeEach(() => {
   statsCalls = 0;
 });
 
-/** The tile is a link; its href is what the drill-through assertions read. */
+/** The card's CTA link; its href is what the drill-through assertions read. */
 function tile(name: RegExp): HTMLElement {
   return screen.getByRole("link", { name });
+}
+
+/** A card is a named group (role="group" + aria-labelledby), so its number can
+ *  be read without depending on the markup inside it. */
+function card(label: string): HTMLElement {
+  return screen.getByRole("group", { name: label });
 }
 
 describe("StatsPage", () => {
@@ -54,13 +60,13 @@ describe("StatsPage", () => {
     signedInAs(SUPERVISOR);
     statsRespondWith(STATS);
     await renderApp("/dashboard");
-    expect(await screen.findByRole("link", { name: /all tasks/i })).toHaveTextContent("10");
-    expect(tile(/^pending/i)).toHaveTextContent("4");
-    expect(tile(/in progress/i)).toHaveTextContent("3");
-    expect(tile(/^completed/i)).toHaveTextContent("2");
-    expect(tile(/^cancelled/i)).toHaveTextContent("1");
-    expect(tile(/overdue/i)).toHaveTextContent("5");
-    expect(tile(/due in 7 days/i)).toHaveTextContent("6");
+    expect(await screen.findByRole("group", { name: "All tasks" })).toHaveTextContent("10");
+    expect(card("Pending")).toHaveTextContent("4");
+    expect(card("In progress")).toHaveTextContent("3");
+    expect(card("Completed")).toHaveTextContent("2");
+    expect(card("Cancelled")).toHaveTextContent("1");
+    expect(card("Overdue")).toHaveTextContent("5");
+    expect(card("Due in 7 days")).toHaveTextContent("6");
     expect(statsCalls).toBe(1);
   });
 
@@ -108,7 +114,7 @@ describe("StatsPage", () => {
     statsRespondWith(STATS);
     await renderApp("/dashboard");
     await screen.findByRole("link", { name: /all tasks/i });
-    const href = decodeURIComponent(tile(/^pending/i).getAttribute("href") ?? "");
+    const href = decodeURIComponent(tile(/— pending$/i).getAttribute("href") ?? "");
     expect(href).toContain("/tasks");
     // Decoded, because TanStack Router serialises an array search param as JSON
     // (status=["PENDING"]) rather than as repeated keys. The repeated form the
@@ -171,8 +177,8 @@ describe("StatsPage", () => {
     const supervisorView = await renderApp("/dashboard");
     await screen.findByRole("link", { name: /all tasks/i });
     const supervisorTiles = screen
-      .getAllByRole("link")
-      .map((link) => link.textContent)
+      .getAllByRole("group")
+      .map((group) => group.textContent)
       .join("|");
     supervisorView.unmount();
 
@@ -181,10 +187,22 @@ describe("StatsPage", () => {
     await renderApp("/dashboard");
     await screen.findByRole("link", { name: /all tasks/i });
     const operatorTiles = screen
-      .getAllByRole("link")
-      .map((link) => link.textContent)
+      .getAllByRole("group")
+      .map((group) => group.textContent)
       .join("|");
 
     expect(operatorTiles).toBe(supervisorTiles);
+  });
+
+  it("gives every card a 'View tasks' link named after its card", async () => {
+    signedInAs(SUPERVISOR);
+    statsRespondWith(STATS);
+    await renderApp("/dashboard");
+    await screen.findByRole("group", { name: "All tasks" });
+    for (const label of ["All tasks", "Pending", "In progress", "Completed", "Cancelled", "Overdue", "Due in 7 days"]) {
+      const link = within(card(label)).getByRole("link");
+      expect(link).toHaveTextContent(/^view tasks/i);
+      expect(link).toHaveAccessibleName(`View tasks — ${label}`);
+    }
   });
 });
