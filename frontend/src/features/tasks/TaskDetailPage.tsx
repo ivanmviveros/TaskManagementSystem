@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Button } from "../../components/Button";
 import { FormError } from "../../components/FormError";
 import { ApiError } from "../../lib/api-error";
+import { DeleteTaskDialog } from "./components/DeleteTaskDialog";
 import { OverdueBadge, StatusBadge } from "./components/StatusBadge";
 import { useCompleteTask, useDeleteTask } from "./hooks/useTaskMutations";
 import { useTask } from "./hooks/useTasks";
@@ -15,6 +16,8 @@ export function TaskDetailPage() {
   const complete = useCompleteTask();
   const remove = useDeleteTask();
   const [actionError, setActionError] = useState<string | null>(null);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   if (isPending) {
     return (
@@ -36,14 +39,28 @@ export function TaskDetailPage() {
   // CANCELLED are terminal (D19), and the API answers 409 for either.
   const isOpen = task.status === "PENDING" || task.status === "IN_PROGRESS";
 
-  async function run(action: () => Promise<unknown>, after?: () => void) {
+  async function run(action: () => Promise<unknown>) {
     setActionError(null);
     try {
       await action();
-      after?.();
     } catch (caught) {
       setActionError(
         caught instanceof ApiError ? caught.message : "Something went wrong. Try again.",
+      );
+    }
+  }
+
+  async function confirmDelete() {
+    setDeleteError(null);
+    try {
+      // taskId, not task.id: a function DECLARATION is hoisted, so TypeScript
+      // does not carry the early return's narrowing into it — `task` would still
+      // be TaskDetail | undefined here (TS18048). The route param is a string.
+      await remove.mutateAsync(taskId);
+      await navigate({ to: "/tasks" });
+    } catch (caught) {
+      setDeleteError(
+        caught instanceof ApiError ? caught.message : "Could not delete that task.",
       );
     }
   }
@@ -97,12 +114,10 @@ export function TaskDetailPage() {
         {task.can_delete && (
           <Button
             variant="danger"
-            onClick={() =>
-              void run(
-                () => remove.mutateAsync(task.id),
-                () => void navigate({ to: "/tasks" }),
-              )
-            }
+            onClick={() => {
+              setDeleteError(null);
+              setConfirmingDelete(true);
+            }}
           >
             Delete
           </Button>
@@ -111,6 +126,16 @@ export function TaskDetailPage() {
           <Button variant="secondary">Back to tasks</Button>
         </Link>
       </div>
+
+      {confirmingDelete && (
+        <DeleteTaskDialog
+          task={task}
+          error={deleteError}
+          isDeleting={remove.isPending}
+          onConfirm={() => void confirmDelete()}
+          onCancel={() => setConfirmingDelete(false)}
+        />
+      )}
     </section>
   );
 }

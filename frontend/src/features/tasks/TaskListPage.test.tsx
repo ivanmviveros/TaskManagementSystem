@@ -220,3 +220,60 @@ describe("TaskListPage", () => {
     );
   });
 });
+
+describe("task deletion from the list", () => {
+  const TASK = task({ can_delete: true });
+
+  /** Counts DELETEs; onUnhandledRequest: "error" requires a handler anyway. */
+  function deletesRespondWith(response: () => Response) {
+    const record = { count: 0 };
+    server.use(
+      http.delete(`${BASE}/tasks/${TASK.id}/`, () => {
+        record.count += 1;
+        return response();
+      }),
+    );
+    return record;
+  }
+
+  async function openDialog() {
+    signedInAs(OPERATOR);
+    tasksRespondWith([TASK]);
+    await renderApp("/tasks");
+    const user = userEvent.setup();
+    const table = await screen.findByRole("table");
+    await user.click(within(table).getByRole("button", { name: /^delete review the brief/i }));
+    return { user, dialog: screen.getByRole("dialog") };
+  }
+
+  it("asks for confirmation, naming the task, and Cancel deletes nothing", async () => {
+    const deletes = deletesRespondWith(() => new HttpResponse(null, { status: 204 }));
+    const { user, dialog } = await openDialog();
+    expect(dialog).toHaveTextContent(/review the brief/i);
+    expect(dialog).toHaveTextContent(/no way to restore/i);
+    await user.click(within(dialog).getByRole("button", { name: /cancel/i }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(deletes.count).toBe(0);
+  });
+
+  it("deletes exactly once on confirm and closes the dialog", async () => {
+    const deletes = deletesRespondWith(() => new HttpResponse(null, { status: 204 }));
+    const { user, dialog } = await openDialog();
+    await user.click(within(dialog).getByRole("button", { name: /^delete$/i }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(deletes.count).toBe(1);
+  });
+
+  it("keeps the dialog open and shows the error when deletion fails", async () => {
+    deletesRespondWith(() =>
+      HttpResponse.json(
+        { detail: "You can only delete tasks you created.", code: "permission_denied" },
+        { status: 403 },
+      ),
+    );
+    const { user, dialog } = await openDialog();
+    await user.click(within(dialog).getByRole("button", { name: /^delete$/i }));
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent(/only delete tasks you created/i);
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+  });
+});

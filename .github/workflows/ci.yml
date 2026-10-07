@@ -59,9 +59,11 @@ jobs:
       - name: Django boots
         run: uv run --directory backend python manage.py check
       # Stage 2: the git-pinned simplejwt actually issues and verifies a token
-      # on Django 6.0 — the single most load-bearing claim in D3.
+      # on Django 6.0 — the single most load-bearing claim in D3. --no-cov: this
+      # runs ONE module as a smoke test, and addopts' 80% gate is a whole-suite
+      # measurement that belongs to the backend job.
       - name: Login round-trip against the cookie auth views
-        run: uv run --directory backend pytest apps/users/tests/test_api_auth.py -q
+        run: uv run --directory backend pytest apps/users/tests/test_api_auth.py -q --no-cov
       # Stage 3: drf-spectacular 0.30.0 — which classifies Django 6.0 but is not
       # tested above it — still produces a valid OpenAPI 3 document (D4).
       - name: Generate and validate the OpenAPI schema

@@ -1,0 +1,73 @@
+{
+  "planPath": "docs/superpowers/plans/2026-10-06-iteration-3-fixes.md",
+  "tasks": [
+    {
+      "id": 1,
+      "subject": "Task 1: The compat job",
+      "status": "completed"
+    },
+    {
+      "id": 2,
+      "subject": "Task 2: allowed_transitions on the task detail",
+      "status": "completed"
+    },
+    {
+      "id": 3,
+      "subject": "Task 3: The status field reads a mount-time snapshot",
+      "status": "completed",
+      "blockedBy": [
+        2
+      ]
+    },
+    {
+      "id": 4,
+      "subject": "Task 4: DeleteTaskDialog and the list page",
+      "status": "completed"
+    },
+    {
+      "id": 5,
+      "subject": "Task 5: Delete confirmation on the detail page",
+      "status": "completed",
+      "blockedBy": [
+        3,
+        4
+      ]
+    },
+    {
+      "id": 6,
+      "subject": "Task 6: Dashboard cards become named groups with a stretched CTA",
+      "status": "completed"
+    },
+    {
+      "id": 7,
+      "subject": "Task 7: Dashboard header and the full-row card",
+      "status": "completed",
+      "blockedBy": [
+        6
+      ]
+    },
+    {
+      "id": 8,
+      "subject": "Task 8: Verify locally, then in GitHub Actions",
+      "status": "completed",
+      "blockedBy": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ]
+    },
+    {
+      "id": 9,
+      "subject": "Task 9: Persist insights to claude-insights/",
+      "status": "completed",
+      "blockedBy": [
+        8
+      ]
+    }
+  ],
+  "lastUpdated": "2026-10-07T12:42:50+00:00"
+}

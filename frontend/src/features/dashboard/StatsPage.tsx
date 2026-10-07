@@ -1,3 +1,6 @@
+import { Link } from "@tanstack/react-router";
+
+import { Button } from "../../components/Button";
 import { ApiError } from "../../lib/api-error";
 import { useTaskStats } from "../tasks/hooks/useTasks";
 import type { TaskStatus } from "../tasks/types";
@@ -21,6 +24,22 @@ function isoDay(offsetDays: number): string {
 }
 
 /**
+ * Rendered in every state, so creating a task never waits on statistics. The
+ * same <Link><Button> markup as the task list's header; both dashboard roles
+ * may create tasks.
+ */
+function DashboardHeader() {
+  return (
+    <div className="mb-4 flex flex-wrap items-center gap-3">
+      <h1 className="text-xl font-semibold text-slate-900">Dashboard</h1>
+      <Link to="/tasks/new" className="ml-auto">
+        <Button>New task</Button>
+      </Link>
+    </div>
+  );
+}
+
+/**
  * Six figures from ONE `GET /tasks/stats/` call. The component does not branch on
  * role at all: the backend scopes the response, so a Supervisor sees global
  * numbers and an Operator sees their own through the same code.
@@ -31,7 +50,7 @@ export function StatsPage() {
   if (isPending) {
     return (
       <section>
-        <h1 className="mb-4 text-xl font-semibold text-slate-900">Dashboard</h1>
+        <DashboardHeader />
         <p role="status" className="text-sm text-slate-500">
           Loading statistics…
         </p>
@@ -42,7 +61,7 @@ export function StatsPage() {
   if (isError || stats === undefined) {
     return (
       <section>
-        <h1 className="mb-4 text-xl font-semibold text-slate-900">Dashboard</h1>
+        <DashboardHeader />
         <p role="alert" className="text-sm text-status-overdue">
           {error instanceof ApiError ? error.message : "Could not load statistics."}
         </p>
@@ -52,7 +71,7 @@ export function StatsPage() {
 
   return (
     <section>
-      <h1 className="mb-4 text-xl font-semibold text-slate-900">Dashboard</h1>
+      <DashboardHeader />
 
       <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-3">
         <StatTile label="All tasks" value={stats.total} to="/tasks" />
@@ -76,8 +95,11 @@ export function StatsPage() {
           search={{ overdue: true }}
         />
 
+        {/* wide: the six cards above divide evenly into 2 and 3 columns, so a
+            full-row last card leaves no breakpoint with a lone narrow one (D42). */}
         <StatTile
           label="Due in 7 days"
+          wide
           value={stats.due_next_7_days}
           to="/tasks"
           /**

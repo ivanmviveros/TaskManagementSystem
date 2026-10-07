@@ -8,20 +8,14 @@ import { ApiError } from "../../../lib/api-error";
 import { useAuth } from "../../auth/hooks/useAuth";
 import { useAssignableUsers } from "../../users/hooks/useAssignableUsers";
 import type { TaskDetail, TaskStatus } from "../types";
+import { STATUS_LABEL, StatusBadge } from "./StatusBadge";
 
 /**
- * COMPLETED is deliberately absent: completion goes through POST /complete/,
- * which is the only path to it (D18). Offering it here would present a choice
- * the API answers with 400 use_complete_action.
+ * Display order only — Pending, In progress, Completed, Cancelled — taken from
+ * the label map's declaration order. Which statuses are OFFERED is the API's
+ * call (allowed_transitions, D39), never this list's.
  */
-const EDITABLE_STATUSES: TaskStatus[] = ["PENDING", "IN_PROGRESS", "CANCELLED"];
-
-const STATUS_LABEL: Record<TaskStatus, string> = {
-  PENDING: "Pending",
-  IN_PROGRESS: "In progress",
-  COMPLETED: "Completed",
-  CANCELLED: "Cancelled",
-};
+const STATUS_ORDER = Object.keys(STATUS_LABEL) as TaskStatus[];
 
 export interface TaskFormValues {
   title: string;
@@ -51,7 +45,22 @@ export function TaskForm({ task, onSubmit, onCancel }: TaskFormProps) {
   const [description, setDescription] = useState(task?.description ?? "");
   const [dueDate, setDueDate] = useState(task?.due_date?.slice(0, 10) ?? "");
   const [assignee, setAssignee] = useState(task?.assignee?.id ?? "");
+  // D40: ONE snapshot, taken when the form opens, drives the status field: the
+  // options, the read-only switch and the "did the user change it?" check. The
+  // detail query refetches (30 s staleTime, refetch on focus), and none of those
+  // three may follow it — options from the select's own state would drop the
+  // original status after a change; read-only from the live task could strand
+  // a changed value after a refetch; comparing with the live status would
+  // silently undo a change someone else made meanwhile.
+  const [initialStatus] = useState(task?.status);
+  const [initialTransitions] = useState<TaskStatus[]>(task?.allowed_transitions ?? []);
   const [status, setStatus] = useState<TaskStatus>(task?.status ?? "PENDING");
+  // Kept after `status` on purpose: the filter runs during render, so if it is
+  // ever changed to read `status`, a declaration above it would throw a
+  // temporal-dead-zone ReferenceError instead of failing the test that guards it.
+  const statusOptions = STATUS_ORDER.filter(
+    (option) => option === initialStatus || initialTransitions.includes(option),
+  );
   const [formError, setFormError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string[]> | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -67,8 +76,9 @@ export function TaskForm({ task, onSubmit, onCancel }: TaskFormProps) {
         description,
         due_date: dueDate === "" ? null : new Date(`${dueDate}T12:00:00Z`).toISOString(),
         assignee: canChooseAssignee ? (assignee === "" ? null : assignee) : null,
-        // A new task is always PENDING, so status is sent in edit mode only.
-        ...(isEdit ? { status } : {}),
+        // Sent only when the user changed it (D40). TaskEditPage omits an
+        // undefined status from the PATCH.
+        ...(isEdit && status !== initialStatus ? { status } : {}),
       });
     } catch (caught) {
       if (caught instanceof ApiError) {
@@ -153,7 +163,7 @@ export function TaskForm({ task, onSubmit, onCancel }: TaskFormProps) {
       )}
 
       {/* Edit mode only: TaskCreateSerializer accepts no status field. */}
-      {isEdit && (
+      {isEdit && initialTransitions.length > 0 && (
         <div className="mb-4">
           <label htmlFor="status" className="mb-1 block text-sm font-medium text-slate-700">
             Status
@@ -164,12 +174,24 @@ export function TaskForm({ task, onSubmit, onCancel }: TaskFormProps) {
             onChange={(event) => setStatus(event.target.value as TaskStatus)}
             className="w-full rounded border border-slate-300 px-3 py-2"
           >
-            {EDITABLE_STATUSES.map((option) => (
+            {statusOptions.map((option) => (
               <option key={option} value={option}>
                 {STATUS_LABEL[option]}
               </option>
             ))}
           </select>
+        </div>
+      )}
+
+      {/* A terminal task has nothing to choose, so nothing to get wrong. Plain
+          text, not a <label>: there is no control for it to label. */}
+      {isEdit && initialTransitions.length === 0 && initialStatus !== undefined && (
+        <div className="mb-4">
+          <p className="mb-1 text-sm font-medium text-slate-700">Status</p>
+          <StatusBadge status={initialStatus} />
+          <p className="mt-1 text-sm text-slate-500">
+            Completed and cancelled tasks keep their status.
+          </p>
         </div>
       )}
 

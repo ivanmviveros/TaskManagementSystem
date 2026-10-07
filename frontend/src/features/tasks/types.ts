@@ -33,6 +33,12 @@ export interface TaskDetail extends TaskListItem {
   created_by: CurrentUser;
   completed_at: string | null;
   updated_at: string;
+  /**
+   * D39: the statuses a PATCH may move this task to, reported by the API from
+   * its transition table rather than re-derived here. Empty for a terminal
+   * task; never contains COMPLETED, which only the complete action reaches.
+   */
+  allowed_transitions: TaskStatus[];
 }
 
 export interface TaskStats {
