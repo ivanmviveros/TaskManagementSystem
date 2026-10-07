@@ -66,7 +66,7 @@
     {
       "id": 9,
       "subject": "Task 9: Parameterise the seed command",
-      "status": "pending",
+      "status": "completed",
       "blockedBy": [
         1
       ]
@@ -144,5 +144,5 @@
       ]
     }
   ],
-  "lastUpdated": "2026-10-07T01:12:42+00:00"
+  "lastUpdated": "2026-10-07T01:16:23+00:00"
 }
