@@ -548,14 +548,14 @@ Two practical notes, since this is the repository's **first** shell script — t
 | Bootstrap | a valid refresh cookie restores the session with no failed request |
 | Bootstrap | a failed refresh leaves `user = null` and routes to `/login` |
 | Bootstrap | **two concurrent bootstraps issue one refresh** — the StrictMode case from §4.3.1, which rotation plus blacklisting would otherwise turn into a spurious logout |
+| Users table | the table renders at `md`+, and a `UserCard` per user exists for narrow viewports |
+| Users table | existing assertions scoped with `within(table)` still pass |
 
 The dedup assertion needs its mechanism stated, or it will be written as a tautology:
 `render-app.tsx` does **not** wrap in `StrictMode` (only `src/main.tsx` does), so `renderApp()`
 alone can never produce a second bootstrap. Either wrap that one render in `StrictMode`, or
 call `refreshSession()` twice concurrently and count the requests msw received. Prove the guard
 can fail by removing it, as with the existing single-flight test.
-| Users table | the table renders at `md`+, and a `UserCard` per user exists for narrow viewports |
-| Users table | existing assertions scoped with `within(table)` still pass |
 
 The backend coverage gate stays at 80 with the suite at 100% of `apps/`; the frontend keeps no
 numeric gate and its console guard continues to fail a test on unexpected output.

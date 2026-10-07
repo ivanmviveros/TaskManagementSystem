@@ -1,0 +1,105 @@
+{
+  "planPath": "docs/superpowers/plans/2026-10-06-refinement-iteration-2.md",
+  "tasks": [
+    {
+      "id": 1,
+      "subject": "Task 1: The pre-push script",
+      "status": "pending"
+    },
+    {
+      "id": 2,
+      "subject": "Task 2: Add pydantic",
+      "status": "pending",
+      "blockedBy": [1]
+    },
+    {
+      "id": 3,
+      "subject": "Task 3: The tasks DTOs",
+      "status": "pending",
+      "blockedBy": [2]
+    },
+    {
+      "id": 4,
+      "subject": "Task 4: The users DTOs",
+      "status": "pending",
+      "blockedBy": [2]
+    },
+    {
+      "id": 5,
+      "subject": "Task 5: Convert TaskService",
+      "status": "pending",
+      "blockedBy": [3]
+    },
+    {
+      "id": 6,
+      "subject": "Task 6: Convert UserService",
+      "status": "pending",
+      "blockedBy": [4]
+    },
+    {
+      "id": 7,
+      "subject": "Task 7: task_stats returns a model",
+      "status": "pending",
+      "blockedBy": [3]
+    },
+    {
+      "id": 8,
+      "subject": "Task 8: Lock the old shape out",
+      "status": "pending",
+      "blockedBy": [5, 6]
+    },
+    {
+      "id": 9,
+      "subject": "Task 9: Parameterise the seed command",
+      "status": "pending",
+      "blockedBy": [1]
+    },
+    {
+      "id": 10,
+      "subject": "Task 10: The default refresh handler",
+      "status": "pending"
+    },
+    {
+      "id": 11,
+      "subject": "Task 11: Export a single-flighted refreshSession()",
+      "status": "pending",
+      "blockedBy": [10]
+    },
+    {
+      "id": 12,
+      "subject": "Task 12: Invert the bootstrap",
+      "status": "pending",
+      "blockedBy": [11]
+    },
+    {
+      "id": 13,
+      "subject": "Task 13: Extract UserTable",
+      "status": "pending"
+    },
+    {
+      "id": 14,
+      "subject": "Task 14: Add UserCard and the responsive switch",
+      "status": "pending",
+      "blockedBy": [13]
+    },
+    {
+      "id": 15,
+      "subject": "Task 15: Documentation",
+      "status": "pending",
+      "blockedBy": [9, 12]
+    },
+    {
+      "id": 16,
+      "subject": "Task 16: Full verification",
+      "status": "pending",
+      "blockedBy": [8, 7, 14, 15]
+    },
+    {
+      "id": 17,
+      "subject": "Task 17: Persist insights to claude-insights/",
+      "status": "pending",
+      "blockedBy": [16]
+    }
+  ],
+  "lastUpdated": "2026-10-06T00:00:00Z"
+}
