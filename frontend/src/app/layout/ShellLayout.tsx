@@ -6,7 +6,7 @@ import { APP_NAME } from "../app-name";
 
 /**
  * 44px targets (F14) with the header's vertical padding moved into them, so the
- * header keeps its height. The active link's 2px bottom border sits on the
+ * header stays about the same height (48 to 44px). The active link's 2px bottom border sits on the
  * header's bottom edge, like a tab (F7). Colours come from activeProps and
  * inactiveProps rather than the base class, so two border colours never compete
  * on one element (clsx would keep both, and CSS order would decide).
@@ -37,7 +37,7 @@ export function ShellLayout({ children }: { children: ReactNode }) {
           <span className="inline-flex min-h-11 items-center font-semibold text-slate-900">
             {APP_NAME}
           </span>
-          <nav aria-label="Main" className="flex flex-1 flex-wrap items-center gap-4">
+          <nav aria-label="Main" className="flex flex-1 flex-wrap items-center gap-x-4">
             {!isAdmin && (
               <>
                 <Link

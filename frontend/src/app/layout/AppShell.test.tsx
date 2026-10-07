@@ -206,6 +206,7 @@ describe("the menu marks where you are (F7, F14, D77)", () => {
     const tasks = within(nav()).getByRole("link", { name: /tasks/i });
     expect(dashboard).toHaveAttribute("aria-current", "page");
     expect(dashboard).toHaveClass("border-status-progress");
+    expect(dashboard).not.toHaveClass("border-transparent");
     expect(tasks).not.toHaveAttribute("aria-current");
     expect(tasks).toHaveClass("border-transparent");
   });
