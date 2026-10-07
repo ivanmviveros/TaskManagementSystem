@@ -799,6 +799,9 @@ describe("an impossible date range (F9, D78)", () => {
     const before = await screen.findByLabelText(/due before/i);
     expect(before).toHaveAttribute("aria-invalid", "true");
     expect(before).toHaveAccessibleDescription(/later than .due before., so no task can match/i);
+    expect(screen.getByLabelText(/due after/i)).toHaveAccessibleDescription(
+      /later than .due before., so no task can match/i,
+    );
     // The URL still holds what was entered (D45); the empty state still shows.
     // findBy, not getBy: the filters render before the list query settles.
     expect(await screen.findByText(/no tasks match these filters/i)).toBeInTheDocument();
@@ -810,6 +813,17 @@ describe("an impossible date range (F9, D78)", () => {
     await renderApp(`/tasks?due_date_after=${AFTER}&due_date_before=${BEFORE}`);
     expect(await screen.findByLabelText(/due after/i)).toHaveAttribute("max", "2026-10-01");
     expect(screen.getByLabelText(/due before/i)).toHaveAttribute("min", "2026-10-10");
+  });
+
+  it("treats a single-day range as valid", async () => {
+    signedInAs(SUPERVISOR);
+    tasksRespondWith([]);
+    const from = encodeURIComponent("2026-10-05T00:00:00.000Z");
+    const to = encodeURIComponent("2026-10-05T23:59:59.000Z");
+    await renderApp(`/tasks?due_date_after=${from}&due_date_before=${to}`);
+    const before = await screen.findByLabelText(/due before/i);
+    expect(before).not.toHaveAttribute("aria-invalid");
+    expect(screen.queryByText(/so no task can match/i)).not.toBeInTheDocument();
   });
 
   it("says nothing for a valid range", async () => {

@@ -79,6 +79,7 @@ export function TaskFilters({ filters, onChange, onClear }: TaskFiltersProps) {
             type="date"
             value={after.draft}
             max={before.draft || undefined}
+            aria-describedby={inverted ? rangeErrorId : undefined}
             onChange={(event) => after.setDraft(event.target.value)}
             className="rounded border border-slate-300 px-3 py-2 text-sm"
           />
@@ -110,11 +111,19 @@ export function TaskFilters({ filters, onChange, onClear }: TaskFiltersProps) {
           Clear filters
         </Button>
       </div>
-      {inverted && (
-        <p id={rangeErrorId} className="mt-2 text-sm text-status-overdue">
-          &ldquo;Due after&rdquo; is later than &ldquo;Due before&rdquo;, so no task can match.
-        </p>
-      )}
+      {/* Always mounted: a live region is announced reliably only if it exists
+          before its text changes. Not role="alert" (focus lookups use it). */}
+      <p
+        id={rangeErrorId}
+        aria-live="polite"
+        className={inverted ? "mt-2 text-sm text-status-overdue" : undefined}
+      >
+        {inverted ? (
+          <>
+            &ldquo;Due after&rdquo; is later than &ldquo;Due before&rdquo;, so no task can match.
+          </>
+        ) : null}
+      </p>
     </section>
   );
 }
