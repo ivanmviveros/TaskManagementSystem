@@ -5,13 +5,14 @@ import { Button } from "../../components/Button";
 import { FormError } from "../../components/FormError";
 import { ApiError } from "../../lib/api-error";
 import { useAuth } from "../auth/hooks/useAuth";
+import { DeleteTaskDialog } from "./components/DeleteTaskDialog";
 import { Pagination } from "./components/Pagination";
 import { TaskCard } from "./components/TaskCard";
 import { TaskFilters } from "./components/TaskFilters";
 import { TaskTable } from "./components/TaskTable";
 import { useCompleteTask, useDeleteTask } from "./hooks/useTaskMutations";
 import { useTasks } from "./hooks/useTasks";
-import type { TaskFilters as Filters } from "./types";
+import type { TaskFilters as Filters, TaskListItem } from "./types";
 
 const PAGE_SIZE = 20;
 
@@ -32,6 +33,8 @@ export function TaskListPage() {
   });
   const [actionError, setActionError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<TaskListItem | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const { data, isPending, isError, error } = useTasks(filters);
   const complete = useCompleteTask();
@@ -57,6 +60,28 @@ export function TaskListPage() {
       );
     } finally {
       setBusyId(null);
+    }
+  }
+
+  /** Looked up at click time and stored as the object, so a refetch while the
+   *  dialog is open cannot make it disappear. */
+  function beginDelete(id: string) {
+    const target = data?.results.find((candidate) => candidate.id === id);
+    if (target === undefined) return;
+    setDeleteError(null);
+    setPendingDelete(target);
+  }
+
+  async function confirmDelete() {
+    if (pendingDelete === null) return;
+    setDeleteError(null);
+    try {
+      await remove.mutateAsync(pendingDelete.id);
+      setPendingDelete(null);
+    } catch (caught) {
+      setDeleteError(
+        caught instanceof ApiError ? caught.message : "Could not delete that task.",
+      );
     }
   }
 
@@ -100,7 +125,7 @@ export function TaskListPage() {
               ordering={filters.ordering}
               onOrderingChange={(ordering) => setFilters({ ...filters, ordering, page: 1 })}
               onComplete={(id) => void runAction(id, complete.mutateAsync)}
-              onDelete={(id) => void runAction(id, remove.mutateAsync)}
+              onDelete={beginDelete}
               busyId={busyId}
             />
           </div>
@@ -111,7 +136,7 @@ export function TaskListPage() {
                 task={task}
                 showAssignee={showAssignee}
                 onComplete={(id) => void runAction(id, complete.mutateAsync)}
-                onDelete={(id) => void runAction(id, remove.mutateAsync)}
+                onDelete={beginDelete}
                 isBusy={busyId === task.id}
               />
             ))}
@@ -126,6 +151,16 @@ export function TaskListPage() {
             onPageChange={(page) => setFilters({ ...filters, page })}
           />
         </>
+      )}
+
+      {pendingDelete !== null && (
+        <DeleteTaskDialog
+          task={pendingDelete}
+          error={deleteError}
+          isDeleting={remove.isPending}
+          onConfirm={() => void confirmDelete()}
+          onCancel={() => setPendingDelete(null)}
+        />
       )}
     </section>
   );
