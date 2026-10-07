@@ -26,7 +26,8 @@ docker compose exec -T backend pytest -x -q
 `--cov=apps --cov-fail-under=80`, so running one test file exits **non-zero** even when every
 test in it passes — `8 passed` followed by `FAIL Required test coverage of 80.00% not reached`.
 The narrow commands below pass `--no-cov` for that reason; the full runs through
-`scripts/run-backend-tests.sh` keep the gate.
+`scripts/run-backend-tests.sh` keep the gate. Those runs print
+`CovDisabledWarning: Coverage disabled via --no-cov switch!` — expected, and not a problem.
 
 **Commit after every task.** Each task leaves both suites green.
 
@@ -69,6 +70,7 @@ The narrow commands below pass `--no-cov` for that reason; the full runs through
 | `frontend/src/features/auth/AuthContext.tsx` | bootstrap via `restoreSession()`; rewrite the stale comment |
 | `frontend/src/test/msw-handlers.ts` | default `POST /auth/refresh/` |
 | `frontend/src/app/layout/AppShell.test.tsx` | session-aware refresh handler |
+| `frontend/src/features/auth/auth-routing.test.tsx` | the two new bootstrap-request assertions |
 | `frontend/src/features/users/UserListPage.tsx` | delegate to `UserTable` / `UserCard` |
 | `frontend/src/features/users/UserListPage.test.tsx` | scope 3 assertions with `within(table)`; add a card test |
 | `README.md` | seeding flags; expected console output |
@@ -171,7 +173,9 @@ Replace `.pre-commit-config.yaml:29-34` with:
 ```bash
 bash scripts/run-backend-tests.sh
 ```
-Expected: exit 0, last line naming an environment — `backend tests passed in: docker compose`.
+Expected: exit 0, last line naming an environment. If Step 1 showed a running container, that is
+`backend tests passed in: docker compose`; if it showed none, start it with
+`docker compose up -d backend` first, or expect the local branch to run here instead.
 
 - [ ] **Step 5: Prove the fallback is real, not decoration**
 
@@ -245,11 +249,17 @@ build time (`UV_PROJECT_ENVIRONMENT=/usr/local`) and only `./backend` is bind-mo
 plain `build` leaves the running container on the old image and every later
 `docker compose exec ... pytest` fails with `ModuleNotFoundError: No module named 'pydantic'`.
 That message is one word away from the one Task 3 Step 2 tells you to expect, so it is easy to
-misread as the TDD step working. Rebuild `worker` and `beat` too if they are running — they
-share the image.
+misread as the TDD step working.
 
-Expected: all pass, 320 tests. Nothing imports pydantic yet; this only proves the plugin loads
-and the image builds.
+Rebuild `worker` and `beat` too if they are running. They each build from the same `./backend`
+context, so Compose produces three images from one Dockerfile rather than one shared image.
+They only *need* it once Task 5 lands the first pydantic import at module scope — a stale worker
+crash-loops then, not now.
+
+Expected: all pass, with the suite at its pre-iteration size (about 320 backend tests).
+Nothing imports pydantic yet; this only proves the plugin loads and the image builds. Treat the
+count as context, not as a number to match — parametrized cases make the exact total awkward to
+predict.
 
 - [ ] **Step 4: Commit**
 
@@ -813,6 +823,10 @@ Expected: 8 + 1 + 3 lines — but only **15 of those are service call sites**, n
 `UserUpdateSerializer(data={"password": "123"}, partial=True)`. That last one is a **serializer**
 and must be left exactly as it is: serializers keep taking dicts (D29), and only the service
 boundary moves.
+
+`test_error_paths.py` has no DTO import yet, so converting line 129 needs
+`from apps.tasks.dto import TaskUpdateInput` added there — otherwise it is an immediate
+`NameError`.
 
 The conversion is mechanical: a dict literal becomes a constructor call with the same keys as keyword arguments.
 
@@ -1507,7 +1521,8 @@ After the four existing defaults (lines 29-32):
 ```bash
 npm run --prefix frontend test
 ```
-Expected: all 84 pass. No test posts to `/auth/refresh/` yet unless it registered its own handler, so this adds a default that nothing currently reaches.
+Expected: the whole suite passes, unchanged in size. No test reaches `/auth/refresh/` yet unless
+it registered its own handler, so this adds a default nothing currently hits.
 
 - [ ] **Step 3: Commit**
 
@@ -2166,12 +2181,18 @@ Every task verified its own slice. This runs what CI runs, together, which is th
 - [ ] **Step 1: Backend, in both environments**
 
 ```bash
-docker compose exec -T backend pytest --cov=apps --cov-report=term-missing -q
+docker compose exec -T backend pytest -q
 docker compose exec -T backend mypy .
 docker compose exec -T backend ruff check .
 docker compose exec -T backend ruff format --check .
 ```
-Expected: all pass; coverage of `apps/` at 100% against the gate of 80. If coverage dropped, the likely cause is a branch in the new seeding code with no test — `--cov-report=term-missing` names the lines.
+
+No coverage flags needed — `addopts` already carries `--cov=apps --cov-report=term-missing
+--cov-fail-under=80`, which is exactly why the narrow runs above had to opt out.
+
+Expected: all pass; coverage of `apps/` at 100% against the gate of 80. If coverage dropped, the
+likely cause is a branch in the new seeding code with no test, and `term-missing` names the
+lines.
 
 - [ ] **Step 2: Frontend**
 
