@@ -239,8 +239,9 @@ The rules are today's, moved into one place:
    message in `fields`. Keys outside `renderedFields` are never put in `fields`. The form message
    is set **only** when none of `renderedFields` has an error, so an error keyed on a field the
    form does not render reaches the user through the alert, which D75 then focuses.
-2. `ApiError` whose `code` is in `codeToField`: that field gets `error.message`. This is decided
-   by `code`, never by parsing `detail`.
+2. `ApiError` whose `code` is in `codeToField`, and that field is in `renderedFields`: that field
+   gets `error.message`. This is decided by `code`, never by parsing `detail`. If the field is not
+   rendered, the message goes to the alert instead (D75).
 3. Any other `ApiError`: the form message is `error.message`.
 4. Anything else: the form message is `fallback`.
 
