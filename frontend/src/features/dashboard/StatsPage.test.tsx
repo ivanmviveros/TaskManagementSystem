@@ -82,6 +82,7 @@ describe("StatsPage", () => {
     // Targeted by text: renderApp also renders a role="status" element while the
     // auth probe settles, so the role alone is ambiguous.
     expect(await screen.findByText(/loading statistics/i)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /new task/i })).toBeInTheDocument();
   });
 
   it("shows an error state", async () => {
@@ -204,5 +205,35 @@ describe("StatsPage", () => {
       expect(link).toHaveTextContent(/^view tasks/i);
       expect(link).toHaveAccessibleName(`View tasks — ${label}`);
     }
+  });
+
+  it("offers New task in the header", async () => {
+    signedInAs(SUPERVISOR);
+    statsRespondWith(STATS);
+    await renderApp("/dashboard");
+    const newTask = await screen.findByRole("link", { name: /new task/i });
+    expect(newTask.getAttribute("href")).toBe("/tasks/new");
+  });
+
+  it("keeps New task available while stats load and when they fail", async () => {
+    signedInAs(SUPERVISOR);
+    server.use(
+      http.get(`${BASE}/tasks/stats/`, () =>
+        HttpResponse.json({ detail: "Stats are unavailable.", code: "server_error" }, { status: 500 }),
+      ),
+    );
+    await renderApp("/dashboard");
+    await screen.findByRole("alert");
+    expect(screen.getByRole("link", { name: /new task/i })).toBeInTheDocument();
+  });
+
+  it("spans the due-soon card across the full row, and only that card", async () => {
+    signedInAs(SUPERVISOR);
+    statsRespondWith(STATS);
+    await renderApp("/dashboard");
+    await screen.findByRole("group", { name: "All tasks" });
+    // jsdom applies no CSS, so the layout is asserted through its class.
+    expect(card("Due in 7 days")).toHaveClass("col-span-full");
+    expect(card("Overdue")).not.toHaveClass("col-span-full");
   });
 });
