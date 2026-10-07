@@ -18,6 +18,14 @@ class EmailAlreadyInUse(ApplicationError):
     status_code = 400
 
 
+class CannotChangeOwnAccess(ApplicationError):
+    """D66: a field-level refusal, so 400 like assignee_immutable (spec §8.7)."""
+
+    default_detail = "You cannot change your own role or deactivate your own account."
+    default_code = "cannot_change_own_access"
+    status_code = 400
+
+
 class UserService:
     def __init__(self, *, users: UserRepository):
         self._users = users
@@ -41,6 +49,14 @@ class UserService:
         # D32: `is_active=False` is a legitimate value, so this must branch on
         # what was sent rather than on truthiness.
         fields = data.model_fields_set
+        # D66. Compared with the current values, not tested for presence: the edit
+        # page always sends role and is_active, and saving one's own name with
+        # them unchanged must keep working.
+        if user.pk == actor.pk and (
+            ("role" in fields and data.role != user.role)
+            or ("is_active" in fields and data.is_active is False)
+        ):
+            raise CannotChangeOwnAccess
         changed: list[str] = []
         for name in ("first_name", "last_name", "role", "is_active"):
             if name in fields:

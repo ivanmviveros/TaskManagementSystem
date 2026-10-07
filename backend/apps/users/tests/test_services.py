@@ -3,7 +3,7 @@ import pytest
 from apps.core.roles import Role
 from apps.users.dto import UserCreateInput, UserUpdateInput
 from apps.users.models import User
-from apps.users.services import EmailAlreadyInUse, UserService
+from apps.users.services import CannotChangeOwnAccess, EmailAlreadyInUse, UserService
 from apps.users.tests.fakes import FakeUserRepository
 
 # Needed for transaction.atomic(), not for persistence: the fake repository
@@ -80,3 +80,44 @@ def test_delete_soft_deletes_and_records_the_actor():
     repository = FakeUserRepository([target])
     UserService(users=repository).delete(user=target, actor=actor)
     assert repository.deleted == [target]
+
+
+def test_update_refuses_an_actor_changing_their_own_role():
+    me = User(email="me@example.com", role=Role.ADMIN, is_active=True)
+    with pytest.raises(CannotChangeOwnAccess) as caught:
+        service([me]).update(user=me, data=UserUpdateInput(role=str(Role.OPERATOR)), actor=me)
+    assert caught.value.default_code == "cannot_change_own_access"
+    assert me.role == Role.ADMIN
+
+
+def test_update_refuses_an_actor_deactivating_themselves():
+    me = User(email="me@example.com", role=Role.ADMIN, is_active=True)
+    with pytest.raises(CannotChangeOwnAccess):
+        service([me]).update(user=me, data=UserUpdateInput(is_active=False), actor=me)
+    assert me.is_active is True
+
+
+def test_update_lets_an_actor_save_their_own_form_unchanged():
+    """UserEditPage always sends role and is_active (D66): unchanged values must pass."""
+    me = User(email="me@example.com", first_name="Old", role=Role.ADMIN, is_active=True)
+    updated = service([me]).update(
+        user=me,
+        data=UserUpdateInput(
+            first_name="New", role=str(Role.ADMIN), is_active=True, password="a-new-password-1"
+        ),
+        actor=me,
+    )
+    assert updated.first_name == "New"
+    assert updated.check_password("a-new-password-1")
+
+
+def test_update_still_lets_an_admin_demote_and_deactivate_someone_else():
+    other = User(email="other@example.com", role=Role.ADMIN, is_active=True)
+    actor = User(email="me@example.com", role=Role.ADMIN)
+    updated = service([other]).update(
+        user=other,
+        data=UserUpdateInput(role=str(Role.OPERATOR), is_active=False),
+        actor=actor,
+    )
+    assert updated.role == Role.OPERATOR
+    assert updated.is_active is False

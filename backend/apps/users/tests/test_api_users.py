@@ -155,3 +155,37 @@ def test_ordering_by_a_non_unique_field_is_tiebroken(admin_client):
     page2 = admin_client.get(f"{URL}?ordering=role&page_size=3&page=2").data["results"]
     ids = [row["id"] for row in page1 + page2]
     assert len(set(ids)) == len(ids)
+
+
+def test_admin_cannot_delete_their_own_account(admin_client, admin):
+    response = admin_client.delete(f"{URL}{admin.pk}/")
+    assert response.status_code == 403
+    assert response.data["code"] == "cannot_delete_self"
+    assert User.objects.filter(pk=admin.pk).exists()
+
+
+def test_admin_cannot_demote_themselves(admin_client, admin):
+    response = admin_client.patch(f"{URL}{admin.pk}/", {"role": Role.OPERATOR}, format="json")
+    assert response.status_code == 400
+    assert response.data["code"] == "cannot_change_own_access"
+    admin.refresh_from_db()
+    assert admin.role == Role.ADMIN
+
+
+def test_admin_cannot_deactivate_themselves(admin_client, admin):
+    response = admin_client.patch(f"{URL}{admin.pk}/", {"is_active": False}, format="json")
+    assert response.status_code == 400
+    assert response.data["code"] == "cannot_change_own_access"
+    admin.refresh_from_db()
+    assert admin.is_active is True
+
+
+def test_admin_can_save_their_own_edit_form_unchanged(admin_client, admin):
+    response = admin_client.patch(
+        f"{URL}{admin.pk}/",
+        {"first_name": "Renamed", "role": Role.ADMIN, "is_active": True},
+        format="json",
+    )
+    assert response.status_code == 200
+    admin.refresh_from_db()
+    assert admin.first_name == "Renamed"
