@@ -1,3 +1,4 @@
+import { useId } from "react";
 import { Button } from "../../../components/Button";
 import { useSearchParamDraft } from "../../../lib/useSearchParamDraft";
 import { STATUS_LABEL } from "./StatusBadge";
@@ -30,6 +31,10 @@ export function TaskFilters({ filters, onChange, onClear }: TaskFiltersProps) {
   const before = useSearchParamDraft(filters.due_date_before?.slice(0, 10) ?? "", (day) =>
     onChange({ due_date_before: toBound(day, "23:59:59") }),
   );
+  // D78: explained, not prevented — the URL keeps what was entered (D45). ISO
+  // days compare correctly as strings.
+  const inverted = after.draft !== "" && before.draft !== "" && after.draft > before.draft;
+  const rangeErrorId = useId();
 
   function toggleStatus(status: TaskStatus) {
     const next = selected.includes(status)
@@ -73,6 +78,7 @@ export function TaskFilters({ filters, onChange, onClear }: TaskFiltersProps) {
             id="due-after"
             type="date"
             value={after.draft}
+            max={before.draft || undefined}
             onChange={(event) => after.setDraft(event.target.value)}
             className="rounded border border-slate-300 px-3 py-2 text-sm"
           />
@@ -85,6 +91,9 @@ export function TaskFilters({ filters, onChange, onClear }: TaskFiltersProps) {
             id="due-before"
             type="date"
             value={before.draft}
+            min={after.draft || undefined}
+            aria-invalid={inverted || undefined}
+            aria-describedby={inverted ? rangeErrorId : undefined}
             onChange={(event) => before.setDraft(event.target.value)}
             className="rounded border border-slate-300 px-3 py-2 text-sm"
           />
@@ -101,6 +110,11 @@ export function TaskFilters({ filters, onChange, onClear }: TaskFiltersProps) {
           Clear filters
         </Button>
       </div>
+      {inverted && (
+        <p id={rangeErrorId} className="mt-2 text-sm text-status-overdue">
+          &ldquo;Due after&rdquo; is later than &ldquo;Due before&rdquo;, so no task can match.
+        </p>
+      )}
     </section>
   );
 }
