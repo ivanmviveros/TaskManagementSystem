@@ -97,6 +97,22 @@ describe("UserListPage", () => {
     await waitFor(() => expect(lastQuery().get("search")).toBe("omar"));
   });
 
+  it("focuses Cancel in the deactivate dialog and closes it on Escape (D60)", async () => {
+    usersRespondWith([operator()]);
+    await renderApp("/users");
+    const user = userEvent.setup();
+    const table = await screen.findByRole("table");
+    const trigger = await within(table).findByRole("button", {
+      name: /deactivate operator@demo.local/i,
+    });
+    await user.click(trigger);
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByRole("button", { name: /cancel/i })).toHaveFocus();
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
+  });
+
   it("states in the delete dialog that deletion is a deactivation", async () => {
     usersRespondWith([operator()]);
     await renderApp("/users");

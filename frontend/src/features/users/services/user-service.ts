@@ -27,10 +27,12 @@ export const updateUser = (id: string, input: UserUpdateInput) =>
 export const deleteUser = (id: string) => apiClient.delete(`/users/${id}/`);
 
 /**
- * Users who may hold a task: the assignee picker's options.
+ * One page of the users who may hold a task: the assignee picker's options
+ * (D61, D64).
  *
- * Admins are excluded client-side as well as server-side (D17) so the picker
- * never offers an assignee the API would reject with assignee_not_assignable.
+ * Paged and searched on the server, so the picker fetches only what it shows.
+ * The server applies D17 (never an Admin), so the picker offers exactly what
+ * the API reports — the rule is not re-derived here.
  */
-export const listAssignableUsers = () =>
-  apiClient.get<Paginated<UserMinimal>>("/users/?page_size=100");
+export const listAssignableUsers = (filters: Pick<UserFilters, "search" | "page">) =>
+  apiClient.get<Paginated<UserMinimal>>(`/users/assignable/${buildUserQuery(filters)}`);

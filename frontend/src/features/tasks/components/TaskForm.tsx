@@ -6,8 +6,9 @@ import { FormError } from "../../../components/FormError";
 import { TextField } from "../../../components/TextField";
 import { ApiError } from "../../../lib/api-error";
 import { useAuth } from "../../auth/hooks/useAuth";
-import { useAssignableUsers } from "../../users/hooks/useAssignableUsers";
+import type { UserMinimal } from "../../users/types";
 import type { TaskDetail, TaskStatus } from "../types";
+import { AssigneeCombobox } from "./AssigneeCombobox";
 import { STATUS_LABEL, StatusBadge } from "./StatusBadge";
 
 /**
@@ -21,7 +22,12 @@ export interface TaskFormValues {
   title: string;
   description: string;
   due_date: string | null;
-  assignee: string | null;
+  /**
+   * Absent when the actor may not choose an assignee (an Operator, D15/D16);
+   * null means "unassigned". The two must stay distinct: the API reads an
+   * omitted assignee as "leave it / default it" and null as "unassign" (D32).
+   */
+  assignee?: string | null;
   status?: TaskStatus;
 }
 
@@ -39,12 +45,13 @@ export function TaskForm({ task, onSubmit, onCancel }: TaskFormProps) {
   // self, on update it is immutable. Rendering the field would offer a choice
   // that cannot work, so it is omitted rather than disabled.
   const canChooseAssignee = user?.role === "SUPERVISOR";
-  const assignable = useAssignableUsers(canChooseAssignee);
 
   const [title, setTitle] = useState(task?.title ?? "");
   const [description, setDescription] = useState(task?.description ?? "");
   const [dueDate, setDueDate] = useState(task?.due_date?.slice(0, 10) ?? "");
-  const [assignee, setAssignee] = useState(task?.assignee?.id ?? "");
+  // The whole user, not an id: the picker loads a page at a time, so the
+  // current assignee may not be among its loaded options (D64).
+  const [assignee, setAssignee] = useState<UserMinimal | null>(task?.assignee ?? null);
   // D40: ONE snapshot, taken when the form opens, drives the status field: the
   // options, the read-only switch and the "did the user change it?" check. The
   // detail query refetches (30 s staleTime, refetch on focus), and none of those
@@ -75,7 +82,7 @@ export function TaskForm({ task, onSubmit, onCancel }: TaskFormProps) {
         title,
         description,
         due_date: dueDate === "" ? null : new Date(`${dueDate}T12:00:00Z`).toISOString(),
-        assignee: canChooseAssignee ? (assignee === "" ? null : assignee) : null,
+        ...(canChooseAssignee ? { assignee: assignee?.id ?? null } : {}),
         // Sent only when the user changed it (D40). TaskEditPage omits an
         // undefined status from the PATCH.
         ...(isEdit && status !== initialStatus ? { status } : {}),
@@ -135,31 +142,13 @@ export function TaskForm({ task, onSubmit, onCancel }: TaskFormProps) {
       />
 
       {canChooseAssignee && (
-        <div className="mb-4">
-          <label htmlFor="assignee" className="mb-1 block text-sm font-medium text-slate-700">
-            Assignee
-          </label>
-          <select
-            id="assignee"
-            value={assignee}
-            aria-invalid={fieldErrors?.assignee === undefined ? undefined : true}
-            aria-describedby={fieldErrors?.assignee === undefined ? undefined : "assignee-error"}
-            onChange={(event) => setAssignee(event.target.value)}
-            className="w-full rounded border border-slate-300 px-3 py-2"
-          >
-            <option value="">Unassigned</option>
-            {(assignable.data ?? []).map((option) => (
-              <option key={option.id} value={option.id}>
-                {option.first_name} {option.last_name} ({option.email})
-              </option>
-            ))}
-          </select>
-          {fieldErrors?.assignee !== undefined && (
-            <p id="assignee-error" className="mt-1 text-sm text-status-overdue">
-              {fieldErrors.assignee[0]}
-            </p>
-          )}
-        </div>
+        <AssigneeCombobox
+          id="assignee"
+          label="Assignee"
+          value={assignee}
+          onChange={setAssignee}
+          error={fieldErrors?.assignee?.[0]}
+        />
       )}
 
       {/* Edit mode only: TaskCreateSerializer accepts no status field. */}

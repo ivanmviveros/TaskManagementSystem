@@ -3,6 +3,7 @@
 from django_filters.rest_framework import DjangoFilterBackend
 from drf_spectacular.utils import OpenApiResponse, extend_schema
 from rest_framework import mixins, status, viewsets
+from rest_framework.decorators import action
 from rest_framework.filters import SearchFilter
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -16,7 +17,7 @@ from apps.core.roles import Role
 from apps.users.dto import UserCreateInput, UserUpdateInput
 from apps.users.filters import UserFilterSet
 from apps.users.repositories import DjangoUserRepository
-from apps.users.selectors import scoped_users
+from apps.users.selectors import assignable_users, scoped_users
 from apps.users.serializers import (
     UserCreateSerializer,
     UserMinimalSerializer,
@@ -60,6 +61,20 @@ class UserViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.Gen
     def get_service(self) -> UserService:
         """The composition root: the only place a concrete repository is named."""
         return UserService(users=DjangoUserRepository())
+
+    @extend_schema(responses={200: UserMinimalSerializer(many=True)})
+    @action(detail=False, methods=["get"], filter_backends=[SearchFilter])
+    def assignable(self, request):
+        """Users a task may be assigned to — the assignee picker's options (D61, D64).
+
+        Paged and searchable (`?search=` over the same fields as /users/): the
+        picker searches as you type and loads more on demand instead of
+        downloading every user up front (D64). D17 (never an Admin) is applied
+        by assignable_users() before the search, so a search only narrows the
+        set. Minimal fields: the same shape a Supervisor gets from /users/.
+        """
+        page = self.paginate_queryset(self.filter_queryset(assignable_users()))
+        return self.get_paginated_response(UserMinimalSerializer(page, many=True).data)
 
     @extend_schema(
         request=UserCreateSerializer,

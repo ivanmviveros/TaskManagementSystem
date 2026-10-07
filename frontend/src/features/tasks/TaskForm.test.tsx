@@ -46,17 +46,53 @@ function signedInAs(user: typeof OPERATOR | typeof SUPERVISOR) {
   server.use(http.get(`${BASE}/users/me/`, () => HttpResponse.json(user)));
 }
 
-function assignableUsers() {
+function operatorNo(i: number) {
+  return {
+    ...OPERATOR,
+    id: `0199a0f0-0000-7000-8000-${String(i).padStart(12, "0")}`,
+    email: `operator${String(i).padStart(3, "0")}@demo.local`,
+    first_name: `Op${i}`,
+  };
+}
+
+/**
+ * GET /users/assignable/ as the server answers it (D64): `search` narrows by
+ * name or email, in pages of 20. Returns every request URL, so a test can
+ * assert what the picker asked for.
+ */
+function assignableUsers(users = [OPERATOR, SUPERVISOR]): URL[] {
+  const PAGE_SIZE = 20;
+  const requests: URL[] = [];
   server.use(
-    http.get(`${BASE}/users/`, () =>
-      HttpResponse.json({
-        count: 2,
-        next: null,
+    http.get(`${BASE}/users/assignable/`, ({ request }) => {
+      const url = new URL(request.url);
+      requests.push(url);
+      const term = (url.searchParams.get("search") ?? "").toLowerCase();
+      const page = Number(url.searchParams.get("page") ?? "1");
+      const matches = users.filter((u) =>
+        [u.email, u.first_name, u.last_name].some((field) => field.toLowerCase().includes(term)),
+      );
+      return HttpResponse.json({
+        count: matches.length,
+        next: page * PAGE_SIZE < matches.length ? `${BASE}/users/assignable/?page=${page + 1}` : null,
         previous: null,
-        results: [OPERATOR, SUPERVISOR],
-      }),
-    ),
+        results: matches.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
+      });
+    }),
   );
+  return requests;
+}
+
+/** Records each POST body, as capturePatches does for edits. */
+function captureCreates(): { bodies: Record<string, unknown>[] } {
+  const record = { bodies: [] as Record<string, unknown>[] };
+  server.use(
+    http.post(`${BASE}/tasks/`, async ({ request }) => {
+      record.bodies.push((await request.json()) as Record<string, unknown>);
+      return HttpResponse.json(DETAIL, { status: 201 });
+    }),
+  );
+  return record;
 }
 
 function taskDetail(overrides: Partial<TaskDetail> = {}) {
@@ -112,45 +148,237 @@ describe("TaskForm", () => {
     expect(screen.queryByLabelText(/assignee/i)).not.toBeInTheDocument();
   });
 
-  it("renders the assignee field for a Supervisor, populated from GET /users/", async () => {
+  it("lists assignable users once the Supervisor opens the assignee picker", async () => {
     signedInAs(SUPERVISOR);
     assignableUsers();
     await renderApp("/tasks/new");
-    const select = await screen.findByLabelText(/assignee/i);
+    const picker = await screen.findByRole("combobox", { name: /assignee/i });
+    expect(picker).toHaveAttribute("aria-expanded", "false");
+    const user = userEvent.setup();
+    await user.click(picker);
+    const listbox = await screen.findByRole("listbox", { name: /assignee/i });
     await waitFor(() =>
-      expect(screen.getByRole("option", { name: /omar operator/i })).toBeInTheDocument(),
+      expect(within(listbox).getAllByRole("option").map((o) => o.textContent)).toEqual([
+        "Unassigned",
+        "Omar Operator (operator@demo.local)",
+        "Sam Supervisor (supervisor@demo.local)",
+      ]),
     );
-    expect(select).toBeInTheDocument();
   });
 
-  it("never offers an Admin as an assignee", async () => {
-    // D17: assigning to an Admin would create a task nobody can open.
+  it("searches the server as the Supervisor types, once per pause", async () => {
     signedInAs(SUPERVISOR);
-    server.use(
-      http.get(`${BASE}/users/`, () =>
-        HttpResponse.json({
-          count: 2,
-          next: null,
-          previous: null,
-          results: [
-            OPERATOR,
-            {
-              id: "0199a0f0-0000-7000-8000-00000000ad01",
-              email: "admin@demo.local",
-              first_name: "Ada",
-              last_name: "Admin",
-              role: "ADMIN",
-            },
-          ],
-        }),
-      ),
-    );
+    const requests = assignableUsers();
     await renderApp("/tasks/new");
-    await screen.findByLabelText(/assignee/i);
+    const user = userEvent.setup();
+    await user.type(await screen.findByRole("combobox", { name: /assignee/i }), "sam");
+    const listbox = await screen.findByRole("listbox", { name: /assignee/i });
     await waitFor(() =>
-      expect(screen.getByRole("option", { name: /omar operator/i })).toBeInTheDocument(),
+      expect(within(listbox).queryByRole("option", { name: /omar operator/i })).not.toBeInTheDocument(),
     );
-    expect(screen.queryByRole("option", { name: /ada admin/i })).not.toBeInTheDocument();
+    expect(within(listbox).getByRole("option", { name: /sam supervisor/i })).toBeInTheDocument();
+    // Debounced: no request for "s" or "sa".
+    const searched = requests.map((url) => url.searchParams.get("search")).filter((term) => term !== null);
+    expect(searched).toEqual(["sam"]);
+  });
+
+  it("says so when no assignable user matches the search", async () => {
+    signedInAs(SUPERVISOR);
+    assignableUsers();
+    await renderApp("/tasks/new");
+    const user = userEvent.setup();
+    await user.type(await screen.findByRole("combobox", { name: /assignee/i }), "nobody");
+    expect(await screen.findByText(/no users match/i)).toBeInTheDocument();
+  });
+
+  it("loads the next page on demand rather than every user up front", async () => {
+    // D64 replaces D61's single unpaginated list: the picker shows a page and
+    // the total, and fetches more only when asked.
+    signedInAs(SUPERVISOR);
+    const requests = assignableUsers(Array.from({ length: 45 }, (_, i) => operatorNo(i)));
+    await renderApp("/tasks/new");
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("combobox", { name: /assignee/i }));
+    const listbox = await screen.findByRole("listbox", { name: /assignee/i });
+    // 20 users plus "Unassigned".
+    await waitFor(() => expect(within(listbox).getAllByRole("option")).toHaveLength(21));
+    expect(screen.getByText(/showing 20 of 45/i)).toBeInTheDocument();
+    expect(requests).toHaveLength(1);
+
+    await user.click(screen.getByRole("button", { name: /load more/i }));
+    await waitFor(() => expect(within(listbox).getAllByRole("option")).toHaveLength(41));
+    expect(requests.map((url) => url.searchParams.get("page"))).toEqual(["1", "2"]);
+    // The picker stays open, with focus on its input, after loading more.
+    expect(screen.getByRole("combobox", { name: /assignee/i })).toHaveFocus();
+  });
+
+  it("loads the next page when the keyboard reaches the last loaded user", async () => {
+    signedInAs(SUPERVISOR);
+    const requests = assignableUsers(Array.from({ length: 25 }, (_, i) => operatorNo(i)));
+    await renderApp("/tasks/new");
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("combobox", { name: /assignee/i }));
+    const listbox = await screen.findByRole("listbox", { name: /assignee/i });
+    await waitFor(() => expect(within(listbox).getAllByRole("option")).toHaveLength(21));
+    // "Unassigned" is active on open; 20 presses reach the last loaded user.
+    await user.keyboard("{ArrowDown>20/}");
+    await waitFor(() => expect(within(listbox).getAllByRole("option")).toHaveLength(26));
+    expect(requests.map((url) => url.searchParams.get("page"))).toEqual(["1", "2"]);
+    expect(screen.queryByRole("button", { name: /load more/i })).not.toBeInTheDocument();
+  });
+
+  it("chooses an assignee with the keyboard and sends their id", async () => {
+    signedInAs(SUPERVISOR);
+    assignableUsers();
+    const creates = captureCreates();
+    taskDetail();
+    await renderApp("/tasks/new");
+    const user = userEvent.setup();
+    await user.type(await screen.findByLabelText(/title/i), "Ship it");
+    const picker = screen.getByRole("combobox", { name: /assignee/i });
+    await user.click(picker);
+    const listbox = await screen.findByRole("listbox", { name: /assignee/i });
+    await within(listbox).findByRole("option", { name: /sam supervisor/i });
+    // Unassigned -> Omar -> Sam.
+    await user.keyboard("{ArrowDown}{ArrowDown}");
+    expect(picker).toHaveAttribute(
+      "aria-activedescendant",
+      within(listbox).getByRole("option", { name: /sam supervisor/i }).id,
+    );
+    await user.keyboard("{Enter}");
+    expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+    expect(picker).toHaveValue("Sam Supervisor (supervisor@demo.local)");
+    await user.click(screen.getByRole("button", { name: /create task/i }));
+    await waitFor(() => expect(creates.bodies).toHaveLength(1));
+    expect(creates.bodies[0]).toMatchObject({ assignee: SUPERVISOR.id });
+  });
+
+  it("chooses an assignee with the mouse", async () => {
+    signedInAs(SUPERVISOR);
+    assignableUsers();
+    const creates = captureCreates();
+    taskDetail();
+    await renderApp("/tasks/new");
+    const user = userEvent.setup();
+    await user.type(await screen.findByLabelText(/title/i), "Ship it");
+    await user.click(screen.getByRole("combobox", { name: /assignee/i }));
+    await user.click(await screen.findByRole("option", { name: /omar operator/i }));
+    await user.click(screen.getByRole("button", { name: /create task/i }));
+    await waitFor(() => expect(creates.bodies).toHaveLength(1));
+    expect(creates.bodies[0]).toMatchObject({ assignee: OPERATOR.id });
+  });
+
+  it("shows the current assignee by name even when they are not on the first page", async () => {
+    // The form holds the assignee the task came with, not just an id to look
+    // up among loaded options — otherwise anyone past page 1 would show blank.
+    signedInAs(SUPERVISOR);
+    const requests = assignableUsers(Array.from({ length: 45 }, (_, i) => operatorNo(i)));
+    const patches = capturePatches();
+    const farAway = operatorNo(44);
+    taskDetail({ assignee: farAway });
+    await renderApp(`/tasks/${TASK_ID}/edit`);
+    const picker = await screen.findByRole("combobox", { name: /assignee/i });
+    expect(picker).toHaveValue("Op44 Operator (operator044@demo.local)");
+    // Nothing is fetched until the picker is opened.
+    expect(requests).toHaveLength(0);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: /save changes/i }));
+    await waitFor(() => expect(patches.bodies).toHaveLength(1));
+    expect(patches.bodies[0]).toMatchObject({ assignee: farAway.id });
+  });
+
+  it("closes on Escape and puts back the chosen assignee's name", async () => {
+    signedInAs(SUPERVISOR);
+    assignableUsers();
+    taskDetail();
+    await renderApp(`/tasks/${TASK_ID}/edit`);
+    const picker = await screen.findByRole("combobox", { name: /assignee/i });
+    const user = userEvent.setup();
+    await user.clear(picker);
+    await user.type(picker, "sam");
+    await screen.findByRole("listbox", { name: /assignee/i });
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+    expect(picker).toHaveAttribute("aria-expanded", "false");
+    expect(picker).toHaveValue("Omar Operator (operator@demo.local)");
+  });
+
+  it("puts back the chosen assignee's name when focus leaves without a choice", async () => {
+    signedInAs(SUPERVISOR);
+    assignableUsers();
+    taskDetail();
+    await renderApp(`/tasks/${TASK_ID}/edit`);
+    const picker = await screen.findByRole("combobox", { name: /assignee/i });
+    const user = userEvent.setup();
+    await user.clear(picker);
+    await user.type(picker, "sam");
+    await screen.findByRole("listbox", { name: /assignee/i });
+    await user.tab();
+    expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+    expect(picker).toHaveValue("Omar Operator (operator@demo.local)");
+  });
+
+  it("can clear the assignee on a new task", async () => {
+    signedInAs(SUPERVISOR);
+    assignableUsers();
+    const creates = captureCreates();
+    taskDetail();
+    await renderApp("/tasks/new");
+    const user = userEvent.setup();
+    await user.type(await screen.findByLabelText(/title/i), "Ship it");
+    const picker = screen.getByRole("combobox", { name: /assignee/i });
+    await user.click(picker);
+    await user.click(await screen.findByRole("option", { name: /omar operator/i }));
+    await user.click(picker);
+    await user.click(await screen.findByRole("option", { name: /^unassigned$/i }));
+    expect(picker).toHaveValue("");
+    await user.click(screen.getByRole("button", { name: /create task/i }));
+    await waitFor(() => expect(creates.bodies).toHaveLength(1));
+    expect(creates.bodies[0]).toMatchObject({ assignee: null });
+  });
+
+  it("unassigns an assigned task when Unassigned is chosen on edit", async () => {
+    // An explicit null is how a PATCH unassigns; an omitted assignee means
+    // "leave it alone" (D32). The edit page used to drop the null.
+    signedInAs(SUPERVISOR);
+    assignableUsers();
+    taskDetail();
+    const patches = capturePatches();
+    await renderApp(`/tasks/${TASK_ID}/edit`);
+    const picker = await screen.findByRole("combobox", { name: /assignee/i });
+    expect(picker).toHaveValue("Omar Operator (operator@demo.local)");
+    const user = userEvent.setup();
+    await user.click(picker);
+    await user.click(await screen.findByRole("option", { name: /^unassigned$/i }));
+    await user.click(screen.getByRole("button", { name: /save changes/i }));
+    await waitFor(() => expect(patches.bodies).toHaveLength(1));
+    expect(patches.bodies[0]).toHaveProperty("assignee", null);
+  });
+
+  it("never sends an assignee for an Operator's edit", async () => {
+    // D15: any assignee on an Operator's update is refused — even an unchanged one.
+    signedInAs(OPERATOR);
+    taskDetail();
+    const patches = capturePatches();
+    await renderApp(`/tasks/${TASK_ID}/edit`);
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: /save changes/i }));
+    await waitFor(() => expect(patches.bodies).toHaveLength(1));
+    expect(patches.bodies[0]).not.toHaveProperty("assignee");
+  });
+
+  it("never sends an assignee for an Operator's new task", async () => {
+    // D16: the server assigns an Operator's task to them when assignee is
+    // omitted, and refuses an explicit null as a different assignee.
+    signedInAs(OPERATOR);
+    const creates = captureCreates();
+    taskDetail();
+    await renderApp("/tasks/new");
+    const user = userEvent.setup();
+    await user.type(await screen.findByLabelText(/title/i), "My own task");
+    await user.click(screen.getByRole("button", { name: /create task/i }));
+    await waitFor(() => expect(creates.bodies).toHaveLength(1));
+    expect(creates.bodies[0]).not.toHaveProperty("assignee");
   });
 
   it("renders the status select in edit mode only", async () => {
@@ -201,8 +429,8 @@ describe("TaskForm", () => {
     const user = userEvent.setup();
     await user.type(await screen.findByLabelText(/title/i), "Doomed");
     await user.click(screen.getByRole("button", { name: /create task/i }));
-    const select = await screen.findByLabelText(/assignee/i);
-    await waitFor(() => expect(select).toHaveAttribute("aria-invalid", "true"));
+    const picker = await screen.findByRole("combobox", { name: /assignee/i });
+    await waitFor(() => expect(picker).toHaveAttribute("aria-invalid", "true"));
     expect(await screen.findByText(/an admin cannot be assigned tasks/i)).toBeInTheDocument();
   });
 
@@ -411,6 +639,27 @@ describe("TaskDetailPage", () => {
     );
     return record;
   }
+
+  it("does not refetch the task it just deleted", async () => {
+    // Invalidating the whole ["tasks"] prefix used to refetch the deleted task's
+    // own detail query — a guaranteed 404 against the real API, logged to the
+    // console just before navigating away (D63).
+    signedInAs(SUPERVISOR);
+    let detailGets = 0;
+    server.use(
+      http.get(`${BASE}/tasks/${TASK_ID}/`, () => {
+        detailGets += 1;
+        return HttpResponse.json({ ...DETAIL, can_delete: true });
+      }),
+    );
+    deletesRespondWith(() => new HttpResponse(null, { status: 204 }));
+    await renderApp(`/tasks/${TASK_ID}`);
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: /^delete$/i }));
+    await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: /^delete$/i }));
+    await screen.findByRole("heading", { name: /^tasks$/i });
+    expect(detailGets).toBe(1);
+  });
 
   it("deletes after confirmation and returns to the task list", async () => {
     signedInAs(SUPERVISOR);

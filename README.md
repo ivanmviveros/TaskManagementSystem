@@ -916,6 +916,75 @@ Management System", page name first so it survives a narrow tab. `<HeadContent /
 route renders it. `index.html` deliberately has no `<title>`: React 19 hoists the route's title
 into `<head>` after any static one, and the browser shows the first.
 
+### Fixes from the browser check (D59–D63)
+
+A Playwright pass over the running app found five problems that the jsdom test suite could
+not see. Each fix has a test that failed first.
+
+- **The Compose frontend served stale code (D59).** A Docker bind mount on Windows (and often
+  macOS) does not deliver file-change events into the container, so after a `git pull` or a
+  branch switch Vite kept serving its cached modules — the merged dashboard rendered as the old
+  one until the container restarted. The Compose service sets `DEV_SERVER_POLLING=true`, which
+  turns on Vite's polling watcher; a native `npm run dev` keeps native file events.
+- **Dialogs did not take focus (D60).** Focus stayed on the button that opened the delete or
+  deactivate dialog, outside the `aria-modal` dialog, so a keyboard user tabbed through the whole
+  page to reach Cancel, and Escape did nothing. A shared `useModalDialog` hook focuses Cancel
+  (the safe default for a destructive action), closes on Escape unless a request is in flight,
+  keeps Tab inside the dialog, and returns focus to the opener when it still exists.
+- **The assignee picker stopped at 100 users (D61).** It paged `/users/` at its 100-row cap and
+  filtered Admins out in the browser, so with more users everyone past the first page was
+  unassignable, and D17 was re-derived on the client. `GET /users/assignable/` (Supervisor only)
+  returns the assignable set with the minimal fields a Supervisor already sees. The picker offers
+  exactly what it reports — the same "report the rule, don't re-derive it" approach as
+  `can_delete` and `allowed_transitions`. It first returned the whole set unpaginated; D64
+  replaced that with search and paging.
+- **Link-styled buttons took two Tab stops (D62).** Seven places wrapped a `<Button>` in a
+  router `<Link>` — a `<button>` inside an `<a>`, which is invalid HTML and two Tab stops for one
+  control. `ButtonLink` is one element with the button's look; a source-scan test fails if the
+  nesting comes back.
+- **Deleting from a task's page refetched it (D63).** Invalidating the `["tasks"]` prefix also
+  refetched the deleted task's own detail query — a guaranteed 404, logged just before
+  navigating to `/tasks`. The detail query is now removed before the rest is invalidated.
+
+### The assignee picker searches as you type (D64)
+
+D61's unpaginated list sent every assignable user (about 500 in the seeded data) to every
+Supervisor who opened a task form, and a native `<select>` of hundreds of names is hard to use.
+`GET /users/assignable/` is now paged like every other list (20 per page, `page_size` up to 100)
+and takes `?search=` over email, first name and last name — the same fields as `/users/`.
+D17 is applied before the search, so a search only narrows the set and can never surface an
+Admin.
+
+The picker is an ARIA combobox (the WAI-ARIA "combobox with listbox popup" pattern), written
+for this project rather than taken from a library: there is one consumer, and the stack has no
+UI component library to fit it into.
+
+- Nothing is fetched until the list first opens. Typing searches the server once per 300 ms
+  pause, and the current options stay on screen until the new answer arrives.
+- More users load when the arrow keys reach the last loaded one, when the list is scrolled to
+  its end, or from "Load more". The footer says how many of the total are shown.
+- Focus never leaves the input. The active option is announced through
+  `aria-activedescendant`, and mouse presses inside the popup do not blur the input.
+- Escape, or leaving the field without choosing, puts back the chosen assignee's name. After
+  typing, Enter chooses nothing until an arrow key makes an option active, so a stale result
+  is never picked by accident.
+- The form holds the chosen user, not just an id, so a task whose assignee is past the first
+  page still shows their name without fetching anything.
+
+### "No assignee" and "not yours to choose" are different (D65)
+
+The API reads an omitted `assignee` as "leave it alone" (on update) or "assign it to me" (an
+Operator's create, D16), and an explicit `null` as "unassign" (D32). The task form used `null`
+for both meanings, which broke two things:
+
+- **A Supervisor could not unassign a task.** The edit page dropped a `null` assignee, so
+  choosing "Unassigned" saved the old assignee.
+- **An Operator could not create a task at all.** The create page sent `assignee: null`, which
+  the API refuses from an Operator with `400 assignee_immutable`.
+
+The form now leaves `assignee` out when the actor may not choose one, and sends `null` only
+when "Unassigned" was chosen.
+
 ## Deliberate overrides of AGENTS.md
 
 | Override | AGENTS.md says | This project does | Why |

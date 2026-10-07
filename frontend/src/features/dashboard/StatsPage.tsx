@@ -1,6 +1,5 @@
-import { Link } from "@tanstack/react-router";
 
-import { Button } from "../../components/Button";
+import { ButtonLink } from "../../components/ButtonLink";
 import { ApiError } from "../../lib/api-error";
 import { useTaskStats } from "../tasks/hooks/useTasks";
 import type { TaskStatus } from "../tasks/types";
@@ -25,16 +24,16 @@ function isoDay(offsetDays: number): string {
 
 /**
  * Rendered in every state, so creating a task never waits on statistics. The
- * same <Link><Button> markup as the task list's header; both dashboard roles
+ * same ButtonLink as the task list's header; both dashboard roles
  * may create tasks.
  */
 function DashboardHeader() {
   return (
     <div className="mb-4 flex flex-wrap items-center gap-3">
       <h1 className="text-xl font-semibold text-slate-900">Dashboard</h1>
-      <Link to="/tasks/new" className="ml-auto">
-        <Button>New task</Button>
-      </Link>
+      <ButtonLink to="/tasks/new" className="ml-auto">
+        New task
+      </ButtonLink>
     </div>
   );
 }

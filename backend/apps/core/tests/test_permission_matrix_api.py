@@ -47,6 +47,7 @@ REQUESTS = {
     ),
     (Resource.USER, "destroy"): ("delete", "/api/v1/users/{user_id}/", None, {204}),
     (Resource.USER, "me"): ("get", "/api/v1/users/me/", None, {200}),
+    (Resource.USER, "assignable"): ("get", "/api/v1/users/assignable/", None, {200}),
     (Resource.TASK, "list"): ("get", "/api/v1/tasks/", None, {200}),
     (Resource.TASK, "retrieve"): ("get", "/api/v1/tasks/{task_id}/", None, {200}),
     (Resource.TASK, "create"): ("post", "/api/v1/tasks/", {"title": "Matrix"}, {201}),

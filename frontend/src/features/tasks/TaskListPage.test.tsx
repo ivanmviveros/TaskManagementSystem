@@ -313,6 +313,49 @@ describe("task deletion from the list", () => {
     expect(await within(dialog).findByRole("alert")).toHaveTextContent(/only delete tasks you created/i);
     expect(screen.getByRole("dialog")).toBeInTheDocument();
   });
+
+  describe("keyboard (D60)", () => {
+    // Found in the browser check: focus stayed on the row's Delete button, so a
+    // keyboard user had to Tab through the whole list to reach the dialog.
+    it("moves focus into the dialog, onto Cancel", async () => {
+      deletesRespondWith(() => new HttpResponse(null, { status: 204 }));
+      const { dialog } = await openDialog();
+      // Cancel, not Delete: the safe default for a destructive confirmation.
+      expect(within(dialog).getByRole("button", { name: /cancel/i })).toHaveFocus();
+    });
+
+    it("closes on Escape without deleting", async () => {
+      const deletes = deletesRespondWith(() => new HttpResponse(null, { status: 204 }));
+      const { user } = await openDialog();
+      await user.keyboard("{Escape}");
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+      expect(deletes.count).toBe(0);
+    });
+
+    it("keeps Tab inside the dialog", async () => {
+      deletesRespondWith(() => new HttpResponse(null, { status: 204 }));
+      const { user, dialog } = await openDialog();
+      const cancel = within(dialog).getByRole("button", { name: /cancel/i });
+      const confirm = within(dialog).getByRole("button", { name: /^delete$/i });
+      await user.tab();
+      expect(confirm).toHaveFocus();
+      await user.tab();
+      expect(cancel).toHaveFocus(); // wrapped, rather than escaping to the page
+      await user.tab({ shift: true });
+      expect(confirm).toHaveFocus(); // and backwards
+    });
+
+    it("returns focus to the button that opened it", async () => {
+      deletesRespondWith(() => new HttpResponse(null, { status: 204 }));
+      const { user, dialog } = await openDialog();
+      // Focus must first have LEFT the trigger, or "returned" proves nothing.
+      expect(within(dialog).getByRole("button", { name: /cancel/i })).toHaveFocus();
+      await user.keyboard("{Escape}");
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+      const table = screen.getByRole("table");
+      expect(within(table).getByRole("button", { name: /^delete review the brief/i })).toHaveFocus();
+    });
+  });
 });
 
 describe("TaskListPage URL state", () => {

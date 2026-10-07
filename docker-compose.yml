@@ -98,6 +98,10 @@ services:
       - "5173:5173"
     env_file:
       - .env
+    environment:
+      # File events do not cross this bind mount on Windows/macOS; without polling
+      # Vite serves stale modules after host-side edits (see vite.config.ts).
+      DEV_SERVER_POLLING: "true"
 
 volumes:
   postgres_data:

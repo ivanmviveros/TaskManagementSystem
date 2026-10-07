@@ -240,3 +240,28 @@ using /superpowers-extended-cc:using-git-worktrees  and /superpowers-extended-cc
 ```
 I identify another minor issue, browser tabs aren't showing current page name, "dashboard, tasks, users, detail, etc"
 ```
+
+```
+Continue improvement iteration with the following issues:
+
+-The delete dialog doesn't take focus. Focus stays on the page's Delete button, so a keyboard user has to Tab out to reach Cancel or Delete, and Escape doesn't close it. The users dialog behaves the same way.
+-"New task" takes two Tab presses, because the header nests a button inside a link. The task and user list headers do the same.
+-The assignee picker lists only the first 100 users. With ~500 seeded, many users can't be chosen at all.
+-Deleting from the detail page logs a console error. The app re-requests the deleted task (404) just before moving to /tasks.
+-Stop the stale-code problem: turn on Vite's polling file watcher, only when running in the Compose container, so native npm run dev stays fast.
+```
+
+```
+Refactor assigned user selector component to allow user inline search and pagination instead of the complete list of assignable users
+```
+
+```
+Fix the choosing "Unassigned" when editing a task leaving the old assignee in place, caused by the edit request skiping an empty assignee.
+```
+## Final review
+
+```
+Following  features specs in @docs\superpowers\specs:
+- Do a complete analysis of frontend pages and components, using playwirtgh mcp and generating a final report with validations performed and results. The analysis should be oriented to correct responsive behavior, forms validations and navigability
+- Do a complete test suite run for frontend and backend and include in report, include coverage.
+```
