@@ -18,11 +18,11 @@ message, focus move and ARIA attribute stays as it is today. The backend is not 
 
 | Area | Today | After |
 |---|---|---|
-| Forms | `LoginPage` (5 `useState`), `TaskForm` (11), `UserForm` (9). Each repeats `fieldErrors` / `formError` / `isSubmitting` and its own `ApiError` → field mapping | `useAppForm` with bound field components and one server-error mapper (§5) |
+| Forms | `LoginPage` (5 `useState`), `TaskForm` (10), `UserForm` (9). Each repeats `fieldErrors` / `formError` / `isSubmitting` and its own `ApiError` → field mapping | `useAppForm` with bound field components and one server-error mapper (§5) |
 | Filter panels | `TaskFilters`, and the filter `<section>` inline in `UserListPage`. Checkboxes and selects write the URL directly; typed text goes through `useSearchParamDraft` | `useAppForm` with the same field components in a compact density, and `useUrlFieldSync` (§5.5) |
 | Tables | `TaskTable` (sort buttons through `sorting.ts`) and `UserTable`, hand-built. Cards render separately. `Pagination` takes `count` / `page` / `pageSize` and two callbacks | `useAppTable`, controlled from the URL. `TableView`, `SortHeader` and `Pagination` are registered table components. Cards render from the same row model (§6) |
 | Component state | `TaskListPage` (4 `useState`), `TaskDetailPage` (3), `UserListPage` (2), `AssigneeCombobox` (3), `AuthContext` (2) | One session store. Per-mount feature stores (§4) |
-| Dead code | `src/App.tsx`, the Vite template's counter, imported nowhere | Deleted |
+| Dead code | `src/App.tsx`, the Vite template's counter, imported nowhere, and the files only it uses: `src/App.css`, `src/assets/hero.png`, `react.svg`, `vite.svg` | Deleted |
 
 ### 1.1 Choices made by the project owner
 
@@ -62,15 +62,15 @@ Continues from D78.
 | # | Decision | Rationale |
 |---|---|---|
 | D79 | **TanStack Form owns every form draft** (Login, Task, User) and both filter panels. Validation stays server-only: `noValidate`, no client validators, no schema library. | Removes three copies of the same submit and error state. `AGENTS.md` treats frontend checks as UX only, and a migration adds no rules. |
-| D80 | **Server errors live in Form's `onServer` error slot.** A pure `toServerErrors` maps an error to `{ form, fields }`; `setServerErrors` writes the slot; `clearServerErrors` empties it **before every submit**. | One mapper replaces three. Clearing first is required: an `onServer` error leaves the form invalid, and form-core 1.33.5's `_handleSubmit` then silently refuses the next submit (`canSubmit` is false, and `validate("submit")` keeps `isValid` false). |
-| D81 | **The task form's default values are a snapshot**, taken once with a lazy initializer. D40's status options, read-only switch and "did it change?" check read the snapshot. | `FormApi.update` replaces an untouched form's values whenever `defaultValues` change deeply. The detail query refetches on window focus, so passing it live would let a refetch rewrite an open form. That is exactly what D40 forbids. |
-| D82 | **The filter panels are Forms without a `<form>` element.** `useUrlFieldSync` replaces `useSearchParamDraft`, with the same echo, cancel and unmount rules (D46, D50). It owns a cancellable timer and also handles fields that commit immediately. | One visual identity (owner's choice). Form's own `onChangeDebounceMs` timer cannot be cancelled, and Clear must cancel a pending date. Form also does not solve the echo: our own commit landing in the URL must not overwrite newer typing. Keeping `<section aria-label="Filters">` keeps Enter inert and the region role the tests query. |
+| D80 | **Server errors live in Form's `onServer` error slot.** A pure `toServerErrors` maps an error to `{ form, fields }`, routing to `fields` **only** the keys the form renders an error for; `setServerErrors` writes the slot; `clearServerErrors` empties it, form and every field, **before every submit**. | One mapper replaces three. Clearing first is required: an `onServer` error leaves the form invalid, and form-core 1.33.5's `_handleSubmit` then silently refuses the next submit (`canSubmit` is false, and `validate("submit")` keeps `isValid` false). Routing only rendered keys keeps today's behaviour: `setErrorMap` writes to **every** registered field, so an error keyed on `description` would otherwise appear under a textarea that shows no error today, and D75 would focus it instead of the alert. |
+| D81 | **Every form's default values are a mount-time snapshot**, taken once with a lazy initializer: the task and user edit forms (from the detail query) and the two filter panels (from the URL). D40's status options, read-only switch and "did it change?" check read the task snapshot. | `useForm` calls `FormApi.update` on every render, and `update` replaces an untouched form's values whenever `defaultValues` change deeply. The detail queries refetch on window focus, so passing them live would let a refetch rewrite an open form, which today's `useState` initialisers never do and D40 forbids. For the filters, the snapshot leaves `useUrlFieldSync` (D82) as the one path from the URL into the fields. |
+| D82 | **The filter panels are Forms without a `<form>` element.** `useUrlFieldSync` replaces `useSearchParamDraft`, with the same echo, cancel and unmount rules (D46, D50). It owns a cancellable timer, tracks every write not yet echoed (a queue, not a single value), and also handles fields that commit immediately. | One visual identity (owner's choice). Form's own `onChangeDebounceMs` timer cannot be cancelled, and Clear must cancel a pending date. Form also does not solve the echo: our own commit landing in the URL must not overwrite newer typing. Keeping `<section aria-label="Filters">` keeps Enter inert and the region role the tests query. |
 | D83 | **Tables are built with `createTableHook` and own no state.** Sorting, pagination and column visibility are controlled from the URL (`manualSorting`, `manualPagination`, `autoResetPageIndex: false`); no client row models are registered. | D45: the URL is the only copy of list state. The `manual*` flags only bypass client processing; the server already sorts and pages. |
 | D84 | **Table drives the sort cycle:** `enableMultiSort: false`, `enableSortingRemoval: false`, `sortDescFirst: false`. `orderingToSorting` and `sortingToOrdering` replace `nextOrdering`. The default ordering maps to `undefined` (D48). | Verified in table-core 9.2.6 (`column_getNextSortingOrder`, `column_getFirstSortDir`): inactive → ascending → descending → ascending, the cycle D67 specifies. Column ids equal the API's ordering fields, so the mapping is direct. |
 | D85 | **Pagination goes through Table.** `Pagination` is a registered table component reading the table's pagination model. One change handler routes the result: a page-size change replaces history and returns to page 1; a page move pushes (D47). | Owner's choice: no parallel pager model. Table's own `setPageSize` keeps the top row visible (`floor(pageSize × pageIndex / newSize)`), which is not D47's page-1 reset, so the handler, not Table, decides the navigation. |
-| D86 | **One session store per app replaces `AuthContext`.** It is created once per `Providers` mount and shared through `createStoreContext`. `useAuth()` keeps its return shape. | Shared client state (frontend §4) with selector reads and no Provider value object. One instance per mount gives every test render a fresh session. The unchanged hook leaves `router.tsx`, `useRouterAuthSync` and every consumer untouched. |
+| D86 | **One session store per app replaces `AuthContext`.** `SessionProvider` creates it once per mount with `useCreateStore(initialSessionState, sessionActions)` and shares it through `createStoreContext`. `useAuth()` keeps its return shape. | Shared client state (frontend §4) with selector reads and no Provider value object. One instance per mount gives every test render a fresh session. The unchanged hook leaves `router.tsx`, `useRouterAuthSync` and every consumer untouched. |
 | D87 | **Feature UI state lives in per-mount feature stores** (`useCreateStore` + `createStoreContext`). A generic delete-flow slice is shared by the task list, task detail and user list. Rows read their own busy state by selector and call `useTaskActions()` directly. | Owner's broad scope. Per mount means the same lifetime the replaced `useState` had: fresh on every visit, no reset code, no leakage between tests. Selector reads re-render only the busy row; the row components stop receiving `onComplete` / `onDelete` / `busyId` / `isBusy` / `currentUserId` props. |
-| D88 | **Reusable primitives keep their internal React state:** `useUrlFieldSync`, `useDebouncedValue`, `useFocusFirstError`, `useModalDialog`, the router's create-once initializer and D81's snapshot initializer. | These are DOM and timing mechanics, not feature state. Each has exactly one reader, so a store would add indirection and no second consumer. |
+| D88 | **Reusable primitives keep their internal React state:** `useUrlFieldSync`, `useDebouncedValue`, `useFocusFirstError`, `useModalDialog`, the router's create-once initializer and D81's default-value snapshots. | These are DOM and timing mechanics, not feature state. Each has exactly one reader, so a store would add indirection and no second consumer. |
 
 ---
 
@@ -93,30 +93,48 @@ primitives listed in D88.
 
 ## 4. Store layer (D86, D87)
 
+### 4.0 How every store is made
+
+Every store module exports **two things**: its initial state and its actions factory. A component
+creates the store once per mount with `useCreateStore(initialState, actions)`, which returns a
+writable `Store<T, TActions>`. The module also exports `createXStore = () => createStore(initialState, actions)`,
+used **only** by unit tests.
+
+Two rules follow from Store 0.11.2's types:
+
+- `useCreateStore(getter)` with a function argument creates a **read-only** derived store, so a
+  ready-made store can never be passed to it. Always pass the initial state and the actions
+  factory separately.
+- `TActions extends Record<string, StoreAction>`. Declare the actions with `type`, not
+  `interface`: an interface has no implicit index signature and fails that constraint.
+
 ### 4.1 Session store — `features/auth/session-store.ts`
 
 ```ts
-export interface SessionState {
+export type SessionState = {
   user: CurrentUser | null;
   /** True until the initial "who am I?" probe settles, so guards can wait. */
   isLoading: boolean;
-}
+};
 
-export function createSessionStore() {
-  return createStore<SessionState, SessionActions>(
-    { user: null, isLoading: true },
-    ({ setState }) => ({
-      settle: (user) => setState(() => ({ user, isLoading: false })),
-      signIn: async (email, password) => { /* login, setAccessToken, set user; returns user */ },
-      signOut: async () => { /* never rejects; clears the token and the user in `finally` */ },
-      expire: () => setState((s) => ({ ...s, user: null })),
-    }),
-  );
-}
+export const initialSessionState: SessionState = { user: null, isLoading: true };
+
+export const sessionActions = ({ setState }: StoreActionsArgs<SessionState>) => ({
+  settle: (user: CurrentUser | null) => setState(() => ({ user, isLoading: false })),
+  signIn: async (email: string, password: string) => { /* login, setAccessToken, set user; returns user */ },
+  signOut: async () => { /* never rejects; clears the token and the user in `finally` */ },
+  expire: () => setState((s) => ({ ...s, user: null })),
+});
+
+export const createSessionStore = () => createStore(initialSessionState, sessionActions); // tests only
 ```
 
-- **`SessionProvider`** (`features/auth/SessionProvider.tsx`) creates the store once per mount,
-  shares it through `createStoreContext`, and runs today's bootstrap effect unchanged: refresh
+`StoreActionsArgs` is shorthand in this sketch for the `{ setState, get }` argument of Store's
+`StoreActionsFactory`; the plan settles the exact type.
+
+- **`SessionProvider`** (`features/auth/SessionProvider.tsx`) creates the store once per mount
+  with `useCreateStore(initialSessionState, sessionActions)`, shares it through
+  `createStoreContext`, and runs today's bootstrap effect unchanged: refresh
   first (D35), the same cancellation guard, and `settle()` instead of two setters. It registers
   `apiClient.onSessionExpired(store.actions.expire)`. The bootstrap issues exactly as many
   requests as today; the existing test that counts them must pass unchanged.
@@ -124,14 +142,16 @@ export function createSessionStore() {
   name, built from `useSelector(store, …, { compare: shallow })` plus the stable actions.
   `router.tsx`, `useRouterAuthSync`, `RoutedApp` and every caller are unchanged. Only the
   `AuthState` import path moves.
-- `AuthContext.tsx` is deleted; `Providers` renders `SessionProvider` in its place.
+- `AuthContext.tsx` is deleted; `Providers` renders `SessionProvider` in its place, and so does
+  the test harness `src/test/render-app.tsx`, which imports `AuthProvider` today (§7.2).
 - `signIn` and `signOut` keep today's contracts and comments: the sign-out is authoritative
   locally and never rejects.
 
 ### 4.2 Feature stores
 
-Each factory is plain data plus typed actions. A page creates its store with `useCreateStore`
-and shares it through a `createStoreContext` provider. Nothing is a module singleton.
+Each module exports its initial state and actions factory (§4.0). A page creates its store with
+`useCreateStore` and shares it through a `createStoreContext` provider. Nothing is a module
+singleton.
 
 | Module | State | Actions | Created by |
 |---|---|---|---|
@@ -144,14 +164,17 @@ and shares it through a `createStoreContext` provider. Nothing is a module singl
   store with `useCompleteTask` and `useDeleteTask`. It exposes `complete(task)`,
   `beginDelete(task)`, `cancelDelete()` and `confirmDelete({ onDeleted? })`. The detail page
   passes `onDeleted` to navigate back with D70's search. Error copy is unchanged ("Something
-  went wrong. Try again.", "Could not delete that task.", "Could not deactivate that user.").
+  went wrong. Try again.", "Could not delete that task."). The user list keeps its own
+  "Could not deactivate that user." in its confirm handler.
 - **The delete target is the object, not an id.** Rows pass their own task or user to
   `beginDelete`, so a refetch while the dialog is open cannot make the target disappear. That is
   the same guarantee `beginDelete` gives today by looking the task up at click time.
-- **Rows read the store themselves.** `TaskRowActions`, `TaskCard`, `UserRowActions` (new, the
-  table's actions cell) and `UserCard` select their busy flag with
-  `useSelector(store, (s) => s.busyId === task.id)` and read `useAuth()` for D66. The props
-  `onComplete`, `onDelete`, `busyId`, `isBusy` and `currentUserId` are removed.
+- **Rows read the store themselves.** `TaskRowActions` and `TaskCard` select their busy flag
+  with `useSelector(store, (s) => s.busyId === task.id)` and call `useTaskActions()`. Their
+  `onComplete`, `onDelete`, `busyId` and `isBusy` props are removed.
+  `UserRowActions` (new, the user table's actions cell) and `UserCard` have no busy flag, since the
+  user list tracks none. They call the user-list store's `begin(user)` and read `useAuth()` for
+  D66; their `onDelete` and `currentUserId` props are removed.
 - **The detail page keeps today's behaviour.** It tracks no busy state; "Mark complete" is not
   disabled while in flight, exactly as now.
 - **The combobox keeps its contract.** The WAI-ARIA pattern, `aria-activedescendant`,
@@ -174,8 +197,10 @@ and shares it through a `createStoreContext` provider. Nothing is a module singl
 
 **Field markup is the contract.** The bound fields keep today's ids, labels,
 `aria-invalid="true"` only when there is an error, `aria-describedby` → `${id}-error`, and
-`<p id="${id}-error">` for the message. Each field shows the first message of its `onServer`
-error. The fields:
+`<p id="${id}-error">` for the message. Each field shows its `onServer` error when it has one.
+Only the fields that show an error today ever receive one, because `toServerErrors` routes only
+`renderedFields` (§5.2). The task form's description and status and the user form's role and
+Active checkbox never get one. The fields:
 
 - accept the input attributes the forms use today (`type`, `required`, `maxLength`, `readOnly`,
   `autoComplete`, `name`, `min`, `max`);
@@ -207,13 +232,22 @@ export function toServerErrors(
 
 The rules are today's, moved into one place:
 
-1. `ApiError` with `code === "validation_error"`: each field gets its first message. The form
-   message is set **only** when none of `renderedFields` has an error, so an error keyed on a
-   field the form does not render still reaches the user (D75).
+1. `ApiError` with `code === "validation_error"`: each key **in `renderedFields`** gets its first
+   message in `fields`. Keys outside `renderedFields` are never put in `fields`. The form message
+   is set **only** when none of `renderedFields` has an error, so an error keyed on a field the
+   form does not render reaches the user through the alert, which D75 then focuses.
 2. `ApiError` whose `code` is in `codeToField`: that field gets `error.message`. This is decided
    by `code`, never by parsing `detail`.
 3. Any other `ApiError`: the form message is `error.message`.
 4. Anything else: the form message is `fallback`.
+
+**Writing and clearing.** `setServerErrors(form, { form, fields })` calls
+`form.setErrorMap({ onServer: { form, fields } })`. That call writes `fields[name]` to every
+registered field, so fields not listed are set to `undefined`. `clearServerErrors(form)` calls
+`form.setErrorMap({ onServer: { form: undefined, fields: {} } })`. The `fields` key is required:
+form-core treats a value as form-and-fields only when it has one (`isGlobalFormValidationError`),
+and `{ onServer: undefined }` alone would clear the form-level message but leave every field
+error in place, still blocking the next submit.
 
 **Submit wiring, identical in all three forms:**
 
@@ -247,6 +281,10 @@ as today; editing a field does not clear its error.
 
 ### 5.4 `UserForm`
 
+- **Snapshot (D81).** `UserEditPage` passes the live `useUser` result, which refetches on focus,
+  so the defaults are taken once: `const [defaults] = useState(() => userDefaults(user))`, the
+  same allowed initializer as the task form (D88). Today's `useState` initialisers behave this
+  way already.
 - `renderedFields: ["email", "first_name", "last_name", "password"]`,
   `codeToField: { email_already_in_use: "email" }`, `fallback: "Could not save. Try again."`.
 - Email is read-only in edit mode. The password label and `required` depend on the mode.
@@ -292,17 +330,27 @@ export function useUrlFieldSync<TValue>(options: {
 ```
 
 - The field's `listeners.onChange` calls `onChange`, which schedules the commit on the hook's
-  own timer, or commits at once when `delayMs` is 0. The value written is remembered as
-  `lastWritten`.
-- When `committed` changes to something other than `lastWritten`, the change came from
-  elsewhere (Back, a nav link, Clear, a dashboard card). The hook writes it into the field with
-  `form.setFieldValue(name, committed, { dontRunListeners: true })` and drops any pending commit.
-- Our own commit's echo (`committed === lastWritten`) is ignored, so it can never overwrite
-  newer typing.
-- Unmounting drops a pending commit. `cancel()` drops a pending commit and returns the field to
-  `committed`.
-- The seven `useSearchParamDraft` test cases move over unchanged in meaning, plus one case for
-  immediate mode (§7.2).
+  own timer, or commits at once when `delayMs` is 0. Each value written is appended to a queue of
+  **writes not yet echoed**.
+- A change in `committed` is detected with `equals` against the previous `committed` (default
+  `Object.is`; the status field passes an array comparison), never by array identity, so a
+  re-render that rebuilds the same array is not a change.
+- When `committed` equals a queued write, that is our own echo: the write and every write queued
+  before it are dropped, and the field is left alone, so an echo can never overwrite newer input.
+  A queue rather than D50's single `lastWritten` matters for immediate fields: two quick checkbox
+  clicks put two writes in flight, and the first echo must not briefly revert the second click.
+  Typed text keeps at most one write in flight, as before.
+- When `committed` equals no queued write, the change came from elsewhere (Back, a nav link,
+  Clear, a dashboard card). The hook clears the queue, drops any pending commit, and writes the
+  value into the field with `form.setFieldValue(name, committed, { dontRunListeners: true })`.
+- Unmounting drops a pending commit. `cancel()` drops a pending commit, clears the queue and
+  returns the field to `committed`, **also with `{ dontRunListeners: true }`**; otherwise the
+  field's own listener would schedule a commit of the old value and bring back the date Clear
+  just removed.
+- The seven `useSearchParamDraft` test cases move over unchanged in meaning, plus cases for
+  immediate mode, two writes in flight, and array equality (§7.2).
+- The panels' `defaultValues` are a mount-time snapshot of the URL (D81). After mount the URL
+  reaches the fields only through this hook.
 
 **`TaskFilters`**: `useAppForm` with defaults from the URL:
 `{ status: TaskStatus[], due_date_after: "yyyy-mm-dd" | "", due_date_before, overdue: boolean }`.
@@ -339,8 +387,8 @@ with no `<form>` element, so Enter submits nothing.
 
 | Module | Contents |
 |---|---|
-| `table-features.ts` | `tableFeatures({ rowSortingFeature, rowPaginationFeature, columnVisibilityFeature })`. No row-model slots: the server sorts and pages |
-| `table-contexts.ts` | `createTableHookContexts<typeof features>()`. A module of its own, which keeps the factory → components → factory imports acyclic; Table's docs warn that a cycle breaks Vite HMR |
+| `table-features.ts` | `tableFeatures({ rowSortingFeature, rowPaginationFeature, columnVisibilityFeature, columnMeta: {} as { cellClassName?: string } })`. No row-model slots: the server sorts and pages. `columnMeta` is v9's type-only slot for per-table column meta, used instead of augmenting the global `ColumnMeta` interface |
+| `table-contexts.ts` | `createTableHookContexts<typeof features>()`. A module of its own, which keeps the factory → components → factory imports acyclic; Table's docs warn that a cycle breaks Vite HMR. **`TableView`, `SortHeader` and `Pagination` import their context hooks from this module, never from `app-table.ts`** |
 | `app-table.ts` | `createTableHook({ features, getRowId: (row: { id: string }) => row.id, manualSorting: true, manualPagination: true, autoResetPageIndex: false, enableMultiSort: false, enableSortingRemoval: false, sortDescFirst: false, tableComponents: { TableView, Pagination }, headerComponents: { SortHeader }, …contexts })` → `useAppTable`, `createAppColumnHelper`, `useTableContext` |
 | `TableView.tsx` | Today's `<table>` markup through `FlexRender` (§6.2) |
 | `SortHeader.tsx` | Today's sort button and glyph (§6.2) |
@@ -353,8 +401,11 @@ with no `<form>` element, so Enter submits nothing.
 - `<th scope="col" className="p-3 font-medium text-slate-700">`. **`aria-sort` is rendered only
   when `column.getCanSort()`**: `"ascending"` / `"descending"` from `getIsSorted()`, otherwise
   `"none"`. Non-sortable headers carry no `aria-sort`, as today (D68).
-- `<td>` takes its class from the column's `meta.cellClassName` (declared by merging into
-  `ColumnMeta`), defaulting to `"p-3"`. This preserves today's per-column `text-slate-600`.
+- `<td>` takes its class from the column's `meta.cellClassName` (typed by the `columnMeta`
+  slot, §6.1), defaulting to `"p-3"`. This preserves today's per-column `text-slate-600`.
+- `getCanSort()` is true for **every accessor column** unless it opts out. Every column that is
+  not sortable today must therefore be a display column (no accessor) or set
+  `enableSorting: false`; otherwise it gains `aria-sort="none"` and a D68 regression.
 - `SortHeader` renders `<button type="button">` with `onClick={column.getToggleSortingHandler()}`,
   the label, and `<span aria-hidden="true">` with ▲ / ▼ for the active column and a faint ↕ for
   the others. Classes are unchanged. The accessible name stays the plain label (amended D68).
@@ -379,7 +430,7 @@ export function routePaginationChange(
   `resetScroll: false` (D47). It ignores the page index Table computed.
 - Otherwise, if `pageIndex` changed, it calls `goToPage(next.pageIndex + 1)`, which pushes.
 
-**`Pagination` component.** It reads `useTableContext()`:
+**`Pagination` component.** It reads the table context hook from `table-contexts.ts` (§6.1):
 
 | Today | After |
 |---|---|
@@ -400,14 +451,14 @@ Columns are defined at module scope in `features/tasks/task-columns.tsx` with
 `createAppColumnHelper<TaskListItem>()`. The sortable columns' labels come from `SORT_FIELDS`
 (D67's single model).
 
-| Column id | Header | Sortable | Cell |
-|---|---|---|---|
-| `title` | "Title" | No | `TaskTitleLink`: a `Link` to the detail page with `state={{ tasksSearch }}`, the search read by `useSearch({ from: "/shell/tasks" })` (D70), plus `OverdueBadge` |
-| `due_date` | `SortHeader` "Due date" | Yes | `formatDueDate`, or "—" (D76) |
-| `status` | `SortHeader` "Status" | Yes | `StatusBadge` |
-| `created_at` | `SortHeader` "Created" | Yes | `toLocaleDateString()` |
-| `assignee` | "Assignee" | No | Full name, or "Unassigned" |
-| `actions` | "Actions" | No | `TaskRowActions` |
+| Column id | Kind | Header | Sortable | Cell |
+|---|---|---|---|---|
+| `title` | accessor, `enableSorting: false` | "Title" | No | `TaskTitleLink`: a `Link` to the detail page with `state={{ tasksSearch }}`, the search read by `useSearch({ from: "/shell/tasks" })` (D70), plus `OverdueBadge` |
+| `due_date` | accessor | `SortHeader` "Due date" | Yes | `formatDueDate`, or "—" (D76) |
+| `status` | accessor | `SortHeader` "Status" | Yes | `StatusBadge` |
+| `created_at` | accessor | `SortHeader` "Created" | Yes | `toLocaleDateString()` |
+| `assignee` | accessor, `enableSorting: false` | "Assignee" | No | Full name, or "Unassigned" |
+| `actions` | display | "Actions" | No | `TaskRowActions` |
 
 - **State:** `{ sorting: orderingToSorting(search.ordering), pagination, columnVisibility: { assignee: showAssignee } }`,
   memoized on the URL values. The Assignee column is hidden for an Operator, as now.
@@ -431,8 +482,8 @@ Columns are defined at module scope in `features/tasks/task-columns.tsx` with
 ### 6.5 User table
 
 Columns: Name (`first last`), Email, Role (`ROLE_LABEL`, F13), Active ("Yes" / "No"), and Actions
-(`UserRowActions`: an Edit `ButtonLink`, and Deactivate unless it is the actor's own row, D66).
-The table sets `enableSorting: false`. Pagination works as in §6.3. Cards below `md` render from
+(`UserRowActions`, a display column: an Edit `ButtonLink`, and Deactivate unless it is the actor's
+own row, D66). The table sets `enableSorting: false`, so no header carries `aria-sort`. Pagination works as in §6.3. Cards below `md` render from
 the row model; the breakpoint is unchanged.
 
 ---
@@ -442,21 +493,25 @@ the row model; the breakpoint is unchanged.
 ### 7.1 The regression net
 
 The 303 existing tests (19 files) drive the DOM against MSW, so they should pass **unchanged**.
-The three exceptions are listed in §7.2. Any other edit to an existing test must be
+The exceptions are listed in §7.2. Any other edit to an existing test must be
 behaviour-neutral and justified in its commit message.
 
 ### 7.2 Tests that change on purpose
 
 | File | Change |
 |---|---|
-| `lib/useSearchParamDraft.test.ts` → `lib/useUrlFieldSync.test.ts` | The same seven cases (starts from the URL; commits once after 300 ms; ignores its own echo, even after more typing; takes a value it did not write and drops its pending commit; drops a pending commit on unmount; `cancel()`; calls the latest `commit`), plus immediate mode |
+| `src/test/render-app.tsx` (harness, not a test) | Renders `SessionProvider` instead of `AuthProvider` (§4.1). Its exports and behaviour are unchanged |
+| `lib/useSearchParamDraft.test.ts` → `lib/useUrlFieldSync.test.ts` | The same seven cases (starts from the URL; commits once after 300 ms; ignores its own echo, even after more typing; takes a value it did not write and drops its pending commit; drops a pending commit on unmount; `cancel()`, which also schedules no commit; calls the latest `commit`). Plus: immediate mode; two writes in flight, where the first echo does not revert the second; an equal but rebuilt array is not a change |
 | `components/Pagination.test.tsx` → `components/table/Pagination.test.tsx` | Mounts `Pagination` inside a small `useAppTable` harness; the same assertions |
 | `features/tasks/sorting.test.ts` | The `nextOrdering` cases become `orderingToSorting` / `sortingToOrdering` cases. The header-click cycle is already covered by `TaskListPage.test.tsx` |
 
 ### 7.3 New tests, each written first and seen to fail
 
 - `toServerErrors`: one case per rule in §5.2, including D75's "only when no rendered field has
-  an error".
+  an error", and that a key outside `renderedFields` never reaches `fields`.
+- `clearServerErrors` clears field errors as well as the form message.
+- **An untouched user edit form keeps its loaded values across a focus refetch** (D81). Today's
+  `useState` initialisers give this; `TaskForm.test.tsx` already pins the task form's case.
 - **Re-submit after a server error reaches the API**, for the task, user and login forms (D80).
   On `main` this passes trivially; it fails if `clearServerErrors` is left out.
 - `toTaskInput`: D32 (omitted vs `null` assignee), D40 (status only when changed), D76 (the
@@ -488,10 +543,16 @@ behaviour-neutral and justified in its commit message.
 The refactor touches every screen, so after implementation the **whole** QA report matrix is
 re-run in a browser, not only the fixed findings.
 
-**Environment.** The Compose stack runs the backend, worker, beat, db, redis and mailhog. The
-Compose `frontend` service is **stopped**: it bind-mounts the main checkout, not the worktree.
-`npm run dev` runs natively from `.worktrees/refactor-tanstack/frontend` on `:5173`, the only
-origin `CORS_ALLOWED_ORIGINS` and `CSRF_TRUSTED_ORIGINS` allow. Chromium via Playwright MCP.
+**Environment.** The Compose stack runs the backend, worker, beat, db, redis and mailhog.
+Chromium via Playwright MCP.
+
+1. **Baseline first.** While the Compose `frontend` service still serves `main` (`59ce235`), take
+   fresh baseline screenshots of both filter panels, both lists (table and cards) and the three
+   forms at 360, 768 and 1280. The QA report's §6 screenshots predate iteration 5 (role labels,
+   the sort select below `lg`), so they are not a valid baseline.
+2. **Then the branch.** Stop the Compose `frontend` service: it bind-mounts the main checkout,
+   not the worktree. Run `npm run dev` natively from `.worktrees/refactor-tanstack/frontend` on
+   `:5173`, the only origin `CORS_ALLOWED_ORIGINS` and `CSRF_TRUSTED_ORIGINS` allow.
 
 **Matrix.** Everything in `docs/qa/2026-10-07-frontend-qa-report.md` §3: A1–A11, R1–R10,
 D1–D5, L1–L20, T1–T20, U1–U16, §3.7 responsive at 360 / 768 / 1024 / 1280, and §3.8 console
@@ -500,10 +561,10 @@ hygiene. Plus the F1–F14 evidence checks of §7.1, and these refactor-specific
 | ID | Check |
 |---|---|
 | Q1 | After a server error, a second submit sends a second request and replaces the errors (task, user, login) |
-| Q2 | The filter panels match the QA report's §6 screenshots at 360, 768 and 1280; Clear cancels a pending date commit |
+| Q2 | The filter panels, lists and forms match the step 1 baseline at 360, 768 and 1280; Clear cancels a pending date commit |
 | Q3 | The pager: a page move pushes (Back returns); a size change replaces and returns to page 1; focus stays on the clicked page (D55) |
 | Q4 | Open a delete dialog, navigate away and back: the dialog is closed |
-| Q5 | Task edit open across a window-focus refetch keeps the user's status change (D40, D81) |
+| Q5 | Task and user edit forms open across a window-focus refetch, after the record changed on the server: an untouched form keeps the values it loaded, and a touched one keeps the user's edits, including a changed status (D40, D81) |
 | Q6 | No new console warnings anywhere, including none from store updates during render |
 
 **Record.** A new section, "## 8. Re-test (TanStack refactor)", in the QA report, in §7's
@@ -524,8 +585,8 @@ concern per commit.
 | Phase | Work |
 |---|---|
 | 0 | This spec |
-| 1 — Store | Add the three packages and check the single Store copy. Delete `App.tsx`. Session store and `SessionProvider` (replacing `AuthContext`). The delete-flow slice, the task-actions and user-list stores, `useTaskActions`, the combobox store. Rows read the store |
-| 2 — Forms | `components/form/` infrastructure and `server-errors.ts`. Then `LoginPage`, `UserForm`, and `TaskForm` last (D81, D32, D40, the combobox field) |
+| 1 — Store | Add the three packages and check the single Store copy. Delete `App.tsx`, `App.css` and the three template assets. Session store and `SessionProvider` (replacing `AuthContext`, including in the test harness). The delete-flow slice, the task-actions and user-list stores, `useTaskActions`, the combobox store. Rows read the store |
+| 2 — Forms | `components/form/` infrastructure and `server-errors.ts`. Then `LoginPage`, `UserForm` (with its D81 snapshot), and `TaskForm` last (D81, D32, D40, the combobox field) |
 | 3 — Filters | `useUrlFieldSync` with its tests moved first. Then `TaskFilters` and the extracted `UserFilters`. Remove `useSearchParamDraft` |
 | 4 — Tables | `components/table/` infrastructure, `Pagination` on the table, `routePaginationChange`, the sorting mappers. Then the user table, then the task table and cards |
 | 5 — Docs | §9.2 |
@@ -544,7 +605,6 @@ concern per commit.
 - **Known limitations:** Store is pre-1.0, an accepted risk. Exit criterion: at Store 1.0,
   re-check `createStore`, `useCreateStore`, `createStoreContext` and `useSelector`, then remove
   the note.
-- **Running the checks:** the frontend test count is updated.
 - **GenAI prompt and validation record:** this work's prompt, and how its output was validated
   (§7, §8).
 
@@ -560,7 +620,9 @@ concern per commit.
 | Pagination outside Table, on the existing props | The owner chose one pagination model (§1.1). D85 keeps D47's navigation |
 | Filters kept on `useSearchParamDraft`, outside Form | The owner chose one visual identity (§1.1). D82 keeps D46 and D50 |
 | Form's `listeners.onChangeDebounceMs` for filter text | The pending commit cannot be cancelled, and it does not solve the echo (D82) |
-| Passing the live task to `useAppForm` | A focus refetch would rewrite an untouched form (D81) |
+| Passing the live task or user to `useAppForm` | A focus refetch would rewrite an untouched form (D81) |
+| Letting every bound field display any `onServer` error it receives | Fields that show no error today (description, status, role, Active) would start to, and D75 would focus them instead of the alert (D80) |
+| A single `lastWritten` value in `useUrlFieldSync`, as in D50 | Correct for typed text, but two quick checkbox clicks put two writes in flight and the first echo would briefly revert the second (D82) |
 | TanStack Pacer for debouncing | A fourth library for two timers |
 
 ---
