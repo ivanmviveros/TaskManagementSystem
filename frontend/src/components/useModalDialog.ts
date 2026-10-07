@@ -19,7 +19,9 @@ const FOCUSABLE = [
  * - Escape cancels, unless `canCancel` is false (e.g. while a request is in
  *   flight, when Cancel itself is disabled).
  * - Tab and Shift+Tab wrap inside the dialog instead of escaping to the page
- *   behind it, which aria-modal tells assistive technology is inert.
+ *   behind it, which aria-modal tells assistive technology is inert. They also
+ *   bring focus back into the cycle from a non-tabbable element inside the
+ *   dialog (e.g. the focused error) or from <body>.
  * - On close, focus returns to whatever opened the dialog — if it still exists.
  *   A deleted row's button does not, and then focus is left to the page.
  */
@@ -55,10 +57,14 @@ export function useModalDialog<T extends HTMLElement>(onCancel: () => void, canC
       if (items.length === 0) return;
       const first = items[0];
       const last = items[items.length - 1];
-      if (event.shiftKey && document.activeElement === first) {
+      const current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      // Focus on something outside the cycle (the focused error, <body>) must
+      // also be pulled back in, or the browser's own Tab order leaves the dialog.
+      const outsideCycle = current === null || !items.includes(current);
+      if (event.shiftKey && (current === first || outsideCycle)) {
         event.preventDefault();
         last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
+      } else if (!event.shiftKey && (current === last || outsideCycle)) {
         event.preventDefault();
         first.focus();
       }

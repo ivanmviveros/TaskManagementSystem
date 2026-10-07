@@ -823,4 +823,24 @@ describe("TaskDetailPage", () => {
     await waitFor(() => expect(within(dialog).getByRole("alert")).toHaveFocus());
     expect(dialog).toContainElement(document.activeElement as HTMLElement);
   });
+
+  it.each([
+    ["Shift+Tab", true],
+    ["Tab", false],
+  ])("keeps %s inside the dialog when the focused error is the starting point (D60, D75)", async (_name, shift) => {
+    signedInAs(SUPERVISOR);
+    taskDetail({ can_delete: true });
+    deletesRespondWith(() =>
+      HttpResponse.json({ detail: "Refused.", code: "permission_denied" }, { status: 403 }),
+    );
+    await renderApp(`/tasks/${TASK_ID}`);
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: /^delete$/i }));
+    const dialog = screen.getByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: /^delete$/i }));
+    await waitFor(() => expect(within(dialog).getByRole("alert")).toHaveFocus());
+    await user.tab({ shift });
+    expect(dialog).toContainElement(document.activeElement as HTMLElement);
+    expect(document.activeElement).not.toBe(document.body);
+  });
 });
