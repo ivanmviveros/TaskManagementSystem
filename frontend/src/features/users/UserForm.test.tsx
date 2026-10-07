@@ -192,6 +192,17 @@ describe("UserForm", () => {
     expect(screen.getByRole("link", { name: /back to users/i })).toHaveAttribute("href", "/users");
   });
 
+  it("keeps a generic message for other load errors, with the way back", async () => {
+    server.use(
+      http.get(`${BASE}/users/${TARGET.id}/`, () =>
+        HttpResponse.json({ detail: "Database is down.", code: "server_error" }, { status: 500 }),
+      ),
+    );
+    await renderApp(`/users/${TARGET.id}`);
+    expect(await screen.findByRole("alert")).toHaveTextContent("Could not load that user.");
+    expect(screen.getByRole("link", { name: /back to users/i })).toHaveAttribute("href", "/users");
+  });
+
   it("still offers role and Active when editing someone else", async () => {
     server.use(http.get(`${BASE}/users/${TARGET.id}/`, () => HttpResponse.json(TARGET)));
     await renderApp(`/users/${TARGET.id}`);

@@ -5,17 +5,25 @@ import { ShellLayout } from "./ShellLayout";
 const MESSAGE = "There's nothing at this address.";
 
 /**
- * The router's defaultNotFoundComponent (D71). With notFoundMode "root" it always
- * renders at the root, outside AppShell, so wrapping it in ShellLayout here
- * cannot double the header. "/" redirects to each role's landing page, so one
+ * The root route's notFoundComponent (D71). Unmatched paths render at the root
+ * (notFoundMode "root"), and a thrown notFound() finds the root as the nearest
+ * route with a notFoundComponent, so this renders outside AppShell and wrapping
+ * it in ShellLayout here cannot double the header. "/" redirects to each role's landing page, so one
  * link serves every role.
  */
 export function AppNotFound() {
   const { user } = useAuth();
   if (user === null) {
     return (
-      <main className="mx-auto max-w-5xl p-4">
-        <NotFoundPanel title="Page not found" message={MESSAGE} linkTo="/login" linkLabel="Sign in" />
+      <main className="flex min-h-full items-center justify-center p-4">
+        <div className="w-full max-w-sm">
+          <NotFoundPanel
+            title="Page not found"
+            message={MESSAGE}
+            linkTo="/login"
+            linkLabel="Sign in"
+          />
+        </div>
       </main>
     );
   }

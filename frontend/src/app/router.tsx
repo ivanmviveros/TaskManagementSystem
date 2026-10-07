@@ -66,6 +66,10 @@ const rootRoute = createRootRouteWithContext<RouterContext>()({
     </>
   ),
   head: () => ({ meta: [{ title: APP_NAME }] }),
+  // D71: a thrown notFound() finds the root as the nearest route with a
+  // notFoundComponent, so AppNotFound (which wraps ShellLayout itself) never
+  // renders inside AppShell's Outlet and the header cannot double.
+  notFoundComponent: AppNotFound,
 });
 
 /** Redirect to /login when nobody is signed in, or to the role's landing page. */
@@ -216,11 +220,11 @@ export function createAppRouter(auth: AuthState, options: { history?: RouterHist
     routeTree,
     context: { auth },
     defaultPreload: false,
-    // D71: every unmatched path renders at the root — under the default "fuzzy"
-    // mode, /tasks/a/b would render inside AppShell and /does-not-exist outside
-    // it, and one component cannot be right in both places.
+    // D71: unmatched paths render at the root — under the default "fuzzy" mode,
+    // /tasks/a/b would render inside AppShell and /does-not-exist outside it, and
+    // one component cannot be right in both places. The component itself is the
+    // root route's notFoundComponent.
     notFoundMode: "root",
-    defaultNotFoundComponent: AppNotFound,
     ...(options.history === undefined ? {} : { history: options.history }),
   });
 }

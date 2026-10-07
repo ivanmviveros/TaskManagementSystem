@@ -609,6 +609,18 @@ describe("TaskDetailPage", () => {
     expect(screen.getByRole("link", { name: /back to tasks/i })).toBeInTheDocument();
   });
 
+  it("keeps the edit page's generic message for other errors, with the way back", async () => {
+    signedInAs(SUPERVISOR);
+    server.use(
+      http.get(`${BASE}/tasks/${TASK_ID}/`, () =>
+        HttpResponse.json({ detail: "Database is down.", code: "server_error" }, { status: 500 }),
+      ),
+    );
+    await renderApp(`/tasks/${TASK_ID}/edit`);
+    expect(await screen.findByRole("alert")).toHaveTextContent("Could not load that task.");
+    expect(screen.getByRole("link", { name: /back to tasks/i })).toBeInTheDocument();
+  });
+
   it("keeps other errors' message and still offers the way back", async () => {
     signedInAs(SUPERVISOR);
     server.use(

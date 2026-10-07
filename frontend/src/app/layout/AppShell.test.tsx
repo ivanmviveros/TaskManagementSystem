@@ -186,3 +186,13 @@ describe("unknown addresses (F4, D71)", () => {
     expect(screen.queryByRole("navigation", { name: /main/i })).not.toBeInTheDocument();
   });
 });
+
+describe("unknown addresses under a shell path, signed out", () => {
+  it("shows the bare not-found page, not a redirect (child guards do not run in root mode)", async () => {
+    signedInAs = null;
+    await renderApp("/tasks/a/b");
+    expect(await screen.findByRole("heading", { name: /page not found/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /sign in/i })).toHaveAttribute("href", "/login");
+    expect(screen.queryByRole("navigation", { name: /main/i })).not.toBeInTheDocument();
+  });
+});
