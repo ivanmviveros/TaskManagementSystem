@@ -6,10 +6,11 @@ import type { UserDetail } from "../types";
 interface UserTableProps {
   users: UserDetail[];
   onDelete: (user: UserDetail) => void;
+  currentUserId?: string;
 }
 
 /** The ≥`md` presentation of the user list, mirroring TaskTable. */
-export function UserTable({ users, onDelete }: UserTableProps) {
+export function UserTable({ users, onDelete, currentUserId }: UserTableProps) {
   return (
     <table className="w-full border-collapse bg-white text-left text-sm shadow-sm">
       <thead>
@@ -50,13 +51,16 @@ export function UserTable({ users, onDelete }: UserTableProps) {
                 >
                   Edit
                 </ButtonLink>
-                <Button
-                  variant="danger"
-                  aria-label={`Deactivate ${user.email}`}
-                  onClick={() => onDelete(user)}
-                >
-                  Deactivate
-                </Button>
+                {/* D66, the UX mirror of IsNotSelf: never offer a refusal. */}
+                {user.id !== currentUserId && (
+                  <Button
+                    variant="danger"
+                    aria-label={`Deactivate ${user.email}`}
+                    onClick={() => onDelete(user)}
+                  >
+                    Deactivate
+                  </Button>
+                )}
               </div>
             </td>
           </tr>

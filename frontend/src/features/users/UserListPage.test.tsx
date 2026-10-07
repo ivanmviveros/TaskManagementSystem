@@ -203,6 +203,25 @@ describe("UserListPage", () => {
       within(cards[0]).getByRole("button", { name: /deactivate operator@demo.local/i }),
     ).toBeInTheDocument();
   });
+
+  it("never offers the signed-in Admin a Deactivate for their own account (D66)", async () => {
+    usersRespondWith([ADMIN, operator()]);
+    await renderApp("/users");
+    const table = await screen.findByRole("table");
+    expect(
+      within(table).queryByRole("button", { name: /deactivate admin@demo.local/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(table).getByRole("button", { name: /deactivate operator@demo.local/i }),
+    ).toBeInTheDocument();
+    const ownCard = screen
+      .getAllByRole("article")
+      .find((card) => within(card).queryByText("admin@demo.local") !== null);
+    expect(ownCard).toBeDefined();
+    expect(within(ownCard as HTMLElement).queryByRole("button", { name: /deactivate/i })).toBeNull();
+    // Edit stays: an Admin may still rename themselves.
+    expect(within(table).getByRole("link", { name: /edit admin@demo.local/i })).toBeInTheDocument();
+  });
 });
 
 describe("UserListPage URL state", () => {

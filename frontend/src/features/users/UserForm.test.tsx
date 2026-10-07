@@ -155,4 +155,56 @@ describe("UserForm", () => {
     await waitFor(() => expect(body).not.toBeNull());
     expect(body).toMatchObject({ password: "a-new-strong-password-1" });
   });
+
+  it("shows an Admin's own role read-only, with no Active control (D66)", async () => {
+    let body: Record<string, unknown> | null = null;
+    server.use(
+      http.get(`${BASE}/users/${ADMIN.id}/`, () => HttpResponse.json(ADMIN)),
+      http.patch(`${BASE}/users/${ADMIN.id}/`, async ({ request }) => {
+        body = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json(ADMIN);
+      }),
+      http.get(`${BASE}/users/`, () =>
+        HttpResponse.json({ count: 0, next: null, previous: null, results: [] }),
+      ),
+    );
+    await renderApp(`/users/${ADMIN.id}`);
+    expect(
+      await screen.findByText(/you can't change your own role or deactivate your own account/i),
+    ).toBeInTheDocument();
+    expect(screen.queryByLabelText(/^role$/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole("checkbox", { name: /active/i })).not.toBeInTheDocument();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: /save changes/i }));
+    await waitFor(() => expect(body).not.toBeNull());
+    // Unchanged values, which the API accepts (D66).
+    expect(body).toMatchObject({ role: "ADMIN", is_active: true });
+  });
+
+  it("still offers role and Active when editing someone else", async () => {
+    server.use(http.get(`${BASE}/users/${TARGET.id}/`, () => HttpResponse.json(TARGET)));
+    await renderApp(`/users/${TARGET.id}`);
+    expect(await screen.findByLabelText(/^role$/i)).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: /active/i })).toBeInTheDocument();
+  });
+
+  it("shows a cannot_change_own_access refusal as a form-level message", async () => {
+    server.use(
+      http.get(`${BASE}/users/${TARGET.id}/`, () => HttpResponse.json(TARGET)),
+      http.patch(`${BASE}/users/${TARGET.id}/`, () =>
+        HttpResponse.json(
+          {
+            detail: "You cannot change your own role or deactivate your own account.",
+            code: "cannot_change_own_access",
+            errors: null,
+          },
+          { status: 400 },
+        ),
+      ),
+    );
+    await renderApp(`/users/${TARGET.id}`);
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: /save changes/i }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(/cannot change your own role/i);
+  });
 });
