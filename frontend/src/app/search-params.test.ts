@@ -3,6 +3,18 @@ import { describe, expect, it } from "vitest";
 import { validateTaskListSearch, validateUserListSearch } from "./search-params";
 
 describe("validateTaskListSearch", () => {
+  it("drops statuses the API does not know (D73)", () => {
+    expect(validateTaskListSearch({ status: ["BOGUS"] }).status).toBeUndefined();
+    expect(validateTaskListSearch({ status: ["PENDING", "BOGUS"] }).status).toEqual(["PENDING"]);
+    expect(validateTaskListSearch({ status: "BOGUS" }).status).toBeUndefined();
+  });
+
+  it("keeps a known ordering and drops an unknown one (D73)", () => {
+    expect(validateTaskListSearch({ ordering: "-due_date" }).ordering).toBe("-due_date");
+    expect(validateTaskListSearch({ ordering: "title" }).ordering).toBeUndefined();
+    expect(validateTaskListSearch({ ordering: 3 }).ordering).toBeUndefined();
+  });
+
   it("keeps every value the list can use", () => {
     expect(
       validateTaskListSearch({

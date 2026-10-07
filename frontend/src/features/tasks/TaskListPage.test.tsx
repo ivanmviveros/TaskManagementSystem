@@ -359,6 +359,15 @@ describe("task deletion from the list", () => {
 });
 
 describe("TaskListPage URL state", () => {
+  it("ignores an unknown status in the URL instead of sending it to the API (F10)", async () => {
+    signedInAs(SUPERVISOR);
+    tasksRespondWith([task()]);
+    await renderApp(`/tasks?status=${encodeURIComponent(JSON.stringify(["BOGUS"]))}`);
+    await screen.findByRole("table");
+    expect(lastQuery().getAll("status")).toEqual([]);
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
   it("reads the page, the page size and the filters from the URL", async () => {
     signedInAs(SUPERVISOR);
     tasksPaged(187);

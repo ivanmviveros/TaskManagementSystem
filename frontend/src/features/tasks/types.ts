@@ -2,6 +2,9 @@ import type { CurrentUser } from "../auth/types";
 
 export type TaskStatus = "PENDING" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED";
 
+/** Every status, in display order. One list, as D56 did for ROLES (D73). */
+export const TASK_STATUSES: TaskStatus[] = ["PENDING", "IN_PROGRESS", "COMPLETED", "CANCELLED"];
+
 /** The §8.3 pagination envelope. */
 export interface Paginated<T> {
   count: number;

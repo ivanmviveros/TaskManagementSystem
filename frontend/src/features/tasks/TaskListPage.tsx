@@ -30,7 +30,7 @@ export function TaskListPage() {
   const page = search.page ?? 1;
   const pageSize: PageSize = search.page_size ?? DEFAULT_PAGE_SIZE;
   const filters: Filters = {
-    status: search.status as Filters["status"],
+    status: search.status,
     due_date_after: search.due_date_after,
     due_date_before: search.due_date_before,
     overdue: search.overdue,

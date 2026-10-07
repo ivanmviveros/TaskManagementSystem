@@ -1,9 +1,7 @@
 import { Button } from "../../../components/Button";
 import { useSearchParamDraft } from "../../../lib/useSearchParamDraft";
 import { STATUS_LABEL } from "./StatusBadge";
-import type { TaskFilters as Filters, TaskStatus } from "../types";
-
-const STATUSES: TaskStatus[] = ["PENDING", "IN_PROGRESS", "COMPLETED", "CANCELLED"];
+import { TASK_STATUSES, type TaskFilters as Filters, type TaskStatus } from "../types";
 
 /** What this panel edits. Paging and ordering belong to the list. */
 export type FilterPatch = Partial<
@@ -53,7 +51,7 @@ export function TaskFilters({ filters, onChange, onClear }: TaskFiltersProps) {
       <fieldset className="mb-3">
         <legend className="mb-2 text-sm font-medium text-slate-700">Status</legend>
         <div className="flex flex-wrap gap-3">
-          {STATUSES.map((status) => (
+          {TASK_STATUSES.map((status) => (
             <label key={status} className="flex items-center gap-1.5 text-sm text-slate-700">
               <input
                 type="checkbox"

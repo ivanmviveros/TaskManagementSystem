@@ -1,4 +1,6 @@
 import { ROLES, type Role } from "../features/auth/types";
+import { isOrdering } from "../features/tasks/sorting";
+import { TASK_STATUSES, type TaskStatus } from "../features/tasks/types";
 import { isPageSize, type PageSize } from "../lib/pagination";
 
 /**
@@ -8,7 +10,7 @@ import { isPageSize, type PageSize } from "../lib/pagination";
  * show it (D48).
  */
 export interface TaskListSearch {
-  status?: string[];
+  status?: TaskStatus[];
   due_date_after?: string;
   due_date_before?: string;
   overdue?: boolean;
@@ -30,6 +32,14 @@ function asArray(value: unknown): string[] | undefined {
   if (Array.isArray(value)) return value.map(String);
   if (typeof value === "string" && value !== "") return [value];
   return undefined;
+}
+
+/** Statuses the API knows, or undefined when none survive (D73). */
+function asStatuses(value: unknown): TaskStatus[] | undefined {
+  const known = asArray(value)?.filter((status): status is TaskStatus =>
+    (TASK_STATUSES as string[]).includes(status),
+  );
+  return known === undefined || known.length === 0 ? undefined : known;
 }
 
 function asString(value: unknown): string | undefined {
@@ -65,12 +75,12 @@ function asRole(value: unknown): Role | undefined {
 
 export function validateTaskListSearch(search: Record<string, unknown>): TaskListSearch {
   return {
-    status: asArray(search.status),
+    status: asStatuses(search.status),
     due_date_after: asString(search.due_date_after),
     due_date_before: asString(search.due_date_before),
     // true only: the UI never sets false, and overdue=false means something else to the API.
     overdue: search.overdue === true || search.overdue === "true" ? true : undefined,
-    ordering: asString(search.ordering),
+    ordering: isOrdering(search.ordering) ? search.ordering : undefined,
     page: asPage(search.page),
     page_size: asPageSize(search.page_size),
   };
