@@ -9,7 +9,8 @@
 
 ## 1. Scope
 
-Three frontend improvements to the Tasks and Users lists. **No backend change:**
+Three frontend improvements to the Tasks and Users lists, plus one app-wide fix raised during
+spec review (#4). **No backend change:**
 `DefaultPageNumberPagination` already honours `?page_size=` up to `max_page_size = 100`, and both
 `buildTaskQuery` and `buildUserQuery` already send it.
 
@@ -18,6 +19,7 @@ Three frontend improvements to the Tasks and Users lists. **No backend change:**
 | 1 | A numbered pager — "first, prev, 1, 3, 5 (current), 7, 10, next, last" | `Pagination` offers Previous / Next and "1–20 of N" only, enabled by the response's `next` / `previous` links. |
 | 2 | A page-size choice of 10, 20, 50 or 100, within the backend's `max_page_size` of 100 | Both list pages hard-code `PAGE_SIZE = 20`. |
 | 3 | Filtering reflected in the URL. Today the URL carries filters only when the list is reached from a dashboard card. | `/tasks` declares a `validateSearch`, but `TaskListPage` reads it **once** to seed `useState`; nothing writes back. `/users` has no search schema at all. |
+| 4 | The browser tab names the current page — Dashboard, Tasks, Users, a task's details, and so on | Every page shows `tms-frontend`, the static `<title>` in `index.html`. Nothing sets a title per route. |
 
 ### 1.1 Choices made by the project owner
 
@@ -71,6 +73,8 @@ Continues from D44.
 | D54 | **A 404 for a page above 1 replaces the URL with page 1**, without showing the error. | §1.2.3. Page 1 never 404s (`allow_empty_first_page`), so this cannot loop. Stepping back one page at a time could take many requests for a stale bookmark. |
 | D55 | **The current page is a button with `aria-current="page"` whose click does nothing** — not a disabled button, not a `<span>`. Number buttons are keyed by page number. First / Prev / Next / Last still become `disabled` at the ends. | A clicked number becomes the current page; disabling or replacing that element would drop focus to `<body>`. At the ends the same focus drop is accepted: Prev and Next already behave that way today, and a disabled "Next" on the last page is the signal users expect. |
 | D56 | **`ROLES` is exported once from `features/auth/types.ts`**, beside `Role`, and used by the router, `UserListPage` and `UserForm`. | The `/users` search schema would otherwise add a third private copy of the list. |
+| D57 | **Page titles are declared on the routes** with TanStack Router's `head` option and rendered by `<HeadContent />` in the root route. The format is `"<Page> · Task Management System"`, page name first. The root route's own `head` supplies the bare `"Task Management System"` for any route without one. | The framework's mechanism (AGENTS.md principle 12), declared next to each route's path and guard instead of a `document.title` effect repeated in every page. The deepest match wins (`buildTagsFromMatches` walks matches from the leaf). Page name first, so it survives tab truncation. |
+| D58 | **`index.html` loses its static `<title>`.** | `HeadContent` renders a React 19 `<title>`, which React hoists into `<head>` after the existing tags. The tab shows the document's **first** `<title>`, so a static one would keep showing `tms-frontend` forever. Without it, the tab shows the URL only until the bundle runs. |
 
 ---
 
@@ -342,11 +346,38 @@ that no longer exists, and the list now lands on page 1 instead of showing an er
 
 ---
 
-## 6. Documentation
+## 6. Page titles (D57, D58)
+
+`rootRoute`'s component becomes `<><HeadContent /><Outlet /></>`, and its
+`head: () => ({ meta: [{ title: "Task Management System" }] })` is the fallback. Each leaf route
+declares its own title through one helper, `pageTitle(name)`, that adds the suffix:
+
+| Route | Title |
+|---|---|
+| `/login` | Sign in · Task Management System |
+| `/dashboard` | Dashboard · Task Management System |
+| `/tasks` | Tasks · Task Management System |
+| `/tasks/new` | New task · Task Management System |
+| `/tasks/$taskId` | Task details · Task Management System |
+| `/tasks/$taskId/edit` | Edit task · Task Management System |
+| `/users` | Users · Task Management System |
+| `/users/new` | New user · Task Management System |
+| `/users/$userId` | Edit user · Task Management System |
+
+`/` only redirects, so it needs no title. A route without a match falls back to the root title.
+
+The detail and edit titles are generic. Naming the task itself ("Review the brief · …") would need
+the task in a route loader, and this app fetches it inside the page with TanStack Query. That is
+listed as out of scope.
+
+---
+
+## 7. Documentation
 
 The README is the reviewer's primary deliverable (root AGENTS.md §7):
 
-- **Key implementation decisions:** a section "List state lives in the URL", summarising D45–D56.
+- **Key implementation decisions:** a section "List state lives in the URL", summarising D45–D56,
+  and a short note on page titles (D57, D58).
 - **Deliberate overrides of AGENTS.md:** frontend AGENTS.md §4 names three kinds of state, each
   with one tool. List view state is a fourth — URL state, owned by the router. Recorded there; the
   AGENTS.md files themselves are not edited.
@@ -354,7 +385,7 @@ The README is the reviewer's primary deliverable (root AGENTS.md §7):
 
 ---
 
-## 7. Testing
+## 8. Testing
 
 | Area | Test |
 |---|---|
@@ -381,6 +412,8 @@ The README is the reviewer's primary deliverable (root AGENTS.md §7):
 | Users, external change | Once a search has been committed, clicking the "Users" nav link empties the box and the query |
 | Users, unknown role | `role=ROOT` is dropped from the request |
 | Dashboard | The existing drill-through tests pass unmodified |
+| Page titles | Rendering each route in the §6 table sets `document.title` to its title. Navigating from `/dashboard` to `/tasks` changes it, so the title follows client-side navigation and not just the first render. |
+| Page titles | `index.html` contains no `<title>` (a plain file read), so nothing can shadow the route titles in a real browser |
 
 **Test helper.** `renderApp` returns the router it created alongside the render result, so tests
 can assert `router.state.location.search` and `router.history.length`, and call
@@ -409,7 +442,7 @@ console must stay clean throughout (frontend AGENTS.md §7). Then `npm run lint`
 
 ---
 
-## 8. Out of scope
+## 9. Out of scope
 
 - A generic `useListSearch` hook (D45).
 - Readable array encoding in the URL. `status=["PENDING"]` stays in TanStack's JSON form, which the
@@ -420,3 +453,4 @@ console must stay clean throughout (frontend AGENTS.md §7). Then `npm run lint`
 - A jump-to-page input.
 - The detail page's "Back to tasks" link preserving the list's filters. Browser Back now does.
 - Any backend change.
+- Titles that name the record — a task's or a user's own name — rather than the page (§6).
