@@ -22,6 +22,12 @@ docker compose exec -T backend pytest -x -q
 
 **Frontend:** `npm run --prefix frontend test`. (npm 10 has no working `--prefix` for `install`, but `run` is fine.)
 
+**Single-module pytest runs need `--no-cov`.** `addopts` in `backend/pyproject.toml:74` carries
+`--cov=apps --cov-fail-under=80`, so running one test file exits **non-zero** even when every
+test in it passes — `8 passed` followed by `FAIL Required test coverage of 80.00% not reached`.
+The narrow commands below pass `--no-cov` for that reason; the full runs through
+`scripts/run-backend-tests.sh` keep the gate.
+
 **Commit after every task.** Each task leaves both suites green.
 
 **Tasks 5, 6 and 7 are atomic by necessity.** Each converts a service, its callers and its tests in one commit — a half-converted service does not import. Do not split them to get a smaller diff.
@@ -56,7 +62,7 @@ docker compose exec -T backend pytest -x -q
 | `backend/apps/users/views.py` | build DTOs |
 | `backend/apps/users/management/commands/seed_demo_data.py` | `--users` / `--tasks`, random names, random assignment |
 | `backend/apps/core/tests/test_layering.py` | guard against `data: dict` returning |
-| 4 backend test modules | 16 service call sites migrate to DTOs |
+| 4 backend test modules | 15 service call sites migrate to DTOs |
 | `backend/apps/tasks/tests/test_selectors.py` | 5 stats subscripts become attribute access |
 | `frontend/src/lib/api-client.ts` | export a single-flighted `refreshSession()` |
 | `frontend/src/features/auth/services/auth-service.ts` | add `restoreSession()` |
@@ -181,8 +187,12 @@ Expected: it prints `==> pytest via local uv`. On the machine in spec §1.1 the 
 - [ ] **Step 6: Verify the hook fires**
 
 ```bash
-uv run pre-commit run pytest --hook-stage pre-push --all-files
+pre-commit run pytest --hook-stage pre-push --all-files
 ```
+
+Bare `pre-commit`, as the README invokes it: it is not in `backend`'s dev group and there is no
+root `pyproject.toml`, so `uv run pre-commit` would not resolve.
+
 Expected: `pytest (docker compose, falling back to local uv)....Passed`
 
 - [ ] **Step 7: Commit**
@@ -225,11 +235,21 @@ Expected: `uv.lock` listed as modified. It is a deliverable — the `compat` CI 
 - [ ] **Step 3: Confirm the toolchain still starts**
 
 ```bash
-docker compose build backend
+docker compose up -d --build backend
 bash scripts/run-backend-tests.sh
 uv run --directory backend mypy
 ```
-Expected: all pass, 320 tests. Nothing imports pydantic yet; this only proves the plugin loads and the image builds.
+
+`up -d --build`, **not** `docker compose build`. Dependencies are installed into the image at
+build time (`UV_PROJECT_ENVIRONMENT=/usr/local`) and only `./backend` is bind-mounted, so a
+plain `build` leaves the running container on the old image and every later
+`docker compose exec ... pytest` fails with `ModuleNotFoundError: No module named 'pydantic'`.
+That message is one word away from the one Task 3 Step 2 tells you to expect, so it is easy to
+misread as the TDD step working. Rebuild `worker` and `beat` too if they are running — they
+share the image.
+
+Expected: all pass, 320 tests. Nothing imports pydantic yet; this only proves the plugin loads
+and the image builds.
 
 - [ ] **Step 4: Commit**
 
@@ -327,7 +347,7 @@ class TestStatsOutput:
 - [ ] **Step 2: Run them and watch them fail**
 
 ```bash
-docker compose exec -T backend pytest apps/tasks/tests/test_dto.py -q
+docker compose exec -T backend pytest apps/tasks/tests/test_dto.py -q --no-cov
 ```
 Expected: collection error — `ModuleNotFoundError: No module named 'apps.tasks.dto'`
 
@@ -400,7 +420,7 @@ class TaskStatsOutput(BaseModel):
 - [ ] **Step 4: Run them and watch them pass**
 
 ```bash
-docker compose exec -T backend pytest apps/tasks/tests/test_dto.py -q
+docker compose exec -T backend pytest apps/tasks/tests/test_dto.py -q --no-cov
 ```
 Expected: 8 passed
 
@@ -482,7 +502,7 @@ class TestUpdateInput:
 - [ ] **Step 2: Run them and watch them fail**
 
 ```bash
-docker compose exec -T backend pytest apps/users/tests/test_dto.py -q
+docker compose exec -T backend pytest apps/users/tests/test_dto.py -q --no-cov
 ```
 Expected: `ModuleNotFoundError: No module named 'apps.users.dto'`
 
@@ -527,7 +547,7 @@ class UserUpdateInput(BaseModel):
 - [ ] **Step 4: Run them and watch them pass**
 
 ```bash
-docker compose exec -T backend pytest apps/users/tests/test_dto.py -q
+docker compose exec -T backend pytest apps/users/tests/test_dto.py -q --no-cov
 ```
 Expected: 7 passed
 
@@ -641,12 +661,37 @@ import logging
 from apps.tasks.dto import TaskCreateInput, TaskUpdateInput
 ```
 
+`TaskCreateInput` is unused until Step 5 converts the `create` call sites. If you run ruff
+between steps it will flag `F401` — that is expected mid-task, not a mistake.
+
 - [ ] **Step 2: Run them and watch them fail**
 
 ```bash
-docker compose exec -T backend pytest apps/tasks/tests/test_services.py -q
+docker compose exec -T backend pytest apps/tasks/tests/test_services.py -q --no-cov
 ```
-Expected: the six new tests fail. `TaskUpdateInput` constructs fine, but `update()` still does `"status" in data` — a model has no `__contains__` — so the failure is `TypeError: argument of type 'TaskUpdateInput' is not iterable`. That error is the proof the conversion is needed.
+Expected: **four** of the six fail. Read the next paragraph before assuming a green run means
+you are done.
+
+`BaseModel` defines `__iter__` but **no** `__contains__`, so `"status" in data` does not raise —
+Python falls back to iterating, compares the string against `(name, value)` tuples, and quietly
+returns `False`. Verified against pydantic 2.12.5:
+
+```python
+>>> "a" in M(a="x")      # a model, not a dict
+False
+>>> sorted(M(a="x"))
+[('a', 'x'), ('b', None)]
+```
+
+So an unconverted `update()` with a DTO argument becomes a **silent no-op**: every `in` test is
+false, nothing is written, and no exception is raised. Two of the new tests therefore *pass*
+before the conversion — `test_an_omitted_due_date_leaves_it_alone` and
+`test_a_dto_with_no_fields_set_changes_nothing` — because "change nothing" is exactly what a
+broken branch does.
+
+This makes spec §3.3's warning sharper than it first reads: a missed `in data` branch does not
+crash, it silently stops writing that field. Only the D32 assertions catch it, which is why
+all four of them are in Step 1.
 
 - [ ] **Step 3: Convert the service**
 
@@ -722,6 +767,15 @@ Add the import:
 from apps.tasks.dto import TaskCreateInput, TaskUpdateInput
 ```
 
+One deliberate gap to be aware of, since it is a behaviour change the suite will not catch:
+`TaskUpdateInput(status=None)` now skips `_validate_transition` (the `requested is not None`
+guard) and then writes `None` through the `_MUTABLE_FIELDS` loop, where the dict version raised
+`InvalidStatusTransition`. The view cannot produce it — `TaskUpdateSerializer.status` is a
+`ChoiceField(required=False)` with no `allow_null` — so this is unreachable over HTTP, but the
+DTO's own `status: str | None` admits it. Either skip `status` in the loop when `data.status is
+None`, or leave it and know it is there. Do not widen the test suite to cover an input the HTTP
+boundary rejects.
+
 - [ ] **Step 4: Convert the two view call sites**
 
 `backend/apps/tasks/views.py:90`:
@@ -753,7 +807,12 @@ Enumerate them, so none is missed:
 ```bash
 grep -rn "data={" backend/apps/tasks/tests/test_services.py backend/apps/notifications/tests/test_on_commit.py backend/apps/core/tests/test_error_paths.py
 ```
-Expected: 8 + 1 + 3 lines. One of the three in `test_error_paths.py` is a *users* call site — leave that for Task 6.
+Expected: 8 + 1 + 3 lines — but only **15 of those are service call sites**, not 16. In
+`test_error_paths.py` the three hits are line 105 (a *users* service call — leave it for Task
+6), line 129 (a tasks service call — yours), and line 115, which is
+`UserUpdateSerializer(data={"password": "123"}, partial=True)`. That last one is a **serializer**
+and must be left exactly as it is: serializers keep taking dicts (D29), and only the service
+boundary moves.
 
 The conversion is mechanical: a dict literal becomes a constructor call with the same keys as keyword arguments.
 
@@ -789,7 +848,7 @@ Expected: all pass, including the six new tests. If `test_the_update_log_records
 Temporarily change the log line back to `sorted(data)` and run that one test:
 
 ```bash
-docker compose exec -T backend pytest apps/tasks/tests/test_services.py::test_the_update_log_records_field_names_never_values -q
+docker compose exec -T backend pytest apps/tasks/tests/test_services.py::test_the_update_log_records_field_names_never_values -q --no-cov
 ```
 Expected: **FAIL**, with the submitted title visible in the assertion diff. Restore `sorted(fields)`. A guard that cannot fail is decoration.
 
@@ -858,9 +917,21 @@ from apps.users.dto import UserUpdateInput
 - [ ] **Step 2: Run and watch them fail**
 
 ```bash
-docker compose exec -T backend pytest apps/core/tests/test_error_paths.py -q
+docker compose exec -T backend pytest apps/core/tests/test_error_paths.py -q --no-cov
 ```
-Expected: `test_a_dto_with_no_fields_set_writes_nothing` fails with `TypeError: argument of type 'UserUpdateInput' is not iterable`. The rejection test already passes — the DTO landed in Task 4.
+Expected: **both pass already.** That is not a mistake in the plan, and it is worth
+understanding before you convert anything.
+
+Because a model has no `__contains__` (see Task 5 Step 2), every `name in data` in the
+unconverted `update()` is `False`, `changed` stays empty, the `if not changed: return` fires,
+and `returned is target` and `repository.saved == []` both hold — for the wrong reason. The
+rejection test passes because the DTO itself landed in Task 4.
+
+So this task has **no red step available for the no-op case**: the assertion cannot distinguish
+a correct early return from a completely broken one. What makes the conversion verifiable is
+Step 6's full-suite run, where the 4 migrated call sites in `test_services.py` exercise the
+branches that must actually fire. Do not treat the green run here as evidence the service
+works.
 
 - [ ] **Step 3: Convert the service**
 
@@ -909,7 +980,8 @@ Replace `update` (lines 39-54):
         return user
 ```
 
-The `data.password is not None` narrowing is for mypy (`set_password` takes `str`); `password=None` is not a value the serializer can produce.
+The `data.password is not None` narrowing is for mypy (`set_password` takes `str`);
+`password=None` is not a value the serializer can produce.
 
 Add the import:
 
@@ -987,12 +1059,14 @@ def test_task_stats_returns_a_typed_model(supervisor):
     assert set(stats.model_dump()) == {"total", "by_status", "overdue", "due_next_7_days"}
 ```
 
-Import `TaskStatsOutput` from `apps.tasks.dto`, and use whichever user fixture the module already provides rather than inventing one.
+Import `TaskStatsOutput` from `apps.tasks.dto`. The `supervisor` fixture is defined in the root
+`backend/conftest.py:43`, so the signature above works verbatim; the module already has a
+module-level `pytestmark = pytest.mark.django_db`.
 
 - [ ] **Step 2: Run and watch it fail**
 
 ```bash
-docker compose exec -T backend pytest apps/tasks/tests/test_selectors.py -q
+docker compose exec -T backend pytest apps/tasks/tests/test_selectors.py -q --no-cov
 ```
 Expected: `AssertionError` on the `isinstance` — `task_stats` still returns a dict.
 
@@ -1037,7 +1111,7 @@ Expected: 5 lines. `stats["total"]` becomes `stats.total`; `task_stats(user)["du
 This is the assertion that matters most — the dashboard reads this endpoint.
 
 ```bash
-docker compose exec -T backend pytest apps/tasks -q -k "stats"
+docker compose exec -T backend pytest apps/tasks -q -k "stats" --no-cov
 bash scripts/run-backend-tests.sh
 docker compose exec -T backend mypy .
 docker compose exec -T backend python manage.py spectacular --fail-on-warn
@@ -1075,12 +1149,14 @@ def test_no_service_declares_an_untyped_data_parameter(module):
     assert "data: dict" not in source
 ```
 
-Confirm how the existing scans read the module source and match it — if they use `inspect.getsource`, reuse it; if they read `module.__file__`, do that instead.
+This drops in unchanged: `test_layering.py:7` already imports `inspect`, both existing scans
+call `inspect.getsource(module)`, and `pytest`, `task_services` and `user_services` are all
+already in scope.
 
 - [ ] **Step 2: Run it — it should pass immediately**
 
 ```bash
-docker compose exec -T backend pytest apps/core/tests/test_layering.py -q
+docker compose exec -T backend pytest apps/core/tests/test_layering.py -q --no-cov
 ```
 Expected: pass, because Tasks 5 and 6 already converted both services.
 
@@ -1103,14 +1179,20 @@ Three things change together: the flags, the random user generation, and the ran
 
 **Files:**
 - Modify: `backend/apps/users/management/commands/seed_demo_data.py`
-- Create or modify: `backend/apps/users/tests/test_seed_demo_data.py` (check whether one exists)
+- Modify: `backend/apps/users/tests/test_seed_command.py` (it already exists)
 
-- [ ] **Step 1: Find the existing seed tests**
+- [ ] **Step 1: Read the existing seed tests**
 
 ```bash
 grep -rln "seed_demo_data" backend/apps
 ```
-Expected: the command plus any existing test module. Extend what is there rather than starting a parallel file.
+Expected: the command plus `backend/apps/users/tests/test_seed_command.py`. **Extend that
+module** — the filename is `test_seed_command.py`, not `test_seed_demo_data.py`.
+
+It already has `pytestmark = pytest.mark.django_db` and imports `pytest`, `call_command`,
+`CommandError`, `Role`, `Task` and `User`, so when you append the cases below, drop their
+duplicate docstring, `pytestmark` and import lines. Its existing `test_it_is_idempotent` and
+`test_every_seeded_user_can_authenticate` both still pass under this rewrite.
 
 - [ ] **Step 2: Write the failing tests**
 
@@ -1215,7 +1297,7 @@ class TestValidation:
 - [ ] **Step 3: Run them and watch them fail**
 
 ```bash
-docker compose exec -T backend pytest apps/users/tests/test_seed_demo_data.py -q
+docker compose exec -T backend pytest apps/users/tests/test_seed_command.py -q --no-cov
 ```
 Expected: the flag tests fail with `CommandError: unrecognized arguments: --users`.
 
@@ -1371,7 +1453,7 @@ Keep the existing `random.seed(20261006)` in `handle`. It makes a fresh run repr
 - [ ] **Step 7: Run the tests**
 
 ```bash
-docker compose exec -T backend pytest apps/users/tests/test_seed_demo_data.py -q
+docker compose exec -T backend pytest apps/users/tests/test_seed_command.py -q --no-cov
 bash scripts/run-backend-tests.sh
 ```
 Expected: all pass.
@@ -1389,7 +1471,7 @@ Expected: 8 rows with varied names and a mix of `OPERATOR` and `SUPERVISOR`. The
 - [ ] **Step 9: Commit**
 
 ```bash
-git add backend/apps/users/management/commands/seed_demo_data.py backend/apps/users/tests/test_seed_demo_data.py
+git add backend/apps/users/management/commands/seed_demo_data.py backend/apps/users/tests/test_seed_command.py
 git commit -m "feat: parameterise seed_demo_data with user and task counts"
 ```
 
@@ -1446,10 +1528,12 @@ The deduplication is a **required** part of the bootstrap change, not a side ben
 
 - [ ] **Step 1: Find the existing single-flight test**
 
-```bash
-grep -rn "refreshInFlight\|single\|expected 5 to be 1" frontend/src/lib/
-```
-It is the model for the new test: the iteration-1 suite proved the guard by removing it and watching `expected 5 to be 1`.
+It is `frontend/src/lib/api-client.test.ts:108`, `"shares one in-flight refresh across
+concurrent 401s"`. Read it first — it is the model for the new test, and the iteration-1 suite
+proved that guard by removing it and watching `expected 5 to be 1`.
+
+`server`, `http`, `HttpResponse` and `BASE` are already imported in that module; only
+`refreshSession` needs adding to the import on line 5.
 
 - [ ] **Step 2: Write the failing test**
 
@@ -1663,7 +1747,7 @@ it("makes exactly one failed request for an anonymous visitor, and it is the ref
     ),
   );
 
-  renderApp({ initialPath: "/login" });
+  await renderApp("/login");
   await screen.findByRole("heading", { name: /sign in/i });
 
   expect(failures).toEqual(["POST /api/v1/auth/refresh/"]);
@@ -1675,14 +1759,21 @@ it("restores a session from a valid cookie with no failed request", async () => 
     if (response.status >= 400) failures.push(String(response.status));
   });
 
-  renderApp({ initialPath: "/" });
+  await renderApp("/");
   await screen.findByRole("navigation", { name: /main/i });
 
   expect(failures).toEqual([]);
 });
 ```
 
-Remove the listener in cleanup (`server.events.removeAllListeners()`), or it leaks into later tests. The remaining 401 on `/auth/refresh/` for an anonymous visitor is correct HTTP and stays — returning 200 for "no session" would contradict the status the permission-matrix suite asserts.
+`renderApp` takes a **positional path string** — `renderApp(initialPath = "/")` at
+`frontend/src/test/render-app.tsx:36` — not an options object. Vitest strips types, so an object
+would not fail to compile; it would reach `createMemoryHistory` and the assertions would just
+time out with no useful message, and `npm run build` would only catch it at Task 16.
+
+`auth-routing.test.tsx` has no `BASE` constant — it spells URLs out in full — so add one for
+these tests. Remove the listener in cleanup (`server.events.removeAllListeners()`), or it leaks
+into later tests. The remaining 401 on `/auth/refresh/` for an anonymous visitor is correct HTTP and stays — returning 200 for "no session" would contradict the status the permission-matrix suite asserts.
 
 - [ ] **Step 6: Verify in the browser**
 
@@ -1832,13 +1923,15 @@ grep -n "deactivate operator@demo.local" frontend/src/features/users/UserListPag
 Expected: 3 lines. Wrap each in `within(table)`, as the task list already does:
 
 ```ts
-const table = screen.getByRole("table");
+const table = await screen.findByRole("table");
 const deactivate = await within(table).findByRole("button", {
   name: /deactivate operator@demo.local/i,
 });
 ```
 
-Import `within` from `@testing-library/react` if it is not already imported.
+`findByRole`, not `getByRole`: at all three sites the click follows `await renderApp("/users")`
+immediately, and at that moment the DOM holds only AuthContext's `role="status"` loading div, so
+the synchronous query throws. `within` is already imported at line 1 of that module.
 
 - [ ] **Step 2: Write the failing card test**
 
@@ -1847,10 +1940,11 @@ it("renders a card per user for narrow viewports", async () => {
   // jsdom applies no CSS, so BOTH presentations are in the DOM. That is why
   // the table assertions above are scoped, and why the card gets its own test
   // rather than pretending one does not exist.
-  renderApp({ initialPath: "/users" });
+  usersRespondWith([operator()]);
+  await renderApp("/users");
 
   const cards = await screen.findAllByRole("article");
-  expect(cards).toHaveLength(2);
+  expect(cards).toHaveLength(1);
   expect(within(cards[0]).getByText("operator@demo.local")).toBeInTheDocument();
   expect(
     within(cards[0]).getByRole("button", { name: /deactivate operator@demo.local/i }),
@@ -1858,7 +1952,11 @@ it("renders a card per user for narrow viewports", async () => {
 });
 ```
 
-Match the user count to whatever the module's fixture returns.
+The `usersRespondWith([operator()])` line is required, not decoration: this module's
+`beforeEach` overrides only `/users/me/`, and every test sets its own user list. Without it the
+shared default `emptyPage` answers, the page renders its empty state, and `findAllByRole`
+times out with no `article` in the document. One user, so the count is **1** — the module's
+other user object (`ADMIN`) is the signed-in actor and never appears in the list.
 
 - [ ] **Step 3: Run and watch it fail**
 
