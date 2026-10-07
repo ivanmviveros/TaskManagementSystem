@@ -4,12 +4,12 @@
     {
       "id": 1,
       "subject": "Task 1: The pre-push script",
-      "status": "pending"
+      "status": "completed"
     },
     {
       "id": 2,
       "subject": "Task 2: Add pydantic",
-      "status": "pending",
+      "status": "completed",
       "blockedBy": [
         1
       ]
@@ -144,5 +144,5 @@
       ]
     }
   ],
-  "lastUpdated": "2026-10-06T00:00:00Z"
+  "lastUpdated": "2026-10-07T01:00:38+00:00"
 }
