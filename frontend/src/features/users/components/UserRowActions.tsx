@@ -4,7 +4,10 @@ import { useAuth } from "../../auth/hooks/useAuth";
 import type { UserDetail } from "../types";
 import { useUserListContext } from "../user-list-context";
 
-/** A user row's Edit and Deactivate, shared by the table and the cards. */
+/**
+ * A user row's Edit and Deactivate, shared by the table and the cards.
+ * Must render inside UserListProvider: it reads the page's store from it.
+ */
 export function UserRowActions({ user }: { user: UserDetail }) {
   const { user: currentUser } = useAuth();
   const { store } = useUserListContext();

@@ -267,6 +267,15 @@ describe("UserListPage", () => {
     ).toBeInTheDocument();
   });
 
+  it("opens the deactivate dialog from a card's Deactivate button", async () => {
+    usersRespondWith([operator()]);
+    await renderApp("/users");
+    const user = userEvent.setup();
+    const [card] = await screen.findAllByRole("article");
+    await user.click(within(card).getByRole("button", { name: /deactivate operator@demo.local/i }));
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+  });
+
   it("never offers the signed-in Admin a Deactivate for their own account (D66)", async () => {
     usersRespondWith([ADMIN, operator()]);
     await renderApp("/users");
