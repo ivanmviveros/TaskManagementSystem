@@ -485,3 +485,66 @@ Stored in [`screenshots/`](screenshots/). Naming is `<role>-<page>-<width>.png`.
 | Users list | `admin-users-list-360.png` | `admin-users-list-768.png` | `admin-users-list-1280.png` |
 | User new | `admin-user-new-360.png` | | `admin-user-new-1280.png` |
 | User edit | `admin-user-edit-360.png` | | `admin-user-edit-1280.png` |
+
+## 7. Re-test (iteration 5)
+
+| | |
+|---|---|
+| **Commit** | `2ea2941` (`fix/iteration-5`, clean tree) |
+| **Environment** | Same Compose stack. `frontend` restarted before the run |
+| **Browser** | Chromium via Playwright MCP, 1280 px unless stated |
+| **Roles exercised** | Supervisor, Admin, anonymous |
+
+### 7.1 Findings
+
+| ID | Fixed | Evidence |
+|---|---|---|
+| F1 | ✅ | Admin `/users?search=admin%40demo.local`: own row offers only **Edit**. A peer row (`operator@demo.local`) still offers Edit and Deactivate. Same at 360 px (card). Own edit form: no Role select (Role shown as "Admin" with "You can't change your own role or deactivate your own account."), no Active checkbox. The API guards (403 `cannot_delete_self`, 400 `cannot_change_own_access`) were not exercised live: a failing guard would lock out the demo Admin. The backend suite covers them |
+| F2 | ✅ | `/tasks/new`, submit empty → `document.activeElement.id === "title"` (`aria-invalid`, `aria-describedby="title-error"`). Delete dialog: with the DELETE answered 403 by a Playwright route (it never reached the server), the dialog stays open and focus is on its alert, inside the dialog |
+| F3 / F8 | ✅ | Supervisor `/tasks`. **360**: cards plus "Sort by" (6 options, "Newest first" selected). Choosing "Due date, earliest first" writes `?ordering=due_date`. **768**: cards plus "Sort by", table hidden. **1024**: table, select hidden. 20 rows, no wrapped status pill, no stacked Complete/Delete. `scrollWidth === clientWidth` at all three (346 / 753 / 1010), no element past the right edge |
+| F4 | ✅ | Deleted task `/tasks/01a116d3-…` (detail and `/edit`) and `/tasks/not-a-uuid` → "Task not found. It may have been deleted, or it isn't assigned to you." plus **Back to tasks** (→ `/tasks`, works). `/does-not-exist` and `/tasks/a/b` → "Page not found" plus **Go to your home page** (→ `/dashboard`, works). Every case: one `header`, exactly one `nav[aria-label=Main]`, no console warning (only Chromium's network line for the API 404). On `/tasks/a/b` and `/does-not-exist` nothing has `aria-current` |
+| F5 | ✅ | From `/tasks?status=["PENDING"]&page=3&ordering=-due_date` (41–60 of 4998) → "Demo task 19117" → **Back to tasks** → `/tasks?status=["PENDING"]&ordering=-due_date&page=3`. Same parameters and values, 41–60 of 4998, Pending checked. Only the key order differs (the router's serialisation) |
+| F6 | ✅ | Default `/tasks`: Created `aria-sort="descending"` with ▼ and weight 600. Due date and Status `none` with a faint ↕. Click Due date → `?ordering=due_date`, Due date `ascending` ▲, Created `none`. Click again → `-due_date`, `descending` ▼. Button names stay the plain label ("Due date"), per amended D68 |
+| F7 | ✅ | `/dashboard`: Dashboard has `aria-current="page"` and a blue (`rgb(37,99,235)`) bottom border, Tasks a transparent one. `/tasks`: the reverse |
+| F9 | ✅ | Due after `2026-10-01`, Due before `2026-09-01` → under the dates: "“Due after” is later than “Due before”, so no task can match." Due before has `aria-invalid="true"` and `aria-describedby` → the message. `max`/`min` set to the other date. URL keeps both dates, empty state shown |
+| F10 | ✅ | `/tasks?status=["BOGUS"]` → URL becomes `/tasks`, 1–20 of 20001, no alert, no box checked |
+| F11 | ✅ | Signed out, then loaded `/dashboard`: the only API request was `POST /api/v1/auth/refresh/` → 401, then `/login`. No `/tasks/stats/`, no second refresh |
+| F12 | ✅ | "Demo task 30": detail shows Due date `9/28/2026` with no time. The list row shows `9/28/2026` and the edit form's date input holds `2026-09-28` |
+| F13 | ✅ | Admin `/users`: the Role column shows "Admin" / "Supervisor" / "Operator". Role filter options are "All roles, Admin, Supervisor, Operator" |
+| F14 | ✅ | Dashboard, Tasks and Sign out: computed `min-height: 44px`, `offsetHeight` 44. `getBoundingClientRect().height` reads 43.99, a sub-pixel artefact of this Chromium's `devicePixelRatio` (0.99999997). The same artefact shows the 2 px active border as 1.75 px. Header is 44.9 px tall (was 49) |
+
+### 7.2 Gates
+
+| Gate | Result |
+|---|---|
+| Backend pytest (Compose, test settings) | **384 passed**, 0 failed, 13 warnings (the PyJWT key-length warning from §4.1). Coverage **100.00 %** (1086 / 1086) |
+| `ruff check` | ✅ clean |
+| `ruff format --check` | ✅ 121 files already formatted |
+| `mypy` | ✅ no issues in 109 source files |
+| `npm run typecheck` | ✅ clean |
+| `npm run lint` | ✅ exit 0, **5 warnings**, the same five as §4.3 |
+| `npm run test` (Vitest) | **303 passed**, 0 failed, 19 files |
+
+### 7.3 Screenshots
+
+| File | Shows |
+|---|---|
+| `iter5-sort-header-1280.png` | F6: `?ordering=-due_date`, ▼ on Due date, ↕ on the others |
+| `iter5-tasks-cards-768.png` | F3 / F8: cards plus "Sort by" at 768 px |
+| `iter5-nav-active-1280.png` | F7: Dashboard marked active |
+| `iter5-not-found-1280.png` | F4: "Page not found" inside the app shell |
+
+### 7.4 Side effects and observations
+
+No data was created, edited or deleted. The empty submit on `/tasks/new` was rejected (400). The
+dialog-failure DELETE was answered in the browser and never reached the server; "Demo task 30"
+still loads afterwards. The deleted-task id came from a read-only `psql` query. One login (Admin)
+was used, and no throttle was hit.
+
+Observations, not findings:
+
+- **Back to tasks** carries `aria-current="page"` on a task's detail page and on the "Task not
+  found" panel, because TanStack's fuzzy active match treats `/tasks/<id>` as inside `/tasks`.
+  The same happens on the ordinary detail page, so it predates this iteration.
+- Signing out while on "Page not found" keeps the anonymous version of the panel, with a
+  **Sign in** link, instead of redirecting. That is reasonable for an unknown URL.
