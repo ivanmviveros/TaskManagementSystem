@@ -18,9 +18,9 @@ interface RouterHolder {
  * Mounts the REAL router and the REAL providers at `initialPath`, so routing
  * tests exercise the actual guards rather than a stub of them.
  *
- * Like RoutedApp in app/providers.tsx, and sharing its useRouterAuthSync: the router is created once and the
- * live auth state arrives through RouterProvider's `context` prop, and nothing
- * routed renders until the auth probe settles.
+ * Like RoutedApp in app/providers.tsx, and sharing its useRouterAuthSync: the
+ * router is created once and the live auth state arrives through RouterProvider's
+ * `context` prop, and nothing routed renders until the auth probe settles.
  */
 function AppAtPath({ initialPath, holder }: { initialPath: string; holder: RouterHolder }) {
   const auth = useAuth();

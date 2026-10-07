@@ -119,9 +119,21 @@ describe("session bootstrap requests", () => {
           ),
         ),
       );
-      await renderApp(path);
-      expect(await screen.findByLabelText(/email/i)).toBeInTheDocument();
-      expect(requests).toEqual(["POST /api/v1/auth/refresh/"]);
+      // response:mocked only fires once a request completes; request:start also
+      // catches one still in flight when the login form appears.
+      const started: string[] = [];
+      const onStart = ({ request }: { request: Request }) => {
+        started.push(`${request.method} ${new URL(request.url).pathname}`);
+      };
+      server.events.on("request:start", onStart);
+      try {
+        await renderApp(path);
+        expect(await screen.findByLabelText(/email/i)).toBeInTheDocument();
+        expect(started).toEqual(["POST /api/v1/auth/refresh/"]);
+        expect(requests).toEqual(["POST /api/v1/auth/refresh/"]);
+      } finally {
+        server.events.removeListener("request:start", onStart);
+      }
     },
   );
 
