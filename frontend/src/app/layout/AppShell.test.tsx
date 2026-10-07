@@ -196,3 +196,37 @@ describe("unknown addresses under a shell path, signed out", () => {
     expect(screen.queryByRole("navigation", { name: /main/i })).not.toBeInTheDocument();
   });
 });
+
+describe("the menu marks where you are (F7, F14, D77)", () => {
+  it("marks the current section, and only it", async () => {
+    signedInAs = "SUPERVISOR";
+    await renderApp("/dashboard");
+    await screen.findByRole("heading", { name: /dashboard/i });
+    const dashboard = within(nav()).getByRole("link", { name: /dashboard/i });
+    const tasks = within(nav()).getByRole("link", { name: /tasks/i });
+    expect(dashboard).toHaveAttribute("aria-current", "page");
+    expect(dashboard).toHaveClass("border-status-progress");
+    expect(tasks).not.toHaveAttribute("aria-current");
+    expect(tasks).toHaveClass("border-transparent");
+  });
+
+  it.each([`/tasks?status=${encodeURIComponent(JSON.stringify(["PENDING"]))}`, "/tasks/new"])(
+    "keeps Tasks marked on %s",
+    async (path) => {
+      signedInAs = "SUPERVISOR";
+      await renderApp(path);
+      await screen.findByRole("heading", { level: 1 });
+      expect(within(nav()).getByRole("link", { name: /tasks/i })).toHaveClass(
+        "border-status-progress",
+      );
+    },
+  );
+
+  it("gives every header control a 44px target", async () => {
+    signedInAs = "SUPERVISOR";
+    await renderApp("/dashboard");
+    await screen.findByRole("heading", { name: /dashboard/i });
+    for (const link of within(nav()).getAllByRole("link")) expect(link).toHaveClass("min-h-11");
+    expect(screen.getByRole("button", { name: /sign out/i })).toHaveClass("min-h-11");
+  });
+});
