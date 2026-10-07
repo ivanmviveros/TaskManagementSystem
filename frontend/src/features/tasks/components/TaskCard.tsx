@@ -9,9 +9,6 @@ import { TaskRowActions } from "./TaskRowActions";
 interface TaskCardProps {
   task: TaskListItem;
   showAssignee: boolean;
-  onComplete: (id: string) => void;
-  onDelete: (id: string) => void;
-  isBusy?: boolean;
   /** Left in history state by the title link, so the detail can return here (D70). */
   listSearch: TaskListSearch;
 }
@@ -21,14 +18,7 @@ interface TaskCardProps {
  * variant of the table, because a table that reflows into blocks loses its
  * header association and reads poorly to a screen reader (spec §11.6).
  */
-export function TaskCard({
-  task,
-  showAssignee,
-  onComplete,
-  onDelete,
-  isBusy = false,
-  listSearch,
-}: TaskCardProps) {
+export function TaskCard({ task, showAssignee, listSearch }: TaskCardProps) {
   return (
     <article className="mb-3 rounded-lg bg-white p-4 shadow-sm">
       <h3 className="mb-2 font-medium">
@@ -60,7 +50,7 @@ export function TaskCard({
           </>
         )}
       </dl>
-      <TaskRowActions task={task} onComplete={onComplete} onDelete={onDelete} isBusy={isBusy} />
+      <TaskRowActions task={task} />
     </article>
   );
 }

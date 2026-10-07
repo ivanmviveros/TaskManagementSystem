@@ -14,9 +14,6 @@ interface TaskTableProps {
   showAssignee: boolean;
   ordering: Ordering | undefined;
   onOrderingChange: (ordering: Ordering | undefined) => void;
-  onComplete: (id: string) => void;
-  onDelete: (id: string) => void;
-  busyId?: string | null;
   /** Left in history state by each title link, so the detail can return here (D70). */
   listSearch: TaskListSearch;
 }
@@ -26,9 +23,6 @@ export function TaskTable({
   showAssignee,
   ordering,
   onOrderingChange,
-  onComplete,
-  onDelete,
-  busyId = null,
   listSearch,
 }: TaskTableProps) {
   const sort = parseOrdering(ordering);
@@ -106,12 +100,7 @@ export function TaskTable({
               </td>
             )}
             <td className="p-3">
-              <TaskRowActions
-                task={task}
-                onComplete={onComplete}
-                onDelete={onDelete}
-                isBusy={busyId === task.id}
-              />
+              <TaskRowActions task={task} />
             </td>
           </tr>
         ))}

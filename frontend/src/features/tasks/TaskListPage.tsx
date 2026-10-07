@@ -1,6 +1,7 @@
+import { useCreateStore, useSelector } from "@tanstack/react-store";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import clsx from "clsx";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 
 import type { TaskListSearch } from "../../app/search-params";
 import { ButtonLink } from "../../components/ButtonLink";
@@ -14,10 +15,12 @@ import { TaskCard } from "./components/TaskCard";
 import { TaskFilters, type FilterPatch } from "./components/TaskFilters";
 import { TaskSortSelect } from "./components/TaskSortSelect";
 import { TaskTable } from "./components/TaskTable";
-import { useCompleteTask, useDeleteTask } from "./hooks/useTaskMutations";
+import { useTaskActions } from "./hooks/useTaskActions";
 import { useTasks } from "./hooks/useTasks";
 import type { Ordering } from "./sorting";
-import type { TaskFilters as Filters, TaskListItem } from "./types";
+import { TaskActionsProvider } from "./task-actions-context";
+import { initialTaskActionsState, taskActions } from "./task-actions-store";
+import type { TaskFilters as Filters } from "./types";
 
 type SearchUpdate = (prev: TaskListSearch) => TaskListSearch;
 
@@ -40,14 +43,14 @@ export function TaskListPage() {
     page,
     page_size: pageSize,
   };
-  const [actionError, setActionError] = useState<string | null>(null);
-  const [busyId, setBusyId] = useState<string | null>(null);
-  const [pendingDelete, setPendingDelete] = useState<TaskListItem | null>(null);
-  const [deleteError, setDeleteError] = useState<string | null>(null);
+  // The page's UI state (D87): one store per mount, so it starts clean on every visit.
+  const store = useCreateStore(initialTaskActionsState, taskActions);
+  const actions = useTaskActions(store);
+  const actionError = useSelector(store, (state) => state.actionError);
+  const pendingDelete = useSelector(store, (state) => state.delete.pending);
+  const deleteError = useSelector(store, (state) => state.delete.error);
 
   const { data, isPending, isError, error, isPlaceholderData } = useTasks(filters);
-  const complete = useCompleteTask();
-  const remove = useDeleteTask();
 
   // An Operator's list is already scoped to themselves, so the column is noise.
   const showAssignee = user?.role === "SUPERVISOR";
@@ -97,127 +100,82 @@ export function TaskListPage() {
     });
   }, [pageOutOfRange, navigate]);
 
-  async function runAction(id: string, action: (id: string) => Promise<unknown>) {
-    setActionError(null);
-    setBusyId(id);
-    try {
-      await action(id);
-    } catch (caught) {
-      setActionError(
-        caught instanceof ApiError ? caught.message : "Something went wrong. Try again.",
-      );
-    } finally {
-      setBusyId(null);
-    }
-  }
-
-  /** Looked up at click time and stored as the object, so a refetch while the
-   *  dialog is open cannot make it disappear. */
-  function beginDelete(id: string) {
-    const target = data?.results.find((candidate) => candidate.id === id);
-    if (target === undefined) return;
-    setDeleteError(null);
-    setPendingDelete(target);
-  }
-
-  async function confirmDelete() {
-    if (pendingDelete === null) return;
-    setDeleteError(null);
-    try {
-      await remove.mutateAsync(pendingDelete.id);
-      setPendingDelete(null);
-    } catch (caught) {
-      setDeleteError(
-        caught instanceof ApiError ? caught.message : "Could not delete that task.",
-      );
-    }
-  }
-
   return (
-    <section>
-      <div className="mb-4 flex flex-wrap items-center gap-3">
-        <h1 className="text-xl font-semibold text-slate-900">Tasks</h1>
-        <ButtonLink to="/tasks/new" state={{ tasksSearch: search }} className="ml-auto">
-          New task
-        </ButtonLink>
-      </div>
+    <TaskActionsProvider value={{ store, actions }}>
+      <section>
+        <div className="mb-4 flex flex-wrap items-center gap-3">
+          <h1 className="text-xl font-semibold text-slate-900">Tasks</h1>
+          <ButtonLink to="/tasks/new" state={{ tasksSearch: search }} className="ml-auto">
+            New task
+          </ButtonLink>
+        </div>
 
-      <TaskFilters filters={filters} onChange={applyFilters} onClear={clearFilters} />
-      <FormError message={actionError} />
-      {/* Outside the results, so it survives an empty result (spec §4.3). */}
-      <TaskSortSelect ordering={filters.ordering} onChange={setOrdering} className="lg:hidden" />
+        <TaskFilters filters={filters} onChange={applyFilters} onClear={clearFilters} />
+        <FormError message={actionError} />
+        {/* Outside the results, so it survives an empty result (spec §4.3). */}
+        <TaskSortSelect ordering={filters.ordering} onChange={setOrdering} className="lg:hidden" />
 
-      {isPending && (
-        <p role="status" className="text-sm text-slate-500">
-          Loading tasks…
-        </p>
-      )}
+        {isPending && (
+          <p role="status" className="text-sm text-slate-500">
+            Loading tasks…
+          </p>
+        )}
 
-      {isError && !pageOutOfRange && (
-        <p role="alert" className="text-sm text-status-overdue">
-          {error instanceof ApiError ? error.message : "Could not load tasks."}
-        </p>
-      )}
+        {isError && !pageOutOfRange && (
+          <p role="alert" className="text-sm text-status-overdue">
+            {error instanceof ApiError ? error.message : "Could not load tasks."}
+          </p>
+        )}
 
-      {data !== undefined && data.results.length === 0 && (
-        <p className="rounded-lg bg-white p-6 text-center text-sm text-slate-500 shadow-sm">
-          No tasks match these filters.
-        </p>
-      )}
+        {data !== undefined && data.results.length === 0 && (
+          <p className="rounded-lg bg-white p-6 text-center text-sm text-slate-500 shadow-sm">
+            No tasks match these filters.
+          </p>
+        )}
 
-      {data !== undefined && data.results.length > 0 && (
-        // The previous page stays while the next loads (D53).
-        <div
-          aria-busy={isPlaceholderData}
-          className={clsx("transition-opacity", isPlaceholderData && "opacity-60")}
-        >
-          {/* Cards below lg, not md (D69): at md the table's six columns and two
-              action buttons do not fit, so badges and actions wrapped. */}
-          <div className="hidden overflow-x-auto lg:block">
-            <TaskTable
-              tasks={data.results}
-              showAssignee={showAssignee}
-              ordering={filters.ordering}
-              onOrderingChange={setOrdering}
-              onComplete={(id) => void runAction(id, complete.mutateAsync)}
-              onDelete={beginDelete}
-              busyId={busyId}
-              listSearch={search}
-            />
-          </div>
-          <div className="lg:hidden">
-            {data.results.map((task) => (
-              <TaskCard
-                key={task.id}
-                task={task}
+        {data !== undefined && data.results.length > 0 && (
+          // The previous page stays while the next loads (D53).
+          <div
+            aria-busy={isPlaceholderData}
+            className={clsx("transition-opacity", isPlaceholderData && "opacity-60")}
+          >
+            {/* Cards below lg, not md (D69): at md the table's six columns and two
+                action buttons do not fit, so badges and actions wrapped. */}
+            <div className="hidden overflow-x-auto lg:block">
+              <TaskTable
+                tasks={data.results}
                 showAssignee={showAssignee}
-                onComplete={(id) => void runAction(id, complete.mutateAsync)}
-                onDelete={beginDelete}
-                isBusy={busyId === task.id}
+                ordering={filters.ordering}
+                onOrderingChange={setOrdering}
                 listSearch={search}
               />
-            ))}
+            </div>
+            <div className="lg:hidden">
+              {data.results.map((task) => (
+                <TaskCard key={task.id} task={task} showAssignee={showAssignee} listSearch={search} />
+              ))}
+            </div>
+
+            <Pagination
+              count={data.count}
+              page={page}
+              pageSize={pageSize}
+              onPageChange={goToPage}
+              onPageSizeChange={setPageSize}
+            />
           </div>
+        )}
 
-          <Pagination
-            count={data.count}
-            page={page}
-            pageSize={pageSize}
-            onPageChange={goToPage}
-            onPageSizeChange={setPageSize}
+        {pendingDelete !== null && (
+          <DeleteTaskDialog
+            task={pendingDelete}
+            error={deleteError}
+            isDeleting={actions.isDeleting}
+            onConfirm={() => void actions.confirmDelete()}
+            onCancel={actions.cancelDelete}
           />
-        </div>
-      )}
-
-      {pendingDelete !== null && (
-        <DeleteTaskDialog
-          task={pendingDelete}
-          error={deleteError}
-          isDeleting={remove.isPending}
-          onConfirm={() => void confirmDelete()}
-          onCancel={() => setPendingDelete(null)}
-        />
-      )}
-    </section>
+        )}
+      </section>
+    </TaskActionsProvider>
   );
 }

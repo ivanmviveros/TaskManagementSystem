@@ -314,6 +314,22 @@ describe("task deletion from the list", () => {
     expect(screen.getByRole("dialog")).toBeInTheDocument();
   });
 
+  it("starts with the dialog closed after leaving the list and coming back (D87)", async () => {
+    signedInAs(OPERATOR);
+    tasksRespondWith([TASK]);
+    const { router } = await renderApp("/tasks");
+    const user = userEvent.setup();
+    const table = await screen.findByRole("table");
+    await user.click(within(table).getByRole("button", { name: /^delete review the brief/i }));
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+
+    await act(() => router.navigate({ to: "/dashboard" }));
+    expect(await screen.findByRole("heading", { name: /dashboard/i })).toBeInTheDocument();
+    await act(() => router.navigate({ to: "/tasks" }));
+    await screen.findByRole("table");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
   describe("keyboard (D60)", () => {
     // Found in the browser check: focus stayed on the row's Delete button, so a
     // keyboard user had to Tab through the whole list to reach the dialog.
