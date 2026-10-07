@@ -4,6 +4,7 @@ from datetime import timedelta
 import pytest
 from django.utils import timezone
 
+from apps.core.log_formatting import JsonFormatter
 from apps.core.roles import Role
 from apps.tasks.dto import TaskCreateInput, TaskUpdateInput
 from apps.tasks.exceptions import (
@@ -250,9 +251,9 @@ def test_the_update_log_records_field_names_never_values(caplog):
             data=TaskUpdateInput(title="Acquisition of Northwind", description="confidential"),
             actor=make_user(Role.SUPERVISOR),
         )
-    logged = next(
-        r.getMessage() for r in caplog.records if r.getMessage().startswith("task.updated")
-    )
-    assert "'description'" in logged and "'title'" in logged
-    assert "Acquisition of Northwind" not in logged
-    assert "confidential" not in logged
+    record = next(r for r in caplog.records if r.getMessage() == "task.updated")
+    assert record.fields == ["description", "title"]
+    # And nothing of the values reaches the line that is actually written.
+    line = JsonFormatter().format(record)
+    assert "Acquisition of Northwind" not in line
+    assert "confidential" not in line

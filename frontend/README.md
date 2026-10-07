@@ -1,32 +1,48 @@
-# React + TypeScript + Vite
+# Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+The React 19 + TypeScript single-page app for the Task Management System. Setup of the whole
+stack, demo credentials and the project overview are in the [root README](../README.md). How
+the app is structured is in [docs/ARCHITECTURE.md](../docs/ARCHITECTURE.md#frontend), and the
+conventions it follows are in [AGENTS.md](AGENTS.md).
 
-Currently, two official plugins are available:
+## Commands
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+Run these from this directory. `npm --prefix` cannot install from the repository root.
 
-## React Compiler
+| Command | Does |
+|---|---|
+| `npm install` | Install dependencies |
+| `npm run dev` | Vite dev server on http://localhost:5173 |
+| `npm run typecheck` | `tsc -b --noEmit` |
+| `npm run lint` | oxlint |
+| `npm run test` | Vitest, once |
+| `npm run build` | Typecheck, then a production build |
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+The API base URL comes from `VITE_API_BASE_URL` and defaults to `http://localhost:8000`.
 
-## Expanding the Oxlint configuration
+## Layout
 
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
-
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+```text
+src/
+├── app/          router (routes, role guards, search-param validation), providers, layout shell
+├── components/   shared primitives: Button, ButtonLink, Pagination, form error, focus helpers
+├── features/
+│   ├── auth/       sign-in page, AuthContext, auth service
+│   ├── dashboard/  statistics page and tiles
+│   ├── tasks/      list, detail, create/edit form, filters, sorting, assignee picker
+│   └── users/      list, create/edit form, delete dialog
+├── lib/          API client (token in memory, single-flight refresh), API errors, dates, pagination
+└── test/         MSW server and handlers, render harness, console guard
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+Each feature keeps its own `components/`, `hooks/` (TanStack Query) and `services/` (API calls).
+Only `lib/api-client.ts` performs HTTP requests.
+
+## Tests
+
+The tests use Vitest, React Testing Library and MSW. Two settings in `src/test/setup.ts` keep them
+honest:
+
+- **An unmocked request fails the test** (`onUnhandledRequest: "error"`).
+- **Any unexpected `console.error` or `console.warn` fails the test.** A test that renders an
+  error on purpose opts out for one message with `allowConsole(/…/)`.

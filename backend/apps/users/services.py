@@ -42,7 +42,9 @@ class UserService:
                 last_name=data.last_name,
                 role=data.role,
             )
-        logger.info("user.created id=%s role=%s by=%s", user.pk, user.role, actor.pk)
+        logger.info(
+            "user.created", extra={"user_id": user.pk, "role": user.role, "actor_id": actor.pk}
+        )
         return user
 
     def update(self, *, user: User, data: UserUpdateInput, actor: User) -> User:
@@ -74,10 +76,13 @@ class UserService:
         # Field NAMES only — never a password, and never the new value.
         # `changed` is a locally-built list of names, so this line needs none of
         # the DTO-specific care tasks/services.py does; see its comment.
-        logger.info("user.updated id=%s fields=%s by=%s", user.pk, sorted(changed), actor.pk)
+        logger.info(
+            "user.updated",
+            extra={"user_id": user.pk, "fields": sorted(changed), "actor_id": actor.pk},
+        )
         return user
 
     def delete(self, *, user: User, actor: User) -> None:
         with transaction.atomic():
             self._users.soft_delete(user, by=actor)
-        logger.info("user.soft_deleted id=%s by=%s", user.pk, actor.pk)
+        logger.info("user.soft_deleted", extra={"user_id": user.pk, "actor_id": actor.pk})

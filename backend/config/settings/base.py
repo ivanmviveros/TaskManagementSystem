@@ -60,6 +60,9 @@ AUTH_USER_MODEL = "users.User"
 SILENCED_SYSTEM_CHECKS = ["auth.E003"]
 
 MIDDLEWARE = [
+    # First, so the request id is bound before anything else runs and every log
+    # line of the request carries it.
+    "apps.core.middleware.RequestIdMiddleware",
     "corsheaders.middleware.CorsMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
@@ -163,6 +166,9 @@ CELERY_RESULT_BACKEND = None  # nothing reads a task result
 CELERY_TASK_ACKS_LATE = True
 CELERY_WORKER_PREFETCH_MULTIPLIER = 1
 CELERY_TASK_TIME_LIMIT = 120
+# Keep LOGGING's JSON handler in the worker. By default Celery replaces the root
+# logger's handlers with its own plain-text one.
+CELERY_WORKER_HIJACK_ROOT_LOGGER = False
 DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", "no-reply@taskmanagement.local")
 FRONTEND_BASE_URL = env("FRONTEND_BASE_URL", "http://localhost:5173")
 
@@ -190,10 +196,39 @@ REFRESH_COOKIE_NAME = "refresh_token"
 REFRESH_COOKIE_PATH = "/api/v1/auth/"
 REFRESH_COOKIE_SECURE = env_bool("REFRESH_COOKIE_SECURE", False)  # True in production.py
 
+# Structured logs (backend §28): one JSON object per line on stderr, each stamped
+# with the request id that RequestIdMiddleware binds. Every logger goes through
+# the one handler, so Django's, Celery's and ours share the format.
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
-    "formatters": {"standard": {"format": "%(asctime)s %(levelname)s %(name)s %(message)s"}},
-    "handlers": {"console": {"class": "logging.StreamHandler", "formatter": "standard"}},
+    "filters": {"request_id": {"()": "apps.core.log_formatting.RequestIdFilter"}},
+    "formatters": {"json": {"()": "apps.core.log_formatting.JsonFormatter"}},
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
+            "formatter": "json",
+            "filters": ["request_id"],
+        },
+        # A logger with no handlers and no propagation falls through to Python's
+        # last-resort handler, which prints warnings as plain text. This one
+        # discards them instead.
+        "discard": {"class": "logging.NullHandler"},
+    },
     "root": {"handlers": ["console"], "level": env("DJANGO_LOG_LEVEL", "INFO")},
+    "loggers": {
+        # Django's defaults give these loggers their own plain-text handlers, so
+        # each of their lines would also print unstructured. Clearing them leaves
+        # propagation to the JSON root handler.
+        "django": {"handlers": [], "level": "INFO"},
+        # RequestIdMiddleware already logs every request with its status. Django
+        # logs a 4xx again *after* the middleware has unbound the id, so only its
+        # errors are kept; an unhandled exception is logged inside the request,
+        # with its id and traceback.
+        "django.request": {"level": "ERROR"},
+        # runserver's own access line duplicates the middleware's, but it has no
+        # request id and it logs the full query string, which can hold search terms
+        # and emails. The middleware's line replaces it.
+        "django.server": {"handlers": ["discard"], "propagate": False},
+    },
 }

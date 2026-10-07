@@ -74,9 +74,11 @@ class LoginView(TokenObtainPairView):
         # backend §20: log the attempt with IP and email. NEVER the password.
         if getattr(exc, "status_code", None) in (401, 400):
             logger.warning(
-                "auth.login_failed ip=%s email=%s",
-                self.request.META.get("REMOTE_ADDR"),
-                self.request.data.get("email"),
+                "auth.login_failed",
+                extra={
+                    "ip": self.request.META.get("REMOTE_ADDR"),
+                    "email": self.request.data.get("email"),
+                },
             )
         return super().handle_exception(exc)
 
@@ -138,7 +140,7 @@ class LogoutView(APIView):
                 RefreshToken(token).blacklist()
             except TokenError:
                 # Already expired or blacklisted: logout is idempotent.
-                logger.info("auth.logout_with_unusable_token user=%s", request.user.pk)
+                logger.info("auth.logout_with_unusable_token", extra={"actor_id": request.user.pk})
         clear_refresh_cookie(response)
-        logger.info("auth.logout user=%s", request.user.pk)
+        logger.info("auth.logout", extra={"actor_id": request.user.pk})
         return response

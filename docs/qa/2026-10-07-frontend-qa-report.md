@@ -490,7 +490,7 @@ Stored in [`screenshots/`](screenshots/). Naming is `<role>-<page>-<width>.png`.
 
 | | |
 |---|---|
-| **Commit** | `2ea2941` (`fix/iteration-5`, clean tree) |
+| **Commit** | `92d9391` (`fix/iteration-5`, clean tree) |
 | **Environment** | Same Compose stack. `frontend` restarted before the run |
 | **Browser** | Chromium via Playwright MCP, 1280 px unless stated |
 | **Roles exercised** | Supervisor, Admin, anonymous |
