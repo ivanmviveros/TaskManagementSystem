@@ -9,15 +9,18 @@ import uuid
 
 import pytest
 from django.db import IntegrityError
+from pydantic import ValidationError
 
 from apps.core.permissions.classes import RolePermission, may_delete_task
 from apps.core.roles import Role
 from apps.notifications.models import NotificationEvent
 from apps.notifications.repositories import DjangoNotificationRepository
 from apps.notifications.services import build_dedupe_key
+from apps.tasks.dto import TaskUpdateInput
 from apps.tasks.exceptions import TaskNotFound
 from apps.tasks.services import TaskService
 from apps.tasks.tests.fakes import FakeTaskRepository, RecordingDispatcher
+from apps.users.dto import UserUpdateInput
 from apps.users.models import User
 from apps.users.selectors import assignable_users
 from apps.users.serializers import UserUpdateSerializer
@@ -96,18 +99,30 @@ class TestAssignableUsers:
 
 @pytest.mark.django_db
 class TestUserServiceNoOp:
-    def test_an_update_with_no_recognised_fields_writes_nothing(self):
+    def test_a_dto_with_no_fields_set_writes_nothing(self):
+        """The early return is the point: no write reaches the repository.
+
+        Replaces an older test that passed {"unknown_field": "ignored"} and
+        asserted the key WAS ignored. extra="forbid" makes that payload raise
+        instead, so the no-op case is now expressed with an empty DTO, and the
+        other half of the old assertion becomes the rejection test below.
+        """
         repository = FakeUserRepository()
         target = User(email="target@example.com", role=Role.OPERATOR, first_name="A", last_name="B")
         service = UserService(users=repository)
         returned = service.update(
             user=target,
-            data={"unknown_field": "ignored"},
+            data=UserUpdateInput(),
             actor=User(email="admin@example.com", role=Role.ADMIN),
         )
         assert returned is target
-        # The early return is the point: no write reaches the repository at all.
         assert repository.saved == []
+
+    def test_an_unrecognised_field_is_rejected_rather_than_ignored(self):
+        # D30: a view and a service disagreeing about the contract is a
+        # programming error, surfaced loudly — not silently dropped.
+        with pytest.raises(ValidationError):
+            UserUpdateInput(unknown_field="ignored")
 
 
 class TestUserUpdateSerializerPassword:
@@ -126,7 +141,7 @@ class TestTaskServiceVanishedTask:
         with pytest.raises(TaskNotFound):
             service.update(
                 task_id=uuid.uuid7(),
-                data={"title": "Gone"},
+                data=TaskUpdateInput(title="Gone"),
                 actor=User(email="s@example.com", role=Role.SUPERVISOR),
             )
 

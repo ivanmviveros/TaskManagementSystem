@@ -30,6 +30,18 @@ def test_service_modules_do_not_touch_the_orm(module):
     assert ".objects." not in source, f"{module.__name__} uses a model manager directly"
 
 
+@pytest.mark.parametrize("module", [task_services, user_services], ids=["tasks", "users"])
+def test_no_service_declares_an_untyped_data_parameter(module):
+    """Services take DTOs, not dicts (D29).
+
+    Coarse on purpose, in the same spirit as the Django*Repository scan above:
+    a source-text check has no false negatives for the pattern that matters,
+    and the alternative is an import-graph dependency for one rule.
+    """
+    source = inspect.getsource(module)
+    assert "data: dict" not in source, f"{module.__name__} takes a dict where a DTO belongs"
+
+
 def test_the_composition_root_is_the_view():
     from apps.tasks import views as task_views
     from apps.users import views as user_views

@@ -27,10 +27,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let cancelled = false;
-    // A 401 here is not an error: it means "not signed in". The refresh cookie
-    // may still be valid, in which case api-client silently refreshes first.
+    // Refresh FIRST, then fetch the user (D35). The access token is memory-only,
+    // so after a reload the cookie is the only way back into a session; probing
+    // /users/me/ first was a guaranteed 401 for anonymous visitors and did not
+    // avoid the refresh anyway. restoreSession resolves to null rather than
+    // rejecting when there is no session, because that is an ordinary answer.
+    // The catch stays: /users/me/ can still fail (a 5xx) after a good refresh.
     authService
-      .fetchCurrentUser()
+      .restoreSession()
       .then((me) => {
         if (!cancelled) setUser(me);
       })

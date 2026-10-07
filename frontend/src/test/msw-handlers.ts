@@ -30,4 +30,15 @@ export const handlers: RequestHandler[] = [
   http.get(`${BASE}/users/`, () => HttpResponse.json(emptyPage)),
   http.get(`${BASE}/tasks/`, () => HttpResponse.json(emptyPage)),
   http.get(`${BASE}/tasks/stats/`, () => HttpResponse.json(zeroedStats)),
+  /**
+   * The default fixture represents a VALID session (spec §4.5).
+   *
+   * Once AuthContext bootstraps refresh-first, this is the request that decides
+   * whether a rendered test is signed in — `/users/me/` no longer is. Tests
+   * that want an anonymous visitor override this with a 401, which
+   * LoginPage.test.tsx already does.
+   */
+  http.post(`${BASE}/auth/refresh/`, () =>
+    HttpResponse.json({ access: "default-fixture-access-token" }),
+  ),
 ];

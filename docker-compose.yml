@@ -20,6 +20,16 @@ services:
     ports:
       - "6379:6379"
 
+  # Local SMTP sink (spec §5.4). Accepts every message the worker sends and shows
+  # it in a web inbox at http://localhost:8025, so notification emails can be read
+  # the way a recipient would see them. 1025 is published too, so a worker run
+  # natively (outside Compose) can deliver to localhost:1025.
+  mailhog:
+    image: mailhog/mailhog:v1.0.1
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+
   backend:
     build:
       context: ./backend
@@ -48,6 +58,11 @@ services:
       db:
         condition: service_healthy
       redis:
+        condition: service_started
+      # The only service that sends mail. service_started, not healthy: the image
+      # has no healthcheck, and a send made before MailHog listens raises
+      # ConnectionRefusedError, which the task's autoretry_for already retries.
+      mailhog:
         condition: service_started
 
   # Overrides root AGENTS.md § Local Development (spec §3.4): the brief requires a

@@ -75,7 +75,29 @@ function refreshAccessToken(): Promise<string> {
   return refreshInFlight;
 }
 
-type Options = { method?: string; body?: unknown; allowRefresh?: boolean };
+/**
+ * Restore a session from the refresh cookie. Returns whether it worked.
+ *
+ * Exported so AuthContext's bootstrap reuses `refreshInFlight` instead of
+ * posting to /auth/refresh/ itself (spec §4.3.1). That matters: the endpoint is
+ * in NO_REFRESH_PATHS and the promise is module-private, so a direct post would
+ * NOT be deduplicated, and StrictMode's double-invoked effect would fire two
+ * refreshes. With rotation plus blacklisting server-side, the second presents a
+ * cookie the first just invalidated and the bootstrap signs the user out.
+ *
+ * Never rejects: "no session" is an ordinary answer here, not an error.
+ */
+export async function refreshSession(): Promise<boolean> {
+  try {
+    await refreshAccessToken(); // single-flighted; assigns accessToken on success
+    return true;
+  } catch {
+    clearAccessToken();
+    return false;
+  }
+}
+
+type Options ={ method?: string; body?: unknown; allowRefresh?: boolean };
 
 async function request<T>(path: string, options: Options = {}): Promise<T> {
   const { method = "GET", body, allowRefresh = true } = options;

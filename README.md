@@ -23,8 +23,9 @@ docker compose exec backend python manage.py migrate
 docker compose exec backend python manage.py seed_demo_data
 ```
 
-The API answers on `http://localhost:8000/api/v1/`, the SPA on `http://localhost:5173`, and
-the interactive API docs on `http://localhost:8000/api/v1/schema/swagger-ui/`.
+The API answers on `http://localhost:8000/api/v1/`, the SPA on `http://localhost:5173`,
+the interactive API docs on `http://localhost:8000/api/v1/schema/swagger-ui/`, and every
+email the stack sends lands in MailHog at `http://localhost:8025`.
 
 `.env` is never committed; `.env.example` is the template and lists every variable the
 stack reads.
@@ -80,9 +81,21 @@ three fail looking for one at the repository root. Running a *script* that way i
 
 ## Running the checks
 
-Backend commands run against `backend/` through uv's `--directory` flag, so each is a
-single uncompounded command. `DJANGO_SETTINGS_MODULE` is set in
-`backend/pyproject.toml`, so tests need no environment variable.
+The backend suite runs in the Compose stack by default, falling back to a local `uv`
+environment when the `backend` container is not running. This is also what the `pre-push`
+hook runs:
+
+```bash
+bash scripts/run-backend-tests.sh
+```
+
+It reports which environment the suite passed in. Inside the container the script forces
+`DJANGO_SETTINGS_MODULE=config.settings.test`, because `.env` sets the local settings module
+there and pytest-django lets that environment variable override `pyproject.toml`.
+
+The other backend commands run against `backend/` through uv's `--directory` flag, so each is
+a single uncompounded command. Outside the container `DJANGO_SETTINGS_MODULE` comes from
+`backend/pyproject.toml`, so a local run needs no settings variable.
 
 ```bash
 uv sync --directory backend
@@ -106,7 +119,13 @@ uv run --directory backend pytest -q
 
 The test settings use **Postgres, not SQLite** — the schema depends on partial indexes
 and a check constraint that SQLite does not exercise the same way. `docker compose up -d db`
-provides one on `localhost:5432` with the credentials from `.env.example`.
+provides one, published on host port **5442**, with the credentials from `.env.example`. A
+local run reads `POSTGRES_*` from the shell, never from `.env`, so without an override it
+targets `localhost:5432` — point it at Compose's database instead:
+
+```bash
+POSTGRES_PORT=5442 uv run --directory backend pytest -q
+```
 
 `pytest` carries `--cov=apps --cov-report=term-missing --cov-fail-under=80` in `addopts`,
 so a local run and CI apply the same gate rather than two thresholds that can drift. The
@@ -179,6 +198,40 @@ some far future, some with no deadline at all — so the `overdue` filter, the
 The command is **idempotent** (running it twice changes nothing) and **refuses to run under
 production settings**, so demo credentials cannot be seeded into a production-like profile.
 
+### Seeding more data
+
+```bash
+docker compose exec backend python manage.py seed_demo_data --users 25 --tasks 300
+```
+
+| Flag | Default | Meaning |
+|---|---|---|
+| `--users N` | `0` | Add N randomly-named users **on top of** the five fixed accounts |
+| `--tasks M` | `45` | Ensure at least M tasks exist |
+
+Both flags are **top-up**: re-running with the same numbers changes nothing, raising one adds
+the difference, and neither deletes anything. A run therefore also refills tasks that were
+deleted since the last one, up to M.
+
+Generated users get `user{n}@demo.local`, numbered from 1, with random names; about one in
+four is a Supervisor, the rest Operators. Their names are random by design, so you find them
+by signing in as **`admin@demo.local`** and browsing **Users** — every demo account shares the
+password above. The index, not the name, carries uniqueness: the embedded name lists are
+finite, so an email built from a name would collide and silently create fewer users than you
+asked for.
+
+The command creates the fixed accounts when they are missing, but never modifies an existing
+one. If you deactivate `admin@demo.local` while trying out user management, re-seeding will
+not reactivate it — reactivate it from another Admin account, or reset the database with
+`docker compose down -v`.
+
+Tasks are assigned at random across every non-Admin user, and `created_by` is randomised too —
+so some tasks end up Operator-created, which is what makes the "an Operator may delete only a
+task they created" rule (D27) visible in the UI.
+
+Rows are created one at a time rather than with `bulk_create`, because `bulk_create` skips the
+`django-simple-history` records the audit trail depends on. Large values are therefore slow.
+
 ## Architecture
 
 The five diagrams below are copied from the design spec, which is their source of truth.
@@ -186,7 +239,7 @@ Each was rendered with `@mermaid-js/mermaid-cli` to confirm it parses.
 
 ### Containers
 
-Six Compose services. `beat` is a documented override of root `AGENTS.md` — the brief
+Seven Compose services. `beat` is a documented override of root `AGENTS.md` — the brief
 requires scheduled overdue notifications, and Celery documents `worker -B` as
 development-only.
 
@@ -202,9 +255,8 @@ graph TB
         BEAT["beat<br/>Celery beat"]
         REDIS[("redis:7<br/>broker + throttle cache")]
         DB[("postgres:16")]
+        MAILHOG["mailhog<br/>SMTP sink, inbox on :8025"]
     end
-
-    SMTP["SMTP<br/>(console backend in local)"]
 
     UI -->|"/api/v1/*<br/>Bearer access token<br/>+ HttpOnly refresh cookie"| API
     API --> DB
@@ -213,7 +265,7 @@ graph TB
     BEAT -->|"hourly schedule"| REDIS
     REDIS --> WORKER
     WORKER --> DB
-    WORKER --> SMTP
+    WORKER -->|"SMTP :1025"| MAILHOG
 ```
 
 ### Data model
@@ -865,6 +917,37 @@ about it, so the next person decides rather than rediscovers.
 | **`auth.E003` is silenced** in `SILENCED_SYSTEM_CHECKS` — see below | Django's `Options.total_unique_constraints` learns to count partial constraints. Until then the check cannot be satisfied, only silenced. |
 | **The SPA and the API must be deployed same-site** — see below | Serve both from one registrable domain (the recommendation), or move to `SameSite=Lax`/`None` and add explicit CSRF token validation on `/api/v1/auth/refresh/` and `/logout/`. |
 | ~~drf-spectacular generator warnings~~ — **resolved.** `get_serializer_class()` and `get_queryset()` now tolerate the request-less schema pass, and the hand-written actions carry `@extend_schema`. `spectacular --validate` reports 0 warnings and 0 errors. | — |
+
+### What you should see in the browser console
+
+An anonymous visit to `/login` makes **one** failed request:
+
+```
+POST /api/v1/auth/refresh/  401
+```
+
+That is correct, not a bug. The access token lives in memory only, so on every load the client
+asks whether the refresh cookie can restore a session; for a visitor who has never signed in,
+the answer is no. Returning 200 for "no session" would contradict the status the API's own
+permission tests assert. A returning user whose cookie is still valid sees no failed request
+at all. (In development, React's `StrictMode` runs the bootstrap twice; the refresh is
+deduplicated, so it is still made once.)
+
+**Two things that look like application errors and are not:**
+
+- `MaxListenersExceededWarning: Possible EventEmitter memory leak` and
+  `ObjectMultiplex - orphaned data for stream "app-init-liveness"`, from a
+  `chrome-extension://...` origin, come from the **MetaMask** extension's content script
+  talking to itself. They appear on any page in a browser profile that has it installed, and
+  no change to this codebase affects them.
+- A `500` from `POST /api/v1/auth/login/`, with `relation "users_user" does not exist` in the
+  backend log, means `migrate` has not run against this database yet:
+
+  ```bash
+  docker compose exec backend python manage.py migrate
+  ```
+
+  This is the same startup-ordering sharp edge that affects `celery beat` on a fresh database.
 
 ### Why the SPA and the API must be same-site
 

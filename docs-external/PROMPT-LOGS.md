@@ -201,3 +201,15 @@ non-dedupe integrity error — so each got a test. Only `__str__` reprs and Prot
 excluded, with the reason recorded next to them. The suite reached 100% of `apps/` with the
 gate set at the specified floor of 80, and the gate was verified to fail at an unreachable
 threshold.
+
+
+
+## Refinement
+```
+After reviewveng current code and application features, I need to implement new iteration of brainstorming, planning and refinement regarding the following concerns:
+- use pydantic for data validation instead of plain dicts
+- add amount of generated seeding data and users as input for management command, the tasks should be randomly assigned, admin username its fixed to allow login to find the random generated usernames, include instructions in README.md
+- debug @console.log warnings and errors ocurred in login page for anonymous users
+- refactor users table to match the tasks table responsive behaivor
+- pre-push stage in pre-commit its failing since its running pytest with local uv instead of docker compose, project default for development should be docker compose, add a fallback to allow success in stage if pytest result its successful in local or docker compose environment
+```

@@ -8,6 +8,7 @@ from django.core import mail
 from django.db import transaction
 
 from apps.notifications.models import Notification, NotificationEvent
+from apps.tasks.dto import TaskCreateInput
 from apps.tasks.models import TaskStatus
 from apps.tasks.tests.factories import TaskFactory
 from apps.tasks.views import TaskViewSet
@@ -126,7 +127,7 @@ def test_nothing_is_enqueued_when_the_surrounding_transaction_rolls_back():
 
     with pytest.raises(Rollback), transaction.atomic():
         service.create(
-            data={"title": "Doomed", "description": "", "due_date": None, "assignee": assignee},
+            data=TaskCreateInput(title="Doomed", description="", due_date=None, assignee=assignee),
             actor=creator,
         )
         raise Rollback

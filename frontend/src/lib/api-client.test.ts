@@ -2,7 +2,7 @@ import { http, HttpResponse } from "msw";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { server } from "../test/msw-server";
-import { apiClient, clearAccessToken, setAccessToken } from "./api-client";
+import { apiClient, clearAccessToken, refreshSession, setAccessToken } from "./api-client";
 import { ApiError } from "./api-error";
 
 const BASE = "http://localhost:8000/api/v1";
@@ -194,5 +194,47 @@ describe("refresh on 401", () => {
     );
     await apiClient.post("/auth/refresh/", {}).catch(() => undefined);
     expect(refreshes).toBe(1);
+  });
+});
+
+describe("refreshSession", () => {
+  it("makes one request when two bootstraps run concurrently", async () => {
+    // The StrictMode case from spec §4.3.1. With ROTATE_REFRESH_TOKENS and
+    // BLACKLIST_AFTER_ROTATION both on, a second request would present a
+    // just-blacklisted cookie, 401, and log out a returning user.
+    let calls = 0;
+    server.use(
+      http.post(`${BASE}/auth/refresh/`, async () => {
+        calls += 1;
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        return HttpResponse.json({ access: "rotated" });
+      }),
+    );
+
+    const [a, b] = await Promise.all([refreshSession(), refreshSession()]);
+
+    expect(a).toBe(true);
+    expect(b).toBe(true);
+    expect(calls).toBe(1);
+  });
+
+  it("returns false and clears the token when there is no valid cookie", async () => {
+    let sentAuthorization: string | null = "unset";
+    setAccessToken("stale-token");
+    server.use(
+      http.post(`${BASE}/auth/refresh/`, () =>
+        HttpResponse.json({ detail: "no cookie", code: "refresh_cookie_missing" }, { status: 401 }),
+      ),
+      http.get(`${BASE}/tasks/stats/`, ({ request }) => {
+        sentAuthorization = request.headers.get("Authorization");
+        return HttpResponse.json({});
+      }),
+    );
+
+    await expect(refreshSession()).resolves.toBe(false);
+
+    // The stale token must not survive a failed restore and ride on the next call.
+    await apiClient.get("/tasks/stats/");
+    expect(sentAuthorization).toBeNull();
   });
 });

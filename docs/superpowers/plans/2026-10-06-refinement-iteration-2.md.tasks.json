@@ -1,0 +1,148 @@
+{
+  "planPath": "docs/superpowers/plans/2026-10-06-refinement-iteration-2.md",
+  "tasks": [
+    {
+      "id": 1,
+      "subject": "Task 1: The pre-push script",
+      "status": "completed"
+    },
+    {
+      "id": 2,
+      "subject": "Task 2: Add pydantic",
+      "status": "completed",
+      "blockedBy": [
+        1
+      ]
+    },
+    {
+      "id": 3,
+      "subject": "Task 3: The tasks DTOs",
+      "status": "completed",
+      "blockedBy": [
+        2
+      ]
+    },
+    {
+      "id": 4,
+      "subject": "Task 4: The users DTOs",
+      "status": "completed",
+      "blockedBy": [
+        2
+      ]
+    },
+    {
+      "id": 5,
+      "subject": "Task 5: Convert TaskService",
+      "status": "completed",
+      "blockedBy": [
+        3
+      ]
+    },
+    {
+      "id": 6,
+      "subject": "Task 6: Convert UserService",
+      "status": "completed",
+      "blockedBy": [
+        4
+      ]
+    },
+    {
+      "id": 7,
+      "subject": "Task 7: task_stats returns a model",
+      "status": "completed",
+      "blockedBy": [
+        3
+      ]
+    },
+    {
+      "id": 8,
+      "subject": "Task 8: Lock the old shape out",
+      "status": "completed",
+      "blockedBy": [
+        5,
+        6
+      ]
+    },
+    {
+      "id": 9,
+      "subject": "Task 9: Parameterise the seed command",
+      "status": "completed",
+      "blockedBy": [
+        1
+      ]
+    },
+    {
+      "id": 10,
+      "subject": "Task 10: The default refresh handler",
+      "status": "completed"
+    },
+    {
+      "id": 11,
+      "subject": "Task 11: Export a single-flighted refreshSession()",
+      "status": "completed",
+      "blockedBy": [
+        10
+      ]
+    },
+    {
+      "id": 12,
+      "subject": "Task 12: Invert the bootstrap",
+      "status": "completed",
+      "blockedBy": [
+        11
+      ]
+    },
+    {
+      "id": 13,
+      "subject": "Task 13: Extract UserTable",
+      "status": "completed"
+    },
+    {
+      "id": 14,
+      "subject": "Task 14: Add UserCard and the responsive switch",
+      "status": "completed",
+      "blockedBy": [
+        13
+      ]
+    },
+    {
+      "id": 15,
+      "subject": "Task 15: Documentation",
+      "status": "completed",
+      "blockedBy": [
+        9,
+        12
+      ]
+    },
+    {
+      "id": 16,
+      "subject": "Task 16: MailHog for local email",
+      "status": "completed",
+      "blockedBy": [
+        1,
+        15
+      ]
+    },
+    {
+      "id": 17,
+      "subject": "Task 17: Full verification",
+      "status": "completed",
+      "blockedBy": [
+        8,
+        7,
+        14,
+        15,
+        16
+      ]
+    },
+    {
+      "id": 18,
+      "subject": "Task 18: Persist insights to claude-insights/",
+      "status": "completed",
+      "blockedBy": [
+        17
+      ]
+    }
+  ],
+  "lastUpdated": "2026-10-07T01:37:48+00:00"
+}
