@@ -886,6 +886,36 @@ green, losing only index locality. `test_generated_ids_sort_in_creation_order` e
 exactly that. Note the caveat: CPython's 42-bit counter orders ids minted in the same
 millisecond **by the same process**; across processes, ordering is millisecond-granular.
 
+### List state lives in the URL (D45–D56)
+
+Both lists keep their filters, sort, page and page size in the URL. The URL is the only copy:
+each page derives its API query from the route's search params and writes every change back
+with `navigate`. Refresh, Back/Forward, a shared link and a dashboard card all therefore land
+on the same view. Before, the task list read the URL once and then kept a private copy, so
+the URL went stale after the first filter.
+
+- **Validated in one place.** `src/app/search-params.ts` drops anything a list cannot use: a
+  page that is not a positive integer, a page size outside 10/20/50/100, an unknown role.
+  `stripSearchParams` keeps page 1 and size 20 out of URLs, so one view has one URL.
+- **Edits replace, page moves push.** Back undoes navigation, not each checkbox. Every replace
+  passes `resetScroll: false`, because the router otherwise scrolls to the top even on a replace.
+- **Typed text goes through a 300 ms draft.** The router commits search changes in a React
+  transition after an async load. A controlled input bound straight to a search param is
+  therefore reverted by React and then jumps. The Search box and the date inputs keep a local
+  draft and commit once typing pauses, which also means one request per pause, not per
+  keystroke.
+- **The pager is numbered and driven by `count`:** first, last, and the current page ±2. The
+  previous page stays on screen while the next loads (`keepPreviousData`), so a click never
+  unmounts the pager or drops keyboard focus. A page that no longer exists, such as a stale
+  link or the last row of the last page deleted, returns to page 1 instead of showing an error.
+
+### Page titles (D57, D58)
+
+Every route declares its tab title with the router's `head` option, as "Tasks · Task
+Management System", page name first so it survives a narrow tab. `<HeadContent />` in the root
+route renders it. `index.html` deliberately has no `<title>`: React 19 hoists the route's title
+into `<head>` after any static one, and the browser shows the first.
+
 ## Deliberate overrides of AGENTS.md
 
 | Override | AGENTS.md says | This project does | Why |
@@ -893,6 +923,7 @@ millisecond **by the same process**; across processes, ordering is millisecond-g
 | **Celery beat service** | root § Local Development: "Do not add further services beyond this (a beat/scheduler process, Flower, extra queues, Kafka)" | Adds a `beat` service to `docker-compose.yml` | The brief requires scheduled overdue notifications, which needs a periodic scheduler. A separate `celery beat` process is the standard, production-shaped arrangement; Celery documents `worker -B` as development-only. |
 | **API docs tool** | `backend §35` names `drf-yasg` first | Uses `drf-spectacular` | D4. `§35` explicitly permits either. |
 | **Dockerfile dependency install** | root § Local Development example uses `requirements.txt` + `pip` | Uses `uv sync` from `pyproject.toml`/`uv.lock`, and installs `git` | D5 (required by the brief) and D3. `backend §44a` already mandates `pyproject.toml` over `requirements*.txt`, so the root example is the outdated part. |
+| **A fourth kind of state** | frontend §4: three kinds of state — server state in TanStack Query, shared client state in Context, local UI state in `useState` | List view state (filters, sort, page, page size) lives in the URL, owned by the router | A list's view must survive refresh, Back and a shared link, and the dashboard's cards must be able to open it. Only the URL does all four. Typed text keeps a short-lived local draft (D50), which is §4's local UI state. |
 
 ## Known limitations and exit criteria
 
@@ -1031,3 +1062,22 @@ gate was checked the same way.
 creates Postgres foreign keys as `DEFERRABLE INITIALLY DEFERRED`, so a bad-FK insert does
 not raise until `COMMIT`. Inside a test transaction that means teardown, long after the code
 under test returned.
+
+**List navigation.** The spec review caught five claims that would have failed at
+implementation:
+- the router resets scroll on `replace` navigations too, unless told not to;
+- a date picked and then cleared within the debounce would have reappeared;
+- the spec's own snippets passed an optional page into a required prop and did not typecheck;
+- `useNavigate` given the route id rather than its path logs a warning that the console guard
+  fails on;
+- a `className="px-3"` override cannot beat `Button`'s `px-4`, because classes are merged with
+  plain `clsx`.
+
+The plan review applied the whole plan to a scratch copy before any of it was executed. That
+caught two tests that found a task title twice — jsdom renders both the table and the mobile
+cards — and a middleware constant shared by two routes that did not typecheck. Execution then
+followed the plan without correction; the only adaptation was keeping iteration 3's delete
+dialog, which had landed in `TaskListPage` in the meantime.
+
+The request's own example pager, "1, 3, 5 (current), 7, 10", read two ways. The project owner
+chose a contiguous window over literal steps of two.
