@@ -17,7 +17,7 @@
     {
       "id": 3,
       "subject": "Task 3: The tasks DTOs",
-      "status": "pending",
+      "status": "completed",
       "blockedBy": [
         2
       ]
@@ -144,5 +144,5 @@
       ]
     }
   ],
-  "lastUpdated": "2026-10-07T01:00:38+00:00"
+  "lastUpdated": "2026-10-07T01:01:43+00:00"
 }
