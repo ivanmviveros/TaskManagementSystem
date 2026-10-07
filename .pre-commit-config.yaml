@@ -27,8 +27,8 @@ repos:
         files: ^backend/apps/
 
       - id: pytest
-        name: pytest
-        entry: uv run --directory backend pytest -x -q
+        name: pytest (docker compose, falling back to local uv)
+        entry: bash scripts/run-backend-tests.sh
         language: system
         pass_filenames: false
         stages: [pre-push]

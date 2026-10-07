@@ -12,13 +12,20 @@
 
 ## Execution Notes
 
-**Run the backend suite through Compose.** It is the project default (D36):
+**Run the backend suite through Compose.** It is the project default (D36). Every Compose
+pytest command in this plan forces the test settings with
+`-e DJANGO_SETTINGS_MODULE=config.settings.test`, and that override is load-bearing: the
+container's `.env` sets `config.settings.local`, and pytest-django ranks the environment
+variable **above** the `ini` value in `pyproject.toml`. Without it the suite runs on local
+settings — console email, no eager Celery — and fails on correct tests. (Found while executing
+Task 1: a plain `docker compose exec -T backend pytest` fails
+`test_a_due_date_change_fans_out_to_the_assignee` on an untouched tree.)
 
 ```bash
-docker compose exec -T backend pytest -x -q
+docker compose exec -T -e DJANGO_SETTINGS_MODULE=config.settings.test backend pytest -x -q
 ```
 
-`uv run --directory backend pytest -x -q` is the supported fallback, but note spec §1.1: a native PostgreSQL on `127.0.0.1:5432` makes the local path fail on the machine this plan was written for. Task 1 makes the choice automatic, so **do Task 1 first** and use `bash scripts/run-backend-tests.sh` thereafter.
+`uv run --directory backend pytest -x -q` is the supported fallback. It reads `POSTGRES_*` from the shell, never `.env`, so it targets `localhost:5432` unless you export `POSTGRES_PORT=5442` — Compose's published port. On the machine this plan was written for, `5432` is a native PostgreSQL without the `taskmanagement` role (spec §1.1). Task 1 makes the choice automatic, so **do Task 1 first** and use `bash scripts/run-backend-tests.sh` thereafter.
 
 **Frontend:** `npm run --prefix frontend test`. (npm 10 has no working `--prefix` for `install`, but `run` is fine.)
 
@@ -128,7 +135,7 @@ compose_available() {
 
 if compose_available; then
     echo "==> pytest via docker compose"
-    if docker compose exec -T backend pytest -x -q; then
+    if docker compose exec -T -e DJANGO_SETTINGS_MODULE=config.settings.test backend pytest -x -q; then
         echo "backend tests passed in: docker compose"
         exit 0
     fi
@@ -360,7 +367,7 @@ class TestStatsOutput:
 - [ ] **Step 2: Run them and watch them fail**
 
 ```bash
-docker compose exec -T backend pytest apps/tasks/tests/test_dto.py -q --no-cov
+docker compose exec -T -e DJANGO_SETTINGS_MODULE=config.settings.test backend pytest apps/tasks/tests/test_dto.py -q --no-cov
 ```
 Expected: collection error — `ModuleNotFoundError: No module named 'apps.tasks.dto'`
 
@@ -433,7 +440,7 @@ class TaskStatsOutput(BaseModel):
 - [ ] **Step 4: Run them and watch them pass**
 
 ```bash
-docker compose exec -T backend pytest apps/tasks/tests/test_dto.py -q --no-cov
+docker compose exec -T -e DJANGO_SETTINGS_MODULE=config.settings.test backend pytest apps/tasks/tests/test_dto.py -q --no-cov
 ```
 Expected: 8 passed
 
@@ -515,7 +522,7 @@ class TestUpdateInput:
 - [ ] **Step 2: Run them and watch them fail**
 
 ```bash
-docker compose exec -T backend pytest apps/users/tests/test_dto.py -q --no-cov
+docker compose exec -T -e DJANGO_SETTINGS_MODULE=config.settings.test backend pytest apps/users/tests/test_dto.py -q --no-cov
 ```
 Expected: `ModuleNotFoundError: No module named 'apps.users.dto'`
 
@@ -560,7 +567,7 @@ class UserUpdateInput(BaseModel):
 - [ ] **Step 4: Run them and watch them pass**
 
 ```bash
-docker compose exec -T backend pytest apps/users/tests/test_dto.py -q --no-cov
+docker compose exec -T -e DJANGO_SETTINGS_MODULE=config.settings.test backend pytest apps/users/tests/test_dto.py -q --no-cov
 ```
 Expected: 7 passed
 
@@ -680,7 +687,7 @@ between steps it will flag `F401` — that is expected mid-task, not a mistake.
 - [ ] **Step 2: Run them and watch them fail**
 
 ```bash
-docker compose exec -T backend pytest apps/tasks/tests/test_services.py -q --no-cov
+docker compose exec -T -e DJANGO_SETTINGS_MODULE=config.settings.test backend pytest apps/tasks/tests/test_services.py -q --no-cov
 ```
 Expected: **four** of the six fail. Read the next paragraph before assuming a green run means
 you are done.
@@ -865,7 +872,7 @@ Expected: all pass, including the six new tests. If `test_the_update_log_records
 Temporarily change the log line back to `sorted(data)` and run that one test:
 
 ```bash
-docker compose exec -T backend pytest apps/tasks/tests/test_services.py::test_the_update_log_records_field_names_never_values -q --no-cov
+docker compose exec -T -e DJANGO_SETTINGS_MODULE=config.settings.test backend pytest apps/tasks/tests/test_services.py::test_the_update_log_records_field_names_never_values -q --no-cov
 ```
 Expected: **FAIL**, with the submitted title visible in the assertion diff. Restore `sorted(fields)`. A guard that cannot fail is decoration.
 
@@ -934,7 +941,7 @@ from apps.users.dto import UserUpdateInput
 - [ ] **Step 2: Run and watch them fail**
 
 ```bash
-docker compose exec -T backend pytest apps/core/tests/test_error_paths.py -q --no-cov
+docker compose exec -T -e DJANGO_SETTINGS_MODULE=config.settings.test backend pytest apps/core/tests/test_error_paths.py -q --no-cov
 ```
 Expected: **both pass already.** That is not a mistake in the plan, and it is worth
 understanding before you convert anything.
@@ -1083,7 +1090,7 @@ module-level `pytestmark = pytest.mark.django_db`.
 - [ ] **Step 2: Run and watch it fail**
 
 ```bash
-docker compose exec -T backend pytest apps/tasks/tests/test_selectors.py -q --no-cov
+docker compose exec -T -e DJANGO_SETTINGS_MODULE=config.settings.test backend pytest apps/tasks/tests/test_selectors.py -q --no-cov
 ```
 Expected: `AssertionError` on the `isinstance` — `task_stats` still returns a dict.
 
@@ -1128,7 +1135,7 @@ Expected: 5 lines. `stats["total"]` becomes `stats.total`; `task_stats(user)["du
 This is the assertion that matters most — the dashboard reads this endpoint.
 
 ```bash
-docker compose exec -T backend pytest apps/tasks -q -k "stats" --no-cov
+docker compose exec -T -e DJANGO_SETTINGS_MODULE=config.settings.test backend pytest apps/tasks -q -k "stats" --no-cov
 bash scripts/run-backend-tests.sh
 docker compose exec -T backend mypy .
 docker compose exec -T backend python manage.py spectacular --fail-on-warn
@@ -1173,7 +1180,7 @@ already in scope.
 - [ ] **Step 2: Run it — it should pass immediately**
 
 ```bash
-docker compose exec -T backend pytest apps/core/tests/test_layering.py -q --no-cov
+docker compose exec -T -e DJANGO_SETTINGS_MODULE=config.settings.test backend pytest apps/core/tests/test_layering.py -q --no-cov
 ```
 Expected: pass, because Tasks 5 and 6 already converted both services.
 
@@ -1314,7 +1321,7 @@ class TestValidation:
 - [ ] **Step 3: Run them and watch them fail**
 
 ```bash
-docker compose exec -T backend pytest apps/users/tests/test_seed_command.py -q --no-cov
+docker compose exec -T -e DJANGO_SETTINGS_MODULE=config.settings.test backend pytest apps/users/tests/test_seed_command.py -q --no-cov
 ```
 Expected: the flag tests fail with `CommandError: unrecognized arguments: --users`.
 
@@ -1470,7 +1477,7 @@ Keep the existing `random.seed(20261006)` in `handle`. It makes a fresh run repr
 - [ ] **Step 7: Run the tests**
 
 ```bash
-docker compose exec -T backend pytest apps/users/tests/test_seed_command.py -q --no-cov
+docker compose exec -T -e DJANGO_SETTINGS_MODULE=config.settings.test backend pytest apps/users/tests/test_seed_command.py -q --no-cov
 bash scripts/run-backend-tests.sh
 ```
 Expected: all pass.
@@ -2351,7 +2358,7 @@ Every task verified its own slice. This runs what CI runs, together, which is th
 - [ ] **Step 1: Backend, in both environments**
 
 ```bash
-docker compose exec -T backend pytest -q
+docker compose exec -T -e DJANGO_SETTINGS_MODULE=config.settings.test backend pytest -q
 docker compose exec -T backend mypy .
 docker compose exec -T backend ruff check .
 docker compose exec -T backend ruff format --check .

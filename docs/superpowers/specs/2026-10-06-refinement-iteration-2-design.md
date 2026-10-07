@@ -505,12 +505,17 @@ added — the same correction the task list already carries.
 
 ```
 1. Is the Compose `backend` service running and exec-able?
-   yes → docker compose exec -T backend pytest -x -q
+   yes → docker compose exec -T -e DJANGO_SETTINGS_MODULE=config.settings.test backend pytest -x -q
          pass → report "passed in: docker compose" → exit 0
 2. uv run --directory backend pytest -x -q
    pass → report "passed in: local uv" → exit 0
 3. exit 1, printing the outcome of each environment that was attempted
 ```
+
+The Compose branch must force `DJANGO_SETTINGS_MODULE=config.settings.test` with `-e`. The
+container's `.env` sets `config.settings.local`, and pytest-django ranks that environment
+variable above the `ini` value, so an unadorned `pytest` in the container runs on local
+settings and fails correct tests (found during execution).
 
 Per D36 and the project owner's explicit instruction, **either environment passing is
 sufficient**, including when Compose ran the suite and failed. The script therefore always

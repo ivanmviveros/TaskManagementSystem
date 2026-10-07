@@ -80,9 +80,21 @@ three fail looking for one at the repository root. Running a *script* that way i
 
 ## Running the checks
 
-Backend commands run against `backend/` through uv's `--directory` flag, so each is a
-single uncompounded command. `DJANGO_SETTINGS_MODULE` is set in
-`backend/pyproject.toml`, so tests need no environment variable.
+The backend suite runs in the Compose stack by default, falling back to a local `uv`
+environment when the `backend` container is not running. This is also what the `pre-push`
+hook runs:
+
+```bash
+bash scripts/run-backend-tests.sh
+```
+
+It reports which environment the suite passed in. Inside the container the script forces
+`DJANGO_SETTINGS_MODULE=config.settings.test`, because `.env` sets the local settings module
+there and pytest-django lets that environment variable override `pyproject.toml`.
+
+The other backend commands run against `backend/` through uv's `--directory` flag, so each is
+a single uncompounded command. Outside the container `DJANGO_SETTINGS_MODULE` comes from
+`backend/pyproject.toml`, so a local run needs no settings variable.
 
 ```bash
 uv sync --directory backend
@@ -106,7 +118,13 @@ uv run --directory backend pytest -q
 
 The test settings use **Postgres, not SQLite** — the schema depends on partial indexes
 and a check constraint that SQLite does not exercise the same way. `docker compose up -d db`
-provides one on `localhost:5432` with the credentials from `.env.example`.
+provides one, published on host port **5442**, with the credentials from `.env.example`. A
+local run reads `POSTGRES_*` from the shell, never from `.env`, so without an override it
+targets `localhost:5432` — point it at Compose's database instead:
+
+```bash
+POSTGRES_PORT=5442 uv run --directory backend pytest -q
+```
 
 `pytest` carries `--cov=apps --cov-report=term-missing --cov-fail-under=80` in `addopts`,
 so a local run and CI apply the same gate rather than two thresholds that can drift. The
