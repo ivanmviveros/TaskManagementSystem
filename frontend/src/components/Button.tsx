@@ -3,6 +3,8 @@ import type { ButtonHTMLAttributes } from "react";
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: "primary" | "secondary" | "danger";
+  /** "sm" is the pager's compact size; every other button is "md". */
+  size?: "md" | "sm";
 }
 
 const VARIANTS: Record<NonNullable<ButtonProps["variant"]>, string> = {
@@ -11,12 +13,24 @@ const VARIANTS: Record<NonNullable<ButtonProps["variant"]>, string> = {
   danger: "bg-status-overdue text-white hover:bg-red-700",
 };
 
-export function Button({ variant = "primary", className, type, ...button }: ButtonProps) {
+const SIZES: Record<NonNullable<ButtonProps["size"]>, string> = {
+  md: "px-4 py-2",
+  sm: "px-3 py-1.5",
+};
+
+export function Button({
+  variant = "primary",
+  size = "md",
+  className,
+  type,
+  ...button
+}: ButtonProps) {
   return (
     <button
       type={type ?? "button"}
       className={clsx(
-        "rounded px-4 py-2 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-60",
+        "rounded text-sm font-medium disabled:cursor-not-allowed disabled:opacity-60",
+        SIZES[size],
         VARIANTS[variant],
         className,
       )}
