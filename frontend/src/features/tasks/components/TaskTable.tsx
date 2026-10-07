@@ -36,7 +36,6 @@ export function TaskTable({
           </th>
           {SORT_FIELDS.map(({ field, label }) => {
             const active = sort.field === field;
-            const next = active && sort.direction === "ascending" ? "descending" : "ascending";
             return (
               <th
                 key={field}
@@ -48,10 +47,6 @@ export function TaskTable({
                 <button
                   type="button"
                   onClick={() => onOrderingChange(nextOrdering(ordering, field))}
-                  // Names the action the click will take, after the current state.
-                  aria-label={
-                    active ? `${label}, sorted ${sort.direction}. Sort ${next}` : `${label}. Sort ascending`
-                  }
                   className={clsx(
                     "inline-flex items-center gap-1 underline-offset-2 hover:underline",
                     active ? "font-semibold text-slate-900" : "font-medium text-slate-700",

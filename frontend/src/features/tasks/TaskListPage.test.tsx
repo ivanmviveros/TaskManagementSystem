@@ -571,14 +571,14 @@ describe("sort state in the table header (F6)", () => {
     );
   });
 
-  it("shows the new column and direction after a click, and names the next action", async () => {
+  it("shows the new column and direction after a click", async () => {
     signedInAs(SUPERVISOR);
     tasksRespondWith([task()]);
     await renderApp("/tasks");
     const user = userEvent.setup();
     await user.click(
       within(await screen.findByRole("table")).getByRole("button", {
-        name: /^due date\. sort ascending$/i,
+        name: /^due date$/i,
       }),
     );
     await waitFor(() => expect(lastQuery().get("ordering")).toBe("due_date"));
@@ -587,9 +587,7 @@ describe("sort state in the table header (F6)", () => {
       "aria-sort",
       "ascending",
     );
-    expect(
-      within(table).getByRole("button", { name: /^due date, sorted ascending\. sort descending$/i }),
-    ).toBeInTheDocument();
+    expect(within(table).getByRole("button", { name: /^due date$/i })).toBeInTheDocument();
     expect(within(table).getByRole("columnheader", { name: /created/i })).toHaveAttribute(
       "aria-sort",
       "none",
@@ -603,13 +601,16 @@ describe("sort state in the table header (F6)", () => {
     const user = userEvent.setup();
     await user.click(
       within(await screen.findByRole("table")).getByRole("button", {
-        name: /^created, sorted descending/i,
+        name: /^created$/i,
       }),
     );
     await waitFor(() => expect(router.state.location.search.ordering).toBe("created_at"));
+    expect(
+      within(screen.getByRole("table")).getByRole("columnheader", { name: /created/i }),
+    ).toHaveAttribute("aria-sort", "ascending");
     await user.click(
       within(screen.getByRole("table")).getByRole("button", {
-        name: /^created, sorted ascending/i,
+        name: /^created$/i,
       }),
     );
     await waitFor(() => expect(router.state.location.search.ordering).toBeUndefined());

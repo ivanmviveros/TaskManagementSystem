@@ -11,13 +11,14 @@ export const SORT_FIELDS = [
 ] as const;
 
 export type SortField = (typeof SORT_FIELDS)[number]["field"];
+export type Ordering = SortField | `-${SortField}`;
 export type SortDirection = "ascending" | "descending";
 
 /** The API's own default (spec §8.3), so "no parameter" is shown as what it is. */
-export const DEFAULT_ORDERING = "-created_at";
+export const DEFAULT_ORDERING: Ordering = "-created_at";
 
 /** The below-lg select's options, in display order, default first. */
-export const SORT_OPTIONS: readonly { value: string; label: string }[] = [
+export const SORT_OPTIONS: readonly { value: Ordering; label: string }[] = [
   { value: "-created_at", label: "Newest first" },
   { value: "created_at", label: "Oldest first" },
   { value: "due_date", label: "Due date, earliest first" },
@@ -26,11 +27,11 @@ export const SORT_OPTIONS: readonly { value: string; label: string }[] = [
   { value: "-status", label: "Status, Z–A" },
 ];
 
-const ORDERINGS: readonly string[] = SORT_FIELDS.flatMap(({ field }) => [field, `-${field}`]);
+const ORDERINGS = SORT_FIELDS.flatMap(({ field }) => [field, `-${field}`]) as readonly Ordering[];
 
 /** The six values the UI writes; anything else is dropped by validateSearch (D73). */
-export function isOrdering(value: unknown): value is string {
-  return typeof value === "string" && ORDERINGS.includes(value);
+export function isOrdering(value: unknown): value is Ordering {
+  return typeof value === "string" && (ORDERINGS as readonly string[]).includes(value);
 }
 
 /** undefined (or anything unknown) resolves to the default, so it is displayed too. */
@@ -41,6 +42,8 @@ export function parseOrdering(ordering: string | undefined): {
   const resolved = isOrdering(ordering) ? ordering : DEFAULT_ORDERING;
   const descending = resolved.startsWith("-");
   return {
+    // Correct by construction: ORDERINGS derives from SORT_FIELDS, and TS cannot
+    // narrow a template-literal slice.
     field: (descending ? resolved.slice(1) : resolved) as SortField,
     direction: descending ? "descending" : "ascending",
   };
@@ -51,8 +54,9 @@ export function parseOrdering(ordering: string | undefined): {
  * Returns undefined when the result is DEFAULT_ORDERING, so the URL stays
  * canonical (D48).
  */
-export function nextOrdering(current: string | undefined, field: SortField): string | undefined {
+export function nextOrdering(current: string | undefined, field: SortField): Ordering | undefined {
   const active = parseOrdering(current);
-  const next = active.field === field && active.direction === "ascending" ? `-${field}` : field;
+  const next: Ordering =
+    active.field === field && active.direction === "ascending" ? `-${field}` : field;
   return next === DEFAULT_ORDERING ? undefined : next;
 }

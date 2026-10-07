@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   DEFAULT_ORDERING,
+  SORT_FIELDS,
   SORT_OPTIONS,
   isOrdering,
   nextOrdering,
@@ -69,5 +70,11 @@ describe("SORT_OPTIONS", () => {
       "status",
       "-status",
     ]);
+  });
+
+  it("stays in step with the sort fields: every option is a valid, distinct ordering", () => {
+    const values = SORT_OPTIONS.map((option) => option.value);
+    expect(values.every(isOrdering)).toBe(true);
+    expect(new Set(values).size).toBe(SORT_FIELDS.length * 2);
   });
 });
