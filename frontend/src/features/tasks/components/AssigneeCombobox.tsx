@@ -1,10 +1,12 @@
-import { useEffect, useState } from "react";
+import { useCreateStore, useSelector } from "@tanstack/react-store";
+import { useEffect } from "react";
 import type { KeyboardEvent, UIEvent } from "react";
 
 import { buttonClasses } from "../../../components/buttonClasses";
 import { useDebouncedValue } from "../../../lib/useDebouncedValue";
 import { useAssignableUsers } from "../../users/hooks/useAssignableUsers";
 import type { UserMinimal } from "../../users/types";
+import { comboboxActions, initialComboboxState } from "./assignee-combobox-store";
 
 const SEARCH_DELAY_MS = 300;
 /** How close to the bottom of the list, in px, scrolling starts the next page. */
@@ -33,13 +35,8 @@ interface AssigneeComboboxProps {
  * "Load more". Nothing is fetched until the list first opens.
  */
 export function AssigneeCombobox({ id, label, value, onChange, error }: AssigneeComboboxProps) {
-  const [open, setOpen] = useState(false);
-  // null: not searching. The input shows the chosen user and the list is
-  // unfiltered. A string: what the user typed, which the list is filtered by.
-  const [query, setQuery] = useState<string | null>(null);
-  // -1: no active option, so Enter chooses nothing — the state after typing,
-  // until an arrow key picks one (no automatic selection).
-  const [activeIndex, setActiveIndex] = useState(-1);
+  const store = useCreateStore(initialComboboxState, comboboxActions);
+  const { open, query, activeIndex } = useSelector(store);
   const debounced = useDebouncedValue(query?.trim() ?? "", SEARCH_DELAY_MS);
   const search = query === null ? "" : debounced;
 
@@ -70,16 +67,13 @@ export function AssigneeCombobox({ id, label, value, onChange, error }: Assignee
 
   function openList() {
     if (open) return;
-    setOpen(true);
     const current = options.findIndex((option) => option?.id === value?.id);
-    setActiveIndex(current === -1 ? 0 : current);
+    store.actions.openAt(current === -1 ? 0 : current);
   }
 
   /** Closes without choosing: the input goes back to the chosen user. */
   function close() {
-    setOpen(false);
-    setQuery(null);
-    setActiveIndex(-1);
+    store.actions.close();
   }
 
   function choose(option: UserMinimal | null) {
@@ -88,7 +82,7 @@ export function AssigneeCombobox({ id, label, value, onChange, error }: Assignee
   }
 
   function moveTo(index: number) {
-    setActiveIndex(index);
+    store.actions.moveTo(index);
     if (index === options.length - 1) loadMore();
   }
 
@@ -148,11 +142,7 @@ export function AssigneeCombobox({ id, label, value, onChange, error }: Assignee
           aria-invalid={error === undefined ? undefined : true}
           aria-describedby={error === undefined ? undefined : errorId}
           value={query ?? (value === null ? "" : userLabel(value))}
-          onChange={(event) => {
-            setQuery(event.target.value);
-            setActiveIndex(-1);
-            setOpen(true);
-          }}
+          onChange={(event) => store.actions.type(event.target.value)}
           onClick={openList}
           onKeyDown={handleKeyDown}
           onBlur={close}
