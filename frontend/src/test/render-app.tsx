@@ -3,10 +3,15 @@ import { RouterProvider, createMemoryHistory } from "@tanstack/react-router";
 import { render } from "@testing-library/react";
 import { useEffect, useState } from "react";
 
-import { createAppRouter } from "../app/router";
+import { createAppRouter, type AppRouter } from "../app/router";
 import { AuthProvider } from "../features/auth/AuthContext";
 import { useAuth } from "../features/auth/hooks/useAuth";
 import { clearAccessToken } from "../lib/api-client";
+
+/** Where AppAtPath hands back the router it created, so tests can read the URL. */
+interface RouterHolder {
+  current: AppRouter | null;
+}
 
 /**
  * Mounts the REAL router and the REAL providers at `initialPath`, so routing
@@ -16,13 +21,15 @@ import { clearAccessToken } from "../lib/api-client";
  * live auth state arrives through RouterProvider's `context` prop, and nothing
  * routed renders until the auth probe settles.
  */
-function AppAtPath({ initialPath }: { initialPath: string }) {
+function AppAtPath({ initialPath, holder }: { initialPath: string; holder: RouterHolder }) {
   const auth = useAuth();
-  const [router] = useState(() =>
-    createAppRouter(auth, {
+  const [router] = useState(() => {
+    const created = createAppRouter(auth, {
       history: createMemoryHistory({ initialEntries: [initialPath] }),
-    }),
-  );
+    });
+    holder.current = created;
+    return created;
+  });
 
   // Mirrors RoutedApp: context changes alone do not re-run beforeLoad.
   useEffect(() => {
@@ -40,11 +47,18 @@ export async function renderApp(initialPath = "/") {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
-  return render(
+  const holder: RouterHolder = { current: null };
+  const result = render(
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
-        <AppAtPath initialPath={initialPath} />
+        <AppAtPath initialPath={initialPath} holder={holder} />
       </AuthProvider>
     </QueryClientProvider>,
   );
+  // AppAtPath creates the router on its first render, which render() has
+  // already completed — before the auth probe settles.
+  const router = holder.current;
+  if (router === null) throw new Error("renderApp: AppAtPath did not create a router");
+  // Spread, not wrapped: StatsPage.test.tsx calls unmount() on the result.
+  return { ...result, router };
 }

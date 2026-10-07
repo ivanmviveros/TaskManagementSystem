@@ -1,0 +1,18 @@
+{
+  "planPath": "docs/superpowers/plans/2026-10-06-list-navigation.md",
+  "tasks": [
+    { "id": 1, "subject": "Task 1: Button gains a compact size", "status": "completed" },
+    { "id": 2, "subject": "Task 2: The page window and page sizes", "status": "completed" },
+    { "id": 3, "subject": "Task 3: The shared Pagination component", "status": "completed", "blockedBy": [1, 2] },
+    { "id": 4, "subject": "Task 4: renderApp returns its router", "status": "completed" },
+    { "id": 5, "subject": "Task 5: Search validation, canonical URLs and one ROLES", "status": "completed", "blockedBy": [2] },
+    { "id": 6, "subject": "Task 6: The text-entry draft hook", "status": "completed" },
+    { "id": 7, "subject": "Task 7: The task list reads and writes the URL", "status": "completed", "blockedBy": [3, 4, 5, 6] },
+    { "id": 8, "subject": "Task 8: The user list reads and writes the URL", "status": "completed", "blockedBy": [7] },
+    { "id": 9, "subject": "Task 9: Page titles", "status": "completed", "blockedBy": [5] },
+    { "id": 10, "subject": "Task 10: Documentation", "status": "completed", "blockedBy": [8, 9] },
+    { "id": 11, "subject": "Task 11: Full verification", "status": "in_progress", "blockedBy": [10] },
+    { "id": 12, "subject": "Task 12: Persist insights to claude-insights/", "status": "completed", "blockedBy": [11] }
+  ],
+  "lastUpdated": "2026-10-07T09:30:00Z"
+}

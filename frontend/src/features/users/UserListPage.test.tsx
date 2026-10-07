@@ -188,3 +188,88 @@ describe("UserListPage", () => {
     ).toBeInTheDocument();
   });
 });
+
+describe("UserListPage URL state", () => {
+  it("reads its filters, search and page size from the URL", async () => {
+    usersRespondWith([operator()]);
+    await renderApp("/users?role=OPERATOR&search=omar&page_size=10");
+    await screen.findByRole("table");
+    expect(lastQuery().get("role")).toBe("OPERATOR");
+    expect(lastQuery().get("search")).toBe("omar");
+    expect(lastQuery().get("page_size")).toBe("10");
+    expect(screen.getByLabelText(/search/i)).toHaveValue("omar");
+    expect(screen.getByLabelText(/^role$/i)).toHaveValue("OPERATOR");
+    expect(screen.getByLabelText(/rows per page/i)).toHaveValue("10");
+  });
+
+  it("keeps a numeric search as text", async () => {
+    usersRespondWith([operator()]);
+    await renderApp("/users?search=2026");
+    await screen.findByRole("table");
+    expect(screen.getByLabelText(/search/i)).toHaveValue("2026");
+    expect(lastQuery().get("search")).toBe("2026");
+  });
+
+  it("drops a role it does not know", async () => {
+    usersRespondWith([operator()]);
+    await renderApp("/users?role=ROOT");
+    await screen.findByRole("table");
+    expect(lastQuery().has("role")).toBe(false);
+    expect(screen.getByLabelText(/^role$/i)).toHaveValue("");
+  });
+
+  it("sends one request per pause in typing, not one per keystroke", async () => {
+    usersRespondWith([operator()]);
+    const { router } = await renderApp("/users");
+    await screen.findByRole("table");
+
+    await userEvent.setup().type(screen.getByLabelText(/search/i), "omar");
+
+    await waitFor(() => expect(router.state.location.search).toEqual({ search: "omar" }));
+    await waitFor(() => expect(lastQuery().get("search")).toBe("omar"));
+    expect(
+      requested
+        .filter((url) => url.searchParams.has("search"))
+        .map((url) => url.searchParams.get("search")),
+    ).toEqual(["omar"]);
+  });
+
+  it("empties the search box when navigation clears a committed search", async () => {
+    usersRespondWith([operator()]);
+    const { router } = await renderApp("/users");
+    await screen.findByRole("table");
+    const user = userEvent.setup();
+
+    // Typed and committed, so the clear below must beat the draft's own echo
+    // check rather than an initial value.
+    await user.type(screen.getByLabelText(/search/i), "omar");
+    await waitFor(() => expect(router.state.location.search).toEqual({ search: "omar" }));
+
+    await user.click(screen.getByRole("link", { name: /^users$/i }));
+
+    await waitFor(() => expect(screen.getByLabelText(/search/i)).toHaveValue(""));
+    expect(router.state.location.search).toEqual({});
+    await waitFor(() => expect(lastQuery().has("search")).toBe(false));
+  });
+
+  it("lands on page 1, without an error, when the URL's page no longer exists", async () => {
+    server.use(
+      http.get(`${BASE}/users/`, ({ request }) => {
+        const url = new URL(request.url);
+        requested.push(url);
+        if (url.searchParams.get("page") === "4") {
+          return HttpResponse.json(
+            { detail: "Invalid page.", code: "not_found", errors: null },
+            { status: 404 },
+          );
+        }
+        return HttpResponse.json({ count: 1, next: null, previous: null, results: [operator()] });
+      }),
+    );
+    const { router } = await renderApp("/users?page=4");
+    await screen.findByRole("table");
+    expect(router.state.location.search).toEqual({});
+    expect(requested.map((url) => url.searchParams.get("page"))).toEqual(["4", "1"]);
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+});

@@ -236,3 +236,7 @@ using /superpowers-extended-cc:using-git-worktrees  and /superpowers-extended-cc
 - include URL params during lists filtering, the params are included only when the filter comes from dashboard cards
 
 ```
+
+```
+I identify another minor issue, browser tabs aren't showing current page name, "dashboard, tasks, users, detail, etc"
+```

@@ -1,22 +1,51 @@
 import { Button } from "../../../components/Button";
+import { useSearchParamDraft } from "../../../lib/useSearchParamDraft";
 import { STATUS_LABEL } from "./StatusBadge";
 import type { TaskFilters as Filters, TaskStatus } from "../types";
 
 const STATUSES: TaskStatus[] = ["PENDING", "IN_PROGRESS", "COMPLETED", "CANCELLED"];
 
+/** What this panel edits. Paging and ordering belong to the list. */
+export type FilterPatch = Partial<
+  Pick<Filters, "status" | "due_date_after" | "due_date_before" | "overdue">
+>;
+
 interface TaskFiltersProps {
   filters: Filters;
-  onChange: (next: Filters) => void;
+  /** A patch, not a snapshot: a draft commits up to 300 ms later (D46). */
+  onChange: (patch: FilterPatch) => void;
+  onClear: () => void;
 }
 
-export function TaskFilters({ filters, onChange }: TaskFiltersProps) {
+/** "" clears the bound; otherwise the day at `time`, in UTC, as before. */
+function toBound(day: string, time: string): string | undefined {
+  return day === "" ? undefined : new Date(`${day}T${time}Z`).toISOString();
+}
+
+export function TaskFilters({ filters, onChange, onClear }: TaskFiltersProps) {
   const selected = filters.status ?? [];
+  // Drafts, not the URL directly: a date typed digit by digit would be
+  // reverted mid-entry by the router's transition (D50).
+  const after = useSearchParamDraft(filters.due_date_after?.slice(0, 10) ?? "", (day) =>
+    onChange({ due_date_after: toBound(day, "00:00:00") }),
+  );
+  const before = useSearchParamDraft(filters.due_date_before?.slice(0, 10) ?? "", (day) =>
+    onChange({ due_date_before: toBound(day, "23:59:59") }),
+  );
 
   function toggleStatus(status: TaskStatus) {
     const next = selected.includes(status)
       ? selected.filter((value) => value !== status)
       : [...selected, status];
-    onChange({ ...filters, status: next.length === 0 ? undefined : next });
+    onChange({ status: next.length === 0 ? undefined : next });
+  }
+
+  function clear() {
+    // A pending date commit would otherwise land after the clear and bring
+    // the date back.
+    after.cancel();
+    before.cancel();
+    onClear();
   }
 
   return (
@@ -45,16 +74,8 @@ export function TaskFilters({ filters, onChange }: TaskFiltersProps) {
           <input
             id="due-after"
             type="date"
-            value={filters.due_date_after?.slice(0, 10) ?? ""}
-            onChange={(event) =>
-              onChange({
-                ...filters,
-                due_date_after:
-                  event.target.value === ""
-                    ? undefined
-                    : new Date(`${event.target.value}T00:00:00Z`).toISOString(),
-              })
-            }
+            value={after.draft}
+            onChange={(event) => after.setDraft(event.target.value)}
             className="rounded border border-slate-300 px-3 py-2 text-sm"
           />
         </div>
@@ -65,16 +86,8 @@ export function TaskFilters({ filters, onChange }: TaskFiltersProps) {
           <input
             id="due-before"
             type="date"
-            value={filters.due_date_before?.slice(0, 10) ?? ""}
-            onChange={(event) =>
-              onChange({
-                ...filters,
-                due_date_before:
-                  event.target.value === ""
-                    ? undefined
-                    : new Date(`${event.target.value}T23:59:59Z`).toISOString(),
-              })
-            }
+            value={before.draft}
+            onChange={(event) => before.setDraft(event.target.value)}
             className="rounded border border-slate-300 px-3 py-2 text-sm"
           />
         </div>
@@ -82,13 +95,11 @@ export function TaskFilters({ filters, onChange }: TaskFiltersProps) {
           <input
             type="checkbox"
             checked={filters.overdue === true}
-            onChange={(event) =>
-              onChange({ ...filters, overdue: event.target.checked ? true : undefined })
-            }
+            onChange={(event) => onChange({ overdue: event.target.checked ? true : undefined })}
           />
           Overdue only
         </label>
-        <Button variant="secondary" onClick={() => onChange({})} className="sm:ml-auto">
+        <Button variant="secondary" onClick={clear} className="sm:ml-auto">
           Clear filters
         </Button>
       </div>

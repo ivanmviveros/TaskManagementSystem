@@ -5,10 +5,9 @@ import { Button } from "../../../components/Button";
 import { FormError } from "../../../components/FormError";
 import { TextField } from "../../../components/TextField";
 import { ApiError } from "../../../lib/api-error";
-import type { Role } from "../../auth/types";
+import { ROLES, type Role } from "../../auth/types";
 import type { UserDetail } from "../types";
 
-const ROLES: Role[] = ["ADMIN", "SUPERVISOR", "OPERATOR"];
 const ROLE_LABEL: Record<Role, string> = {
   ADMIN: "Admin",
   SUPERVISOR: "Supervisor",
