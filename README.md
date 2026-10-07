@@ -1012,7 +1012,7 @@ test that failed first.
 - **Back to tasks returns to the same list (D70).** List links leave the list's search in the
   router's history state; detail, edit and create forward it, validated like a URL. A deep
   link falls back to the plain list, and so does a task opened in a new tab (Ctrl or middle
-  click), which has no history state: its Back to tasks opens the plain list.
+  click), because a new tab starts with no history state.
 - **Not-found pages explain and lead back (D71, D72).** A shared `NotFoundPanel`, rendered by
   the root route's `notFoundComponent` (`AppNotFound`) with `notFoundMode: "root"`, so both
   unmatched paths and any thrown `notFound()` render once, at the root, inside the app frame
