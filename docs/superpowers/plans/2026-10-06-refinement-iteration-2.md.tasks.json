@@ -117,7 +117,7 @@
     {
       "id": 16,
       "subject": "Task 16: MailHog for local email",
-      "status": "pending",
+      "status": "completed",
       "blockedBy": [
         1,
         15
@@ -144,5 +144,5 @@
       ]
     }
   ],
-  "lastUpdated": "2026-10-07T01:27:23+00:00"
+  "lastUpdated": "2026-10-07T01:31:17+00:00"
 }

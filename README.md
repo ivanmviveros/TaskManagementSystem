@@ -23,8 +23,9 @@ docker compose exec backend python manage.py migrate
 docker compose exec backend python manage.py seed_demo_data
 ```
 
-The API answers on `http://localhost:8000/api/v1/`, the SPA on `http://localhost:5173`, and
-the interactive API docs on `http://localhost:8000/api/v1/schema/swagger-ui/`.
+The API answers on `http://localhost:8000/api/v1/`, the SPA on `http://localhost:5173`,
+the interactive API docs on `http://localhost:8000/api/v1/schema/swagger-ui/`, and every
+email the stack sends lands in MailHog at `http://localhost:8025`.
 
 `.env` is never committed; `.env.example` is the template and lists every variable the
 stack reads.
@@ -238,7 +239,7 @@ Each was rendered with `@mermaid-js/mermaid-cli` to confirm it parses.
 
 ### Containers
 
-Six Compose services. `beat` is a documented override of root `AGENTS.md` — the brief
+Seven Compose services. `beat` is a documented override of root `AGENTS.md` — the brief
 requires scheduled overdue notifications, and Celery documents `worker -B` as
 development-only.
 
@@ -254,9 +255,8 @@ graph TB
         BEAT["beat<br/>Celery beat"]
         REDIS[("redis:7<br/>broker + throttle cache")]
         DB[("postgres:16")]
+        MAILHOG["mailhog<br/>SMTP sink, inbox on :8025"]
     end
-
-    SMTP["SMTP<br/>(console backend in local)"]
 
     UI -->|"/api/v1/*<br/>Bearer access token<br/>+ HttpOnly refresh cookie"| API
     API --> DB
@@ -265,7 +265,7 @@ graph TB
     BEAT -->|"hourly schedule"| REDIS
     REDIS --> WORKER
     WORKER --> DB
-    WORKER --> SMTP
+    WORKER -->|"SMTP :1025"| MAILHOG
 ```
 
 ### Data model
