@@ -258,6 +258,64 @@ describe("TaskListPage", () => {
   });
 });
 
+describe("task actions from the list (D87)", () => {
+  const A = task({ id: "task-a", title: "Task A", can_delete: true });
+  const B = task({ id: "task-b", title: "Task B", can_delete: true });
+
+  it("disables only the busy row while its action is in flight", async () => {
+    signedInAs(SUPERVISOR);
+    tasksRespondWith([A, B]);
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    server.use(
+      http.post(`${BASE}/tasks/${A.id}/complete/`, async () => {
+        await gate;
+        return HttpResponse.json({ ...A, description: "" });
+      }),
+    );
+    await renderApp("/tasks");
+    const table = await screen.findByRole("table");
+    const user = userEvent.setup();
+    await user.click(within(table).getByRole("button", { name: "Complete Task A" }));
+
+    expect(within(table).getByRole("button", { name: "Complete Task A" })).toBeDisabled();
+    expect(within(table).getByRole("button", { name: "Delete Task A" })).toBeDisabled();
+    expect(within(table).getByRole("button", { name: "Complete Task B" })).toBeEnabled();
+
+    release();
+    await waitFor(() =>
+      expect(within(table).getByRole("button", { name: "Complete Task A" })).toBeEnabled(),
+    );
+    expect(within(table).getByRole("button", { name: "Delete Task A" })).toBeEnabled();
+  });
+
+  it("shows the message when completing fails", async () => {
+    signedInAs(SUPERVISOR);
+    tasksRespondWith([A]);
+    server.use(
+      http.post(`${BASE}/tasks/${A.id}/complete/`, () =>
+        HttpResponse.json(
+          {
+            detail: "This task can no longer be completed.",
+            code: "invalid_status_transition",
+            errors: null,
+          },
+          { status: 409 },
+        ),
+      ),
+    );
+    await renderApp("/tasks");
+    const table = await screen.findByRole("table");
+    const user = userEvent.setup();
+    await user.click(within(table).getByRole("button", { name: "Complete Task A" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "This task can no longer be completed.",
+    );
+  });
+});
+
 describe("task deletion from the list", () => {
   const TASK = task({ can_delete: true });
 
@@ -276,11 +334,11 @@ describe("task deletion from the list", () => {
   async function openDialog() {
     signedInAs(OPERATOR);
     tasksRespondWith([TASK]);
-    await renderApp("/tasks");
+    const { router } = await renderApp("/tasks");
     const user = userEvent.setup();
     const table = await screen.findByRole("table");
     await user.click(within(table).getByRole("button", { name: /^delete review the brief/i }));
-    return { user, dialog: screen.getByRole("dialog") };
+    return { user, router, dialog: screen.getByRole("dialog") };
   }
 
   it("asks for confirmation, naming the task, and Cancel deletes nothing", async () => {
@@ -314,13 +372,26 @@ describe("task deletion from the list", () => {
     expect(screen.getByRole("dialog")).toBeInTheDocument();
   });
 
+  it("refocuses the alert when the same failure repeats (D75)", async () => {
+    deletesRespondWith(() =>
+      HttpResponse.json(
+        { detail: "You can only delete tasks you created.", code: "permission_denied" },
+        { status: 403 },
+      ),
+    );
+    const { user, dialog } = await openDialog();
+    await user.click(within(dialog).getByRole("button", { name: /^delete$/i }));
+    await waitFor(() => expect(within(dialog).getByRole("alert")).toHaveFocus());
+
+    // Focus leaves the alert; the same message arriving again must pull it back.
+    act(() => within(dialog).getByRole("button", { name: /cancel/i }).focus());
+    expect(within(dialog).getByRole("alert")).not.toHaveFocus();
+    await user.click(within(dialog).getByRole("button", { name: /^delete$/i }));
+    await waitFor(() => expect(within(dialog).getByRole("alert")).toHaveFocus());
+  });
+
   it("starts with the dialog closed after leaving the list and coming back (D87)", async () => {
-    signedInAs(OPERATOR);
-    tasksRespondWith([TASK]);
-    const { router } = await renderApp("/tasks");
-    const user = userEvent.setup();
-    const table = await screen.findByRole("table");
-    await user.click(within(table).getByRole("button", { name: /^delete review the brief/i }));
+    const { router } = await openDialog();
     expect(screen.getByRole("dialog")).toBeInTheDocument();
 
     await act(() => router.navigate({ to: "/dashboard" }));
