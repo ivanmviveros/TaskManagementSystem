@@ -18,6 +18,7 @@ changes the architecture established in the first iteration.
 | 3 | Console warnings and errors on the login page for anonymous users | Partly real, partly not ours |
 | 4 | Users table should match the tasks table's responsive behaviour | Frontend parity |
 | 5 | The `pre-push` hook fails because it runs pytest with local `uv` | Tooling |
+| 6 | Local email should go to a MailHog inbox instead of the console backend | Tooling, added after plan review |
 
 ### 1.1 Two concerns were not what they appeared
 
@@ -45,7 +46,7 @@ already documented for `celery beat`, and it is a workflow issue, not a code one
 **What remains is real:** an anonymous first load fires **three** failed requests where one
 would do. See §4.
 
-**Concern 5 — the cause is a host port collision, not the choice of runner.** The hook's
+**Concern 5 — the cause is which database a local run reaches, not the choice of runner.** The hook's
 `uv run --directory backend pytest` fails here with:
 
 ```
@@ -53,10 +54,16 @@ FATAL: la autentificación password falló para el usuario «taskmanagement»
 ```
 
 A **native, Spanish-locale PostgreSQL** is listening on `127.0.0.1:5432` and has no
-`taskmanagement` role. Both it and the Compose `db` bind `0.0.0.0:5432`, and the native server
-wins the loopback race. On a machine without that collision the local run would succeed. The
-fix requested — prefer Compose, fall back to local — is still the right one, but the reason
-matters: it is machine-specific, so the local path must stay supported rather than be removed.
+`taskmanagement` role. A local run never reaches the Compose database at all: Compose
+publishes `db` on host port **5442**, while nothing in settings reads `.env`, so a local
+`pytest` falls back to `base.py`'s defaults — `localhost:5432` — which on this machine is the
+native server. (An earlier draft said both servers bind `5432` and the native one "wins the
+loopback race". That was wrong: Compose has used `5442` since its first commit, `e819f9f`.)
+
+On a machine whose `localhost:5432` is a Postgres with the `taskmanagement` role, the local
+run would succeed. The fix requested — prefer Compose, fall back to local — is still the
+right one, and the reason still matters: the failure is machine-specific, so the local path
+must stay supported rather than be removed.
 
 ### 1.2 Dropped from scope
 
@@ -80,6 +87,7 @@ Continues the numbering of the first iteration, which ended at D28.
 | D34 | **Random users are generated from a name list inside the command, not with factory_boy.** | `factory_boy` is in the `dev` dependency group. A management command is application code and must not import a dev-only package, or a production install breaks. |
 | D35 | **Auth bootstrap attempts a refresh first, then fetches the user.** | Probing `/users/me/` without a token is a guaranteed 401. Refresh-first is better on both paths and removes two of three failed requests. See §4. |
 | D36 | **The pre-push hook tries Compose, then local, and passes if either suite passes.** | Compose is the development default; the local path must remain usable where Docker is not. Explicitly chosen by the project owner over the stricter alternative — see §6.2 for the risk this accepts. |
+| D37 | **Local email goes to a MailHog container; `local.py`'s defaults target it without any `.env` change.** | Notification emails become readable as a recipient sees them. Nothing in settings reads `.env` — variables arrive only through Compose's `env_file` — so a developer's existing `.env` has no `EMAIL_*` lines, and the defaults must work on their own. `EMAIL_BACKEND` stays overridable so the no-Docker path D36 keeps can print to the console instead. |
 
 ---
 
@@ -523,6 +531,18 @@ Two practical notes, since this is the repository's **first** shell script — t
 - Compose availability is probed, not assumed: `docker compose ps --status running backend`
   returning a container id is the gate. A missing `docker` binary, a stopped stack, or a
   failing `exec` all route to the local attempt rather than aborting.
+
+### 5.4 Local email (D37)
+
+A `mailhog/mailhog` service in Compose, publishing SMTP on `1025` and its web inbox on `8025`.
+`local.py` switches from the console backend to SMTP with `EMAIL_HOST=mailhog` and
+`EMAIL_PORT=1025` as defaults, and `.env.example` documents both. The variable names match
+`production.py`'s, so one name means the same thing in every environment.
+
+Only the Celery `worker` sends mail (`apps/notifications/tasks.py`), so it is the only service
+that depends on `mailhog`. A send attempted before MailHog is listening raises
+`ConnectionRefusedError`, which the task's existing `autoretry_for` already retries — no new
+error handling is needed. `test.py` keeps the `locmem` backend.
 
 ---
 

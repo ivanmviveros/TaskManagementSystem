@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED: Use superpowers-extended-cc:subagent-driven-development (if subagents available) or superpowers-extended-cc:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Deliver the five refinements in [2026-10-06-refinement-iteration-2-design.md](../specs/2026-10-06-refinement-iteration-2-design.md) — pydantic DTOs at the service boundary, a parameterised seed command, a refresh-first auth bootstrap, a responsive users table, and a pre-push hook that tries Compose before local `uv`.
+**Goal:** Deliver the five refinements in [2026-10-06-refinement-iteration-2-design.md](../specs/2026-10-06-refinement-iteration-2-design.md) — pydantic DTOs at the service boundary, a parameterised seed command, a refresh-first auth bootstrap, a responsive users table, a pre-push hook that tries Compose before local `uv`, and a MailHog inbox for local email.
 
 **Architecture:** Nothing in the first iteration's layering moves. DRF keeps the HTTP boundary and pydantic takes the service boundary (D29), so the `{detail, code, errors}` contract and the drf-spectacular schema are untouched. On the frontend, `api-client.ts` keeps sole ownership of the access token and gains one exported, single-flighted session-restore; `AuthContext` calls it instead of probing `/users/me/`.
 
@@ -54,6 +54,9 @@ The narrow commands below pass `--no-cov` for that reason; the full runs through
 | File | Change |
 |---|---|
 | `.pre-commit-config.yaml` | the `pytest` hook calls the new script |
+| `docker-compose.yml` | new `mailhog` service; `worker` depends on it |
+| `backend/config/settings/local.py` | SMTP into MailHog instead of the console backend |
+| `.env.example` | `EMAIL_HOST` / `EMAIL_PORT`, and the console-backend escape hatch |
 | `backend/pyproject.toml` | `pydantic>=2`; `plugins = ["pydantic.mypy"]` |
 | `backend/uv.lock` | regenerated and committed |
 | `backend/apps/tasks/services.py` | DTO parameters; `model_fields_set` branching; the audit-log fix |
@@ -73,7 +76,7 @@ The narrow commands below pass `--no-cov` for that reason; the full runs through
 | `frontend/src/features/auth/auth-routing.test.tsx` | the two new bootstrap-request assertions |
 | `frontend/src/features/users/UserListPage.tsx` | delegate to `UserTable` / `UserCard` |
 | `frontend/src/features/users/UserListPage.test.tsx` | scope 3 assertions with `within(table)`; add a card test |
-| `README.md` | seeding flags; expected console output |
+| `README.md` | seeding flags; expected console output; MailHog URL, service count and diagram |
 
 ---
 
@@ -1784,7 +1787,7 @@ it("restores a session from a valid cookie with no failed request", async () => 
 `renderApp` takes a **positional path string** — `renderApp(initialPath = "/")` at
 `frontend/src/test/render-app.tsx:36` — not an options object. Vitest strips types, so an object
 would not fail to compile; it would reach `createMemoryHistory` and the assertions would just
-time out with no useful message, and `npm run build` would only catch it at Task 16.
+time out with no useful message, and `npm run build` would only catch it at Task 17.
 
 `auth-routing.test.tsx` has no `BASE` constant — it spells URLs out in full — so add one for
 these tests. Remove the listener in cleanup (`server.events.removeAllListeners()`), or it leaks
@@ -2174,7 +2177,174 @@ git commit -m "docs: document the seeding flags and the expected console output"
 
 ---
 
-## Task 16: Full verification
+## Task 16: MailHog for local email (spec §5.4, D37)
+
+Short and config-only: one Compose service, three settings, the matching `.env.example` lines, and two README lines that would otherwise go stale. Today `local.py` uses the console backend, so notification emails are only visible by scrolling the `worker` log; after this they land in a web inbox at `http://localhost:8025`.
+
+There is no TDD cycle here, deliberately. A unit test asserting `EMAIL_BACKEND == "...smtp..."` would only restate the settings file. What can actually break is connectivity between containers, so verification is an end-to-end send instead (Steps 5-6).
+
+**Files:**
+- Modify: `docker-compose.yml` — new `mailhog` service; `worker` depends on it
+- Modify: `backend/config/settings/local.py`
+- Modify: `.env.example:23-24`
+- Modify: `README.md:26-27` (Quick start URLs), `:189` ("Six Compose services"), `:207` (diagram label)
+
+Two facts from the current code shape the defaults below:
+
+- **Only the Celery `worker` sends mail** — `send_mail` at `apps/notifications/tasks.py:57` is the single call site. So `worker` is the service that must depend on `mailhog`; `backend` and `beat` never open an SMTP connection.
+- **Nothing in settings reads `.env`.** Variables reach Django only through Compose's `env_file`. So the defaults in `local.py` must target the Compose service by themselves — an existing developer's `.env`, copied before this change, has no `EMAIL_*` lines and must keep working without being edited.
+
+- [ ] **Step 1: Add the service**
+
+In `docker-compose.yml`, after `redis` (line 21):
+
+```yaml
+  # Local SMTP sink (spec §5.4). Accepts every message the worker sends and shows
+  # it in a web inbox at http://localhost:8025, so notification emails can be read
+  # the way a recipient would see them. 1025 is published too, so a worker run
+  # natively (outside Compose) can deliver to localhost:1025.
+  mailhog:
+    image: mailhog/mailhog:v1.0.1
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+```
+
+Pin the tag rather than using `latest`, consistent with `postgres:16` and `redis:7-alpine`.
+
+Add `mailhog` to `worker`'s `depends_on` (lines 47-51):
+
+```yaml
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      mailhog:
+        condition: service_started
+```
+
+`service_started` rather than `service_healthy`: the image ships no healthcheck, and a send attempted before MailHog is listening raises `ConnectionRefusedError` — a `ConnectionError`, which `send_task_event_email`'s `autoretry_for` already retries.
+
+- [ ] **Step 2: Point local settings at it**
+
+Replace `backend/config/settings/local.py` in full:
+
+```python
+"""Local development. Debug on; email goes to the MailHog container (spec §5.4)."""
+
+from config.settings.base import *
+from config.settings.base import env, env_bool, env_list
+
+DEBUG = env_bool("DJANGO_DEBUG", True)
+ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1,backend,0.0.0.0")
+
+# SMTP into MailHog, which accepts anything and needs no auth or TLS. The defaults
+# target the Compose service on their own, because nothing in settings reads .env:
+# a developer whose .env predates this change must not have to edit it.
+#
+# Overridable for the non-Compose path D36 keeps supported: a natively-run worker
+# sets EMAIL_HOST=localhost (Compose publishes 1025), and a machine with no Docker
+# at all sets EMAIL_BACKEND to the console backend to print emails to the log.
+EMAIL_BACKEND = env("EMAIL_BACKEND", "django.core.mail.backends.smtp.EmailBackend")
+EMAIL_HOST = env("EMAIL_HOST", "mailhog")
+EMAIL_PORT = int(env("EMAIL_PORT", "1025"))
+EMAIL_USE_TLS = False
+```
+
+The variable names deliberately match `production.py` (`EMAIL_HOST`, `EMAIL_PORT`), so one name means the same thing in every environment. `test.py` is untouched: it keeps the `locmem` backend, and no test reads `local.py`.
+
+- [ ] **Step 3: Document the variables in `.env.example`**
+
+`README.md:29` promises that `.env.example` "lists every variable the stack reads", so the new ones belong there. Replace lines 23-24:
+
+```bash
+# Email — local settings deliver to the MailHog container; read the inbox at
+# http://localhost:8025. These values are also the defaults, so they are optional.
+# Without Docker, set EMAIL_BACKEND=django.core.mail.backends.console.EmailBackend
+# to print emails to the worker log instead.
+DEFAULT_FROM_EMAIL=no-reply@taskmanagement.local
+EMAIL_HOST=mailhog
+EMAIL_PORT=1025
+```
+
+`EMAIL_BACKEND` is documented in the comment rather than set, so the default stays in one place (`local.py`).
+
+Do **not** edit your own `.env` to test this — Step 2's defaults are what make that unnecessary, and Step 5 proves it.
+
+- [ ] **Step 4: Keep the README honest**
+
+Three lines would otherwise describe the old setup:
+
+- `README.md:26-27` — add the inbox to the list of URLs:
+
+  ```markdown
+  The API answers on `http://localhost:8000/api/v1/`, the SPA on `http://localhost:5173`,
+  the interactive API docs on `http://localhost:8000/api/v1/schema/swagger-ui/`, and every
+  email the stack sends lands in MailHog at `http://localhost:8025`.
+  ```
+
+- `README.md:189` — `Six Compose services.` becomes `Seven Compose services.`
+- `README.md:207` — the diagram node becomes a Compose service. Move it inside the `compose` subgraph and relabel it:
+
+  ```
+          MAILHOG["mailhog<br/>SMTP sink, inbox on :8025"]
+  ```
+
+  and change the edge `WORKER --> SMTP` to `WORKER -->|"SMTP :1025"| MAILHOG`. Delete the old `SMTP[...]` node outside the subgraph.
+
+Validate the diagram still parses, as the iteration-1 README work did. Copy the edited
+`graph TB` block (without its fences) into a scratch file outside the repository, then:
+
+```bash
+npx @mermaid-js/mermaid-cli -i containers.mmd -o containers.svg
+```
+Expected: exit 0. A parse error exits non-zero. Do not commit either file.
+
+- [ ] **Step 5: Verify the settings resolve, with an unedited `.env`**
+
+```bash
+docker compose up -d
+docker compose exec backend python manage.py shell -c "from django.conf import settings as s; print(s.EMAIL_BACKEND, s.EMAIL_HOST, s.EMAIL_PORT)"
+```
+Expected: `django.core.mail.backends.smtp.EmailBackend mailhog 1025`. This is the check that matters for existing developers — it runs against a `.env` with no `EMAIL_*` lines and must still resolve to MailHog.
+
+- [ ] **Step 6: Send a real message, then the real notification path**
+
+First, Django's built-in test command, which proves SMTP connectivity from inside the network:
+
+```bash
+docker compose exec backend python manage.py sendtestemail operator@demo.local
+curl -s http://localhost:8025/api/v2/messages
+```
+Expected: the JSON response has `"total": 1` (or one more than before). Open `http://localhost:8025` and the message is in the inbox.
+
+Then the path that actually matters — a notification sent by the `worker`. Signed in as `supervisor@demo.local`, reassign any task to `operator@demo.local`. Within a few seconds a "task assigned" email to `operator@demo.local` appears in MailHog, with a link that opens the task in the SPA. If it does not, check the worker log first:
+
+```bash
+docker compose logs worker --tail 30
+```
+
+`notifications.transport_failure` there means the worker cannot reach `mailhog:1025` — most likely the `worker` container predates Step 1 and needs `docker compose up -d worker` to pick up the new dependency.
+
+- [ ] **Step 7: Run both suites**
+
+```bash
+bash scripts/run-backend-tests.sh
+npm run --prefix frontend test
+```
+Expected: both pass, unchanged. Nothing here touches code under test; this only confirms it.
+
+- [ ] **Step 8: Commit**
+
+```bash
+git add docker-compose.yml backend/config/settings/local.py .env.example README.md
+git commit -m "chore: deliver local email to a MailHog container instead of the console"
+```
+
+---
+
+## Task 17: Full verification
 
 Every task verified its own slice. This runs what CI runs, together, which is the only check that catches an interaction between them.
 
@@ -2227,6 +2397,8 @@ Then sign in as each of `admin@demo.local`, `supervisor@demo.local` and `operato
 - the Users page shows the 12 generated accounts, and reflows to cards below `md`
 - an Operator sees a Delete button only on tasks they created
 - a reload keeps you signed in, with no failed request in the console
+- reassigning a task delivers a notification to the new assignee in MailHog at
+  `http://localhost:8025` — the one check here that exercises the worker end to end
 
 - [ ] **Step 5: The pre-push hook, for real**
 
@@ -2241,7 +2413,7 @@ If nothing changed, there is nothing to commit — say so rather than inventing 
 
 ---
 
-## Task 17: Persist insights to `claude-insights/`
+## Task 18: Persist insights to `claude-insights/`
 
 **Files:**
 - Modify: `D:\VirtualWrapper\code\claude-insights\projects\task-management-system.md`
