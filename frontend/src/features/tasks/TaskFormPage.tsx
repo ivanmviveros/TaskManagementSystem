@@ -1,6 +1,9 @@
 import { useNavigate, useParams } from "@tanstack/react-router";
 
+import { ButtonLink } from "../../components/ButtonLink";
+import { ApiError } from "../../lib/api-error";
 import { TaskForm, type TaskFormValues } from "./components/TaskForm";
+import { TaskNotFound } from "./components/TaskNotFound";
 import { useCreateTask, useUpdateTask } from "./hooks/useTaskMutations";
 import { useTask } from "./hooks/useTasks";
 import { useTasksBackSearch } from "./hooks/useTasksBackSearch";
@@ -47,17 +50,26 @@ export function TaskCreatePage() {
 export function TaskEditPage() {
   const { taskId } = useParams({ from: "/shell/tasks/$taskId/edit" });
   const navigate = useNavigate();
-  const { data: task, isPending, isError } = useTask(taskId);
+  const { data: task, isPending, isError, error } = useTask(taskId);
   const update = useUpdateTask(taskId);
   const back = useTasksBackSearch();
 
   if (isPending) return <p role="status">Loading task…</p>;
-  if (isError || task === undefined)
+  if (isError || task === undefined) {
+    if (error instanceof ApiError && error.status === 404) {
+      return <TaskNotFound backSearch={back} />;
+    }
     return (
-      <p role="alert" className="text-status-overdue">
-        Could not load that task.
-      </p>
+      <section>
+        <p role="alert" className="mb-4 text-status-overdue">
+          Could not load that task.
+        </p>
+        <ButtonLink variant="secondary" to="/tasks" search={back}>
+          Back to tasks
+        </ButtonLink>
+      </section>
     );
+  }
 
   async function handleSubmit(values: TaskFormValues) {
     await update.mutateAsync({

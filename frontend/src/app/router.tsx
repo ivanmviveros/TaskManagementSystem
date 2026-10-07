@@ -20,6 +20,7 @@ import { UserCreatePage, UserEditPage } from "../features/users/UserFormPage";
 import { UserListPage } from "../features/users/UserListPage";
 import { DEFAULT_PAGE_SIZE } from "../lib/pagination";
 import { APP_NAME } from "./app-name";
+import { AppNotFound } from "./layout/AppNotFound";
 import { AppShell } from "./layout/AppShell";
 import { validateTaskListSearch, validateUserListSearch } from "./search-params";
 
@@ -215,6 +216,11 @@ export function createAppRouter(auth: AuthState, options: { history?: RouterHist
     routeTree,
     context: { auth },
     defaultPreload: false,
+    // D71: every unmatched path renders at the root — under the default "fuzzy"
+    // mode, /tasks/a/b would render inside AppShell and /does-not-exist outside
+    // it, and one component cannot be right in both places.
+    notFoundMode: "root",
+    defaultNotFoundComponent: AppNotFound,
     ...(options.history === undefined ? {} : { history: options.history }),
   });
 }

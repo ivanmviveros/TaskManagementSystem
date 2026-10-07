@@ -1,5 +1,8 @@
 import { useNavigate, useParams } from "@tanstack/react-router";
 
+import { ButtonLink } from "../../components/ButtonLink";
+import { NotFoundPanel } from "../../components/NotFoundPanel";
+import { ApiError } from "../../lib/api-error";
 import { UserForm, type UserFormValues } from "./components/UserForm";
 import { useCreateUser, useUpdateUser, useUser } from "./hooks/useUsers";
 
@@ -31,16 +34,32 @@ export function UserCreatePage() {
 export function UserEditPage() {
   const { userId } = useParams({ from: "/shell/users/$userId" });
   const navigate = useNavigate();
-  const { data: user, isPending, isError } = useUser(userId);
+  const { data: user, isPending, isError, error } = useUser(userId);
   const update = useUpdateUser(userId);
 
   if (isPending) return <p role="status">Loading user…</p>;
-  if (isError || user === undefined)
+  if (isError || user === undefined) {
+    if (error instanceof ApiError && error.status === 404) {
+      return (
+        <NotFoundPanel
+          title="User not found"
+          message="They may have been deleted."
+          linkTo="/users"
+          linkLabel="Back to users"
+        />
+      );
+    }
     return (
-      <p role="alert" className="text-status-overdue">
-        Could not load that user.
-      </p>
+      <section>
+        <p role="alert" className="mb-4 text-status-overdue">
+          Could not load that user.
+        </p>
+        <ButtonLink variant="secondary" to="/users">
+          Back to users
+        </ButtonLink>
+      </section>
     );
+  }
 
   async function handleSubmit(values: UserFormValues) {
     await update.mutateAsync({

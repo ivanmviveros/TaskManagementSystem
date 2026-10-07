@@ -7,6 +7,7 @@ import { FormError } from "../../components/FormError";
 import { ApiError } from "../../lib/api-error";
 import { DeleteTaskDialog } from "./components/DeleteTaskDialog";
 import { OverdueBadge, StatusBadge } from "./components/StatusBadge";
+import { TaskNotFound } from "./components/TaskNotFound";
 import { useCompleteTask, useDeleteTask } from "./hooks/useTaskMutations";
 import { useTask } from "./hooks/useTasks";
 import { useTasksBackSearch } from "./hooks/useTasksBackSearch";
@@ -31,10 +32,18 @@ export function TaskDetailPage() {
   }
 
   if (isError || task === undefined) {
+    if (error instanceof ApiError && error.status === 404) {
+      return <TaskNotFound backSearch={back} />;
+    }
     return (
-      <p role="alert" className="text-sm text-status-overdue">
-        {error instanceof ApiError ? error.message : "Could not load that task."}
-      </p>
+      <section>
+        <p role="alert" className="mb-4 text-sm text-status-overdue">
+          {error instanceof ApiError ? error.message : "Could not load that task."}
+        </p>
+        <ButtonLink variant="secondary" to="/tasks" search={back}>
+          Back to tasks
+        </ButtonLink>
+      </section>
     );
   }
 

@@ -181,6 +181,17 @@ describe("UserForm", () => {
     expect(body).toMatchObject({ role: "ADMIN", is_active: true });
   });
 
+  it("explains a missing user and links back to the list", async () => {
+    server.use(
+      http.get(`${BASE}/users/${TARGET.id}/`, () =>
+        HttpResponse.json({ detail: "Not found.", code: "not_found", errors: null }, { status: 404 }),
+      ),
+    );
+    await renderApp(`/users/${TARGET.id}`);
+    expect(await screen.findByRole("heading", { name: /user not found/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /back to users/i })).toHaveAttribute("href", "/users");
+  });
+
   it("still offers role and Active when editing someone else", async () => {
     server.use(http.get(`${BASE}/users/${TARGET.id}/`, () => HttpResponse.json(TARGET)));
     await renderApp(`/users/${TARGET.id}`);

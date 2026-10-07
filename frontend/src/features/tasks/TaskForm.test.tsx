@@ -580,6 +580,47 @@ describe("TaskForm", () => {
 });
 
 describe("TaskDetailPage", () => {
+  function taskIsGone() {
+    server.use(
+      http.get(`${BASE}/tasks/${TASK_ID}/`, () =>
+        HttpResponse.json(
+          { detail: "No Task matches the given query.", code: "not_found", errors: null },
+          { status: 404 },
+        ),
+      ),
+    );
+  }
+
+  it("explains a missing task without saying why, and links back (D72)", async () => {
+    signedInAs(SUPERVISOR);
+    taskIsGone();
+    await renderApp(`/tasks/${TASK_ID}`);
+    expect(await screen.findByRole("heading", { name: /task not found/i })).toBeInTheDocument();
+    expect(screen.getByText(/deleted, or it isn't assigned to you/i)).toBeInTheDocument();
+    expect(screen.queryByText(/no task matches/i)).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /back to tasks/i })).toHaveAttribute("href", "/tasks");
+  });
+
+  it("does the same on the edit page", async () => {
+    signedInAs(SUPERVISOR);
+    taskIsGone();
+    await renderApp(`/tasks/${TASK_ID}/edit`);
+    expect(await screen.findByRole("heading", { name: /task not found/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /back to tasks/i })).toBeInTheDocument();
+  });
+
+  it("keeps other errors' message and still offers the way back", async () => {
+    signedInAs(SUPERVISOR);
+    server.use(
+      http.get(`${BASE}/tasks/${TASK_ID}/`, () =>
+        HttpResponse.json({ detail: "Database is down.", code: "server_error" }, { status: 500 }),
+      ),
+    );
+    await renderApp(`/tasks/${TASK_ID}`);
+    expect(await screen.findByRole("alert")).toHaveTextContent(/database is down/i);
+    expect(screen.getByRole("link", { name: /back to tasks/i })).toBeInTheDocument();
+  });
+
   it("shows the complete button only for a non-terminal task", async () => {
     signedInAs(SUPERVISOR);
     taskDetail({ status: "PENDING" });

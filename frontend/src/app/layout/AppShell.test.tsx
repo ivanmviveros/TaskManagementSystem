@@ -161,3 +161,28 @@ describe("session expiry", () => {
     expect(await screen.findByLabelText(/email/i)).toBeInTheDocument();
   });
 });
+
+describe("unknown addresses (F4, D71)", () => {
+  it.each(["/does-not-exist", "/tasks/a/b"])(
+    "renders %s inside exactly one shell, with a link home",
+    async (path) => {
+      signedInAs = "SUPERVISOR";
+      await renderApp(path);
+      expect(await screen.findByRole("heading", { name: /page not found/i })).toBeInTheDocument();
+      // A banner count is unreliable for a <header> nested in <main>; the named nav is not.
+      expect(screen.getAllByRole("navigation", { name: /main/i })).toHaveLength(1);
+      expect(screen.getByRole("link", { name: /go to your home page/i })).toHaveAttribute(
+        "href",
+        "/",
+      );
+    },
+  );
+
+  it("offers a signed-out visitor the sign-in page, with no app menu", async () => {
+    signedInAs = null;
+    await renderApp("/does-not-exist");
+    expect(await screen.findByRole("heading", { name: /page not found/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /sign in/i })).toHaveAttribute("href", "/login");
+    expect(screen.queryByRole("navigation", { name: /main/i })).not.toBeInTheDocument();
+  });
+});
