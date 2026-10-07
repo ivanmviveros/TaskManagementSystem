@@ -213,3 +213,14 @@ After reviewveng current code and application features, I need to implement new 
 - refactor users table to match the tasks table responsive behaivor
 - pre-push stage in pre-commit its failing since its running pytest with local uv instead of docker compose, project default for development should be docker compose, add a fallback to allow success in stage if pytest result its successful in local or docker compose environment
 ```
+
+
+## Bugfixing
+```
+Analyze and design fixes for the following issues found:
+
+- add missing confirmation modal for task deletion
+- in task edit, for a completed task, the task status its shown as PENDING in selector and patch request on edit is sent with COMPLETED status
+- adjuts dashboard design, add call to action buttons in dashboard cards and extend "Due in 7 days" card to cover full row and avoid the  bottom row to contain only 1 column
+- check github actions compat step failed by test coverage in https://github.com/ivanmviveros/TaskManagementSystem/actions/runs/37559034429/job/112591873156, use gh cli to test changes in the actions
+```
