@@ -63,17 +63,18 @@ class UserViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.Gen
         return UserService(users=DjangoUserRepository())
 
     @extend_schema(responses={200: UserMinimalSerializer(many=True)})
-    @action(detail=False, methods=["get"], pagination_class=None)
+    @action(detail=False, methods=["get"], filter_backends=[SearchFilter])
     def assignable(self, request):
-        """Every user a task may be assigned to — the assignee picker's options (D61).
+        """Users a task may be assigned to — the assignee picker's options (D61, D64).
 
-        Unpaginated on purpose: a picker needs the whole set, and paging /users/
-        at its 100-row cap made everyone past the first page unassignable. D17
-        (never an Admin) is applied here by assignable_users(), so the SPA no
-        longer re-derives it. Minimal fields: the same shape a Supervisor gets
-        from /users/.
+        Paged and searchable (`?search=` over the same fields as /users/): the
+        picker searches as you type and loads more on demand instead of
+        downloading every user up front (D64). D17 (never an Admin) is applied
+        by assignable_users() before the search, so a search only narrows the
+        set. Minimal fields: the same shape a Supervisor gets from /users/.
         """
-        return Response(UserMinimalSerializer(assignable_users(), many=True).data)
+        page = self.paginate_queryset(self.filter_queryset(assignable_users()))
+        return self.get_paginated_response(UserMinimalSerializer(page, many=True).data)
 
     @extend_schema(
         request=UserCreateSerializer,

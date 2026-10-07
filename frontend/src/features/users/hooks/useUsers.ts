@@ -7,7 +7,7 @@ export const userKeys = {
   all: ["users"] as const,
   list: (filters: UserFilters) => ["users", filters] as const,
   detail: (id: string) => ["users", id] as const,
-  assignable: ["users", "assignable"] as const,
+  assignable: (search: string) => ["users", "assignable", search] as const,
 };
 
 export function useUsers(filters: UserFilters) {
