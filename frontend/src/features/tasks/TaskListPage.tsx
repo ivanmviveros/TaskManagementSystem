@@ -136,7 +136,7 @@ export function TaskListPage() {
     <section>
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <h1 className="text-xl font-semibold text-slate-900">Tasks</h1>
-        <ButtonLink to="/tasks/new" className="ml-auto">
+        <ButtonLink to="/tasks/new" state={{ tasksSearch: search }} className="ml-auto">
           New task
         </ButtonLink>
       </div>
@@ -181,6 +181,7 @@ export function TaskListPage() {
               onComplete={(id) => void runAction(id, complete.mutateAsync)}
               onDelete={beginDelete}
               busyId={busyId}
+              listSearch={search}
             />
           </div>
           <div className="lg:hidden">
@@ -192,6 +193,7 @@ export function TaskListPage() {
                 onComplete={(id) => void runAction(id, complete.mutateAsync)}
                 onDelete={beginDelete}
                 isBusy={busyId === task.id}
+                listSearch={search}
               />
             ))}
           </div>

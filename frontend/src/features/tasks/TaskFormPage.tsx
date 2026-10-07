@@ -3,6 +3,7 @@ import { useNavigate, useParams } from "@tanstack/react-router";
 import { TaskForm, type TaskFormValues } from "./components/TaskForm";
 import { useCreateTask, useUpdateTask } from "./hooks/useTaskMutations";
 import { useTask } from "./hooks/useTasks";
+import { useTasksBackSearch } from "./hooks/useTasksBackSearch";
 
 /**
  * Creation is a ROUTE, not a modal: it is deep-linkable, guarded by exactly the
@@ -12,6 +13,7 @@ import { useTask } from "./hooks/useTasks";
 export function TaskCreatePage() {
   const navigate = useNavigate();
   const create = useCreateTask();
+  const back = useTasksBackSearch();
 
   async function handleSubmit(values: TaskFormValues) {
     const task = await create.mutateAsync({
@@ -22,14 +24,21 @@ export function TaskCreatePage() {
       // an explicit null would be refused as choosing a different assignee.
       ...(values.assignee === undefined ? {} : { assignee: values.assignee }),
     });
-    await navigate({ to: "/tasks/$taskId", params: { taskId: task.id } });
+    await navigate({
+      to: "/tasks/$taskId",
+      params: { taskId: task.id },
+      state: { tasksSearch: back },
+    });
   }
 
   return (
     <section>
       <h1 className="mb-4 text-xl font-semibold text-slate-900">New task</h1>
       <div className="max-w-xl rounded-lg bg-white p-4 shadow-sm sm:p-6">
-        <TaskForm onSubmit={handleSubmit} onCancel={() => void navigate({ to: "/tasks" })} />
+        <TaskForm
+          onSubmit={handleSubmit}
+          onCancel={() => void navigate({ to: "/tasks", search: back })}
+        />
       </div>
     </section>
   );
@@ -40,6 +49,7 @@ export function TaskEditPage() {
   const navigate = useNavigate();
   const { data: task, isPending, isError } = useTask(taskId);
   const update = useUpdateTask(taskId);
+  const back = useTasksBackSearch();
 
   if (isPending) return <p role="status">Loading task…</p>;
   if (isError || task === undefined)
@@ -59,7 +69,7 @@ export function TaskEditPage() {
       // sent as-is, because null is how a PATCH unassigns (D32).
       ...(values.assignee === undefined ? {} : { assignee: values.assignee }),
     });
-    await navigate({ to: "/tasks/$taskId", params: { taskId } });
+    await navigate({ to: "/tasks/$taskId", params: { taskId }, state: { tasksSearch: back } });
   }
 
   return (
@@ -69,7 +79,9 @@ export function TaskEditPage() {
         <TaskForm
           task={task}
           onSubmit={handleSubmit}
-          onCancel={() => void navigate({ to: "/tasks/$taskId", params: { taskId } })}
+          onCancel={() =>
+            void navigate({ to: "/tasks/$taskId", params: { taskId }, state: { tasksSearch: back } })
+          }
         />
       </div>
     </section>

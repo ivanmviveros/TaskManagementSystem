@@ -9,10 +9,12 @@ import { DeleteTaskDialog } from "./components/DeleteTaskDialog";
 import { OverdueBadge, StatusBadge } from "./components/StatusBadge";
 import { useCompleteTask, useDeleteTask } from "./hooks/useTaskMutations";
 import { useTask } from "./hooks/useTasks";
+import { useTasksBackSearch } from "./hooks/useTasksBackSearch";
 
 export function TaskDetailPage() {
   const { taskId } = useParams({ from: "/shell/tasks/$taskId" });
   const navigate = useNavigate();
+  const back = useTasksBackSearch();
   const { data: task, isPending, isError, error } = useTask(taskId);
   const complete = useCompleteTask();
   const remove = useDeleteTask();
@@ -58,7 +60,7 @@ export function TaskDetailPage() {
       // does not carry the early return's narrowing into it — `task` would still
       // be TaskDetail | undefined here (TS18048). The route param is a string.
       await remove.mutateAsync(taskId);
-      await navigate({ to: "/tasks" });
+      await navigate({ to: "/tasks", search: back });
     } catch (caught) {
       setDeleteError(
         caught instanceof ApiError ? caught.message : "Could not delete that task.",
@@ -109,7 +111,12 @@ export function TaskDetailPage() {
             Mark complete
           </Button>
         )}
-        <ButtonLink variant="secondary" to="/tasks/$taskId/edit" params={{ taskId: task.id }}>
+        <ButtonLink
+          variant="secondary"
+          to="/tasks/$taskId/edit"
+          params={{ taskId: task.id }}
+          state={{ tasksSearch: back }}
+        >
           Edit
         </ButtonLink>
         {task.can_delete && (
@@ -123,7 +130,7 @@ export function TaskDetailPage() {
             Delete
           </Button>
         )}
-        <ButtonLink variant="secondary" to="/tasks">
+        <ButtonLink variant="secondary" to="/tasks" search={back}>
           Back to tasks
         </ButtonLink>
       </div>

@@ -1,6 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import clsx from "clsx";
 
+import type { TaskListSearch } from "../../../app/search-params";
 import { SORT_FIELDS, nextOrdering, parseOrdering } from "../sorting";
 import type { TaskListItem } from "../types";
 import { OverdueBadge, StatusBadge } from "./StatusBadge";
@@ -15,6 +16,8 @@ interface TaskTableProps {
   onComplete: (id: string) => void;
   onDelete: (id: string) => void;
   busyId?: string | null;
+  /** Left in history state by each title link, so the detail can return here (D70). */
+  listSearch: TaskListSearch;
 }
 
 export function TaskTable({
@@ -25,6 +28,7 @@ export function TaskTable({
   onComplete,
   onDelete,
   busyId = null,
+  listSearch,
 }: TaskTableProps) {
   const sort = parseOrdering(ordering);
   return (
@@ -74,7 +78,11 @@ export function TaskTable({
         {tasks.map((task) => (
           <tr key={task.id} className="border-b border-slate-100">
             <td className="p-3">
-              <Link to="/tasks/$taskId" params={{ taskId: task.id }} className="text-status-progress underline-offset-2 hover:underline">
+              <Link
+                to="/tasks/$taskId"
+                params={{ taskId: task.id }}
+                state={{ tasksSearch: listSearch }}
+                className="text-status-progress underline-offset-2 hover:underline">
                 {task.title}
               </Link>
               {task.is_overdue && <OverdueBadge />}

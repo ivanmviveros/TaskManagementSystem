@@ -1,5 +1,6 @@
 import { Link } from "@tanstack/react-router";
 
+import type { TaskListSearch } from "../../../app/search-params";
 import type { TaskListItem } from "../types";
 import { OverdueBadge, StatusBadge } from "./StatusBadge";
 import { TaskRowActions } from "./TaskRowActions";
@@ -10,6 +11,8 @@ interface TaskCardProps {
   onComplete: (id: string) => void;
   onDelete: (id: string) => void;
   isBusy?: boolean;
+  /** Left in history state by the title link, so the detail can return here (D70). */
+  listSearch: TaskListSearch;
 }
 
 /**
@@ -23,11 +26,17 @@ export function TaskCard({
   onComplete,
   onDelete,
   isBusy = false,
+  listSearch,
 }: TaskCardProps) {
   return (
     <article className="mb-3 rounded-lg bg-white p-4 shadow-sm">
       <h3 className="mb-2 font-medium">
-        <Link to="/tasks/$taskId" params={{ taskId: task.id }} className="text-status-progress">
+        <Link
+          to="/tasks/$taskId"
+          params={{ taskId: task.id }}
+          state={{ tasksSearch: listSearch }}
+          className="text-status-progress"
+        >
           {task.title}
         </Link>
         {task.is_overdue && <OverdueBadge />}

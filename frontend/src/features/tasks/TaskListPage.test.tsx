@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import { server } from "../../test/msw-server";
 import { renderApp } from "../../test/render-app";
-import type { TaskListItem } from "./types";
+import type { TaskDetail, TaskListItem } from "./types";
 
 const BASE = "http://localhost:8000/api/v1";
 
@@ -674,5 +674,85 @@ describe("sorting and layout below lg (F3, F8)", () => {
     expect(table.parentElement).not.toHaveClass("md:block");
     expect(screen.getByRole("article").parentElement).toHaveClass("lg:hidden");
     expect(screen.getByLabelText(/sort by/i).closest("div")).toHaveClass("lg:hidden");
+  });
+});
+
+describe("returning to the list (F5, D70)", () => {
+  const PENDING = encodeURIComponent(JSON.stringify(["PENDING"]));
+  const LIST = `/tasks?status=${PENDING}&page=2&ordering=due_date`;
+  const EXPECTED = { status: ["PENDING"], page: 2, ordering: "due_date" };
+
+  function detailOf(item: TaskListItem): TaskDetail {
+    return {
+      ...item,
+      description: "",
+      created_by: SUPERVISOR,
+      completed_at: null,
+      updated_at: item.created_at,
+      allowed_transitions: ["IN_PROGRESS", "CANCELLED"],
+    };
+  }
+
+  function serveTask(item: TaskListItem) {
+    tasksRespondWith([item], 60);
+    server.use(
+      http.get(`${BASE}/tasks/${item.id}/`, () => HttpResponse.json(detailOf(item))),
+      http.patch(`${BASE}/tasks/${item.id}/`, () => HttpResponse.json(detailOf(item))),
+      http.delete(`${BASE}/tasks/${item.id}/`, () => new HttpResponse(null, { status: 204 })),
+    );
+  }
+
+  async function openFromList(item: TaskListItem) {
+    const user = userEvent.setup();
+    const table = await screen.findByRole("table");
+    await user.click(within(table).getByRole("link", { name: item.title }));
+    await screen.findByRole("heading", { level: 1, name: item.title });
+    return user;
+  }
+
+  it("returns to the same filters, page and sort from Back to tasks", async () => {
+    signedInAs(SUPERVISOR);
+    const item = task();
+    serveTask(item);
+    const { router } = await renderApp(LIST);
+    const user = await openFromList(item);
+    await user.click(screen.getByRole("link", { name: /back to tasks/i }));
+    await screen.findByRole("table");
+    expect(router.state.location.search).toEqual(EXPECTED);
+  });
+
+  it("keeps the list through an edit and save", async () => {
+    signedInAs(SUPERVISOR);
+    const item = task();
+    serveTask(item);
+    const { router } = await renderApp(LIST);
+    const user = await openFromList(item);
+    await user.click(screen.getByRole("link", { name: /^edit$/i }));
+    await user.click(await screen.findByRole("button", { name: /save changes/i }));
+    await screen.findByRole("heading", { level: 1, name: item.title });
+    await user.click(screen.getByRole("link", { name: /back to tasks/i }));
+    await screen.findByRole("table");
+    expect(router.state.location.search).toEqual(EXPECTED);
+  });
+
+  it("returns to the same list after deleting the task", async () => {
+    signedInAs(SUPERVISOR);
+    const item = task({ can_delete: true });
+    serveTask(item);
+    const { router } = await renderApp(LIST);
+    const user = await openFromList(item);
+    await user.click(screen.getByRole("button", { name: /^delete$/i }));
+    await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: /^delete$/i }));
+    await screen.findByRole("table");
+    expect(router.state.location.search).toEqual(EXPECTED);
+  });
+
+  it("falls back to the plain list for a task opened directly", async () => {
+    signedInAs(SUPERVISOR);
+    const item = task();
+    serveTask(item);
+    await renderApp(`/tasks/${item.id}`);
+    await screen.findByRole("heading", { level: 1, name: item.title });
+    expect(screen.getByRole("link", { name: /back to tasks/i })).toHaveAttribute("href", "/tasks");
   });
 });
