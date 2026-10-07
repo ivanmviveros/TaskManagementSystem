@@ -1,4 +1,5 @@
-import { screen, waitFor } from "@testing-library/react";
+import { focusManager } from "@tanstack/react-query";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
@@ -30,6 +31,7 @@ const DETAIL: TaskDetail = {
   title: "Review the brief",
   description: "Read it closely.",
   status: "PENDING",
+  allowed_transitions: ["IN_PROGRESS", "CANCELLED"],
   due_date: null,
   assignee: OPERATOR,
   created_by: SUPERVISOR,
@@ -62,6 +64,24 @@ function taskDetail(overrides: Partial<TaskDetail> = {}) {
     http.get(`${BASE}/tasks/${TASK_ID}/`, () => HttpResponse.json({ ...DETAIL, ...overrides })),
   );
 }
+
+/** Records each PATCH body so a test can assert what was — and was not — sent. */
+function capturePatches(): { bodies: Record<string, unknown>[] } {
+  const record = { bodies: [] as Record<string, unknown>[] };
+  server.use(
+    http.patch(`${BASE}/tasks/${TASK_ID}/`, async ({ request }) => {
+      record.bodies.push((await request.json()) as Record<string, unknown>);
+      return HttpResponse.json(DETAIL);
+    }),
+  );
+  return record;
+}
+
+const COMPLETED = {
+  status: "COMPLETED" as const,
+  completed_at: "2026-10-02T10:00:00Z",
+  allowed_transitions: [],
+};
 
 describe("TaskForm", () => {
   it("creates a task and invalidates the list", async () => {
@@ -204,8 +224,128 @@ describe("TaskForm", () => {
     );
     await renderApp(`/tasks/${TASK_ID}/edit`);
     const user = userEvent.setup();
-    await user.click(await screen.findByRole("button", { name: /save changes/i }));
+    await user.selectOptions(await screen.findByRole("combobox", { name: /status/i }), "IN_PROGRESS");
+    await user.click(screen.getByRole("button", { name: /save changes/i }));
     expect(await screen.findByRole("alert")).toHaveTextContent(/status change is not allowed/i);
+  });
+
+  it("shows a completed task's status read-only, with no status control", async () => {
+    signedInAs(SUPERVISOR);
+    assignableUsers();
+    taskDetail(COMPLETED);
+    await renderApp(`/tasks/${TASK_ID}/edit`);
+    await screen.findByLabelText(/title/i);
+    expect(screen.queryByRole("combobox", { name: /status/i })).not.toBeInTheDocument();
+    expect(screen.getByText("Completed")).toBeInTheDocument();
+    expect(screen.getByText(/keep their status/i)).toBeInTheDocument();
+  });
+
+  it("shows a cancelled task's status read-only too", async () => {
+    signedInAs(SUPERVISOR);
+    assignableUsers();
+    taskDetail({ status: "CANCELLED", allowed_transitions: [] });
+    await renderApp(`/tasks/${TASK_ID}/edit`);
+    await screen.findByLabelText(/title/i);
+    expect(screen.queryByRole("combobox", { name: /status/i })).not.toBeInTheDocument();
+    expect(screen.getByText("Cancelled")).toBeInTheDocument();
+  });
+
+  it("saves a completed task without sending a status", async () => {
+    signedInAs(SUPERVISOR);
+    assignableUsers();
+    taskDetail(COMPLETED);
+    const patches = capturePatches();
+    await renderApp(`/tasks/${TASK_ID}/edit`);
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: /save changes/i }));
+    await waitFor(() => expect(patches.bodies).toHaveLength(1));
+    expect(patches.bodies[0]).not.toHaveProperty("status");
+  });
+
+  it("offers a pending task's status and its transitions, and sends a changed status", async () => {
+    signedInAs(SUPERVISOR);
+    assignableUsers();
+    taskDetail();
+    const patches = capturePatches();
+    await renderApp(`/tasks/${TASK_ID}/edit`);
+    const select = await screen.findByRole("combobox", { name: /status/i });
+    expect(within(select).getAllByRole("option").map((o) => o.textContent)).toEqual([
+      "Pending",
+      "In progress",
+      "Cancelled",
+    ]);
+    const user = userEvent.setup();
+    await user.selectOptions(select, "IN_PROGRESS");
+    await user.click(screen.getByRole("button", { name: /save changes/i }));
+    await waitFor(() => expect(patches.bodies).toHaveLength(1));
+    expect(patches.bodies[0]).toMatchObject({ status: "IN_PROGRESS" });
+  });
+
+  it("keeps Pending on offer after changing a pending task to In progress", async () => {
+    // The options come from the snapshot, not from the select's own state —
+    // otherwise picking In progress would drop Pending and the change could
+    // not be undone (D40).
+    signedInAs(SUPERVISOR);
+    assignableUsers();
+    taskDetail();
+    await renderApp(`/tasks/${TASK_ID}/edit`);
+    const select = await screen.findByRole("combobox", { name: /status/i });
+    const user = userEvent.setup();
+    await user.selectOptions(select, "IN_PROGRESS");
+    expect(within(select).getByRole("option", { name: "Pending" })).toBeInTheDocument();
+  });
+
+  it("saves an untouched pending task without sending a status", async () => {
+    signedInAs(SUPERVISOR);
+    assignableUsers();
+    taskDetail();
+    const patches = capturePatches();
+    await renderApp(`/tasks/${TASK_ID}/edit`);
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: /save changes/i }));
+    await waitFor(() => expect(patches.bodies).toHaveLength(1));
+    expect(patches.bodies[0]).not.toHaveProperty("status");
+  });
+
+  it("does not undo a status someone else changed while the form was open", async () => {
+    // D40. A focus refetch brings the task back IN_PROGRESS while this form,
+    // opened on PENDING, is untouched. Comparing against the LIVE task would
+    // send PENDING and silently revert the other person's change.
+    signedInAs(SUPERVISOR);
+    assignableUsers();
+    let gets = 0;
+    server.use(
+      http.get(`${BASE}/tasks/${TASK_ID}/`, () => {
+        gets += 1;
+        return HttpResponse.json(
+          gets === 1
+            ? DETAIL
+            : { ...DETAIL, status: "IN_PROGRESS", allowed_transitions: ["PENDING", "CANCELLED"] },
+        );
+      }),
+    );
+    const patches = capturePatches();
+    await renderApp(`/tasks/${TASK_ID}/edit`);
+    await screen.findByRole("combobox", { name: /status/i });
+    try {
+      // renderApp does not expose its QueryClient; the test client's default
+      // staleTime of 0 makes a focus event refetch the active detail query.
+      act(() => {
+        focusManager.setFocused(false);
+        focusManager.setFocused(true);
+      });
+      // The UI deliberately does not change on refetch, so count the GETs —
+      // otherwise this could pass without the refetch ever happening.
+      await waitFor(() => expect(gets).toBe(2));
+      const user = userEvent.setup();
+      await user.click(screen.getByRole("button", { name: /save changes/i }));
+      await waitFor(() => expect(patches.bodies).toHaveLength(1));
+      expect(patches.bodies[0]).not.toHaveProperty("status");
+    } finally {
+      // Restores the shared singleton. isFocused() then resolves to true, which
+      // fires one more focus refetch — harmless, the handlers are still in place.
+      focusManager.setFocused(undefined);
+    }
   });
 });
 
