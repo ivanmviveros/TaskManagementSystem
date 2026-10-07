@@ -1,9 +1,13 @@
-import { Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { Link, useNavigate, useSearch } from "@tanstack/react-router";
+import clsx from "clsx";
+import { useEffect, useState } from "react";
 
+import type { UserListSearch } from "../../app/search-params";
 import { Button } from "../../components/Button";
+import { Pagination } from "../../components/Pagination";
 import { ApiError } from "../../lib/api-error";
-import { Pagination } from "../tasks/components/Pagination";
+import { DEFAULT_PAGE_SIZE, type PageSize } from "../../lib/pagination";
+import { useSearchParamDraft } from "../../lib/useSearchParamDraft";
 import { ROLES, type Role } from "../auth/types";
 import { DeleteUserDialog } from "./components/DeleteUserDialog";
 import { UserCard } from "./components/UserCard";
@@ -11,20 +15,64 @@ import { UserTable } from "./components/UserTable";
 import { useDeleteUser, useUsers } from "./hooks/useUsers";
 import type { UserDetail, UserFilters } from "./types";
 
-const PAGE_SIZE = 20;
+type SearchUpdate = (prev: UserListSearch) => UserListSearch;
+type UserFilterPatch = Partial<Pick<UserListSearch, "role" | "is_active" | "search">>;
 
 export function UserListPage() {
-  const [filters, setFilters] = useState<UserFilters>({ page: 1, page_size: PAGE_SIZE });
+  // The URL is the list's only state (D45). Annotated because the router is
+  // not type-registered, so useSearch returns any.
+  const search: UserListSearch = useSearch({ from: "/shell/users" });
+  // A path, not the route id useSearch takes: given the id, navigate warns.
+  const navigate = useNavigate({ from: "/users" });
+  const page = search.page ?? 1;
+  const pageSize: PageSize = search.page_size ?? DEFAULT_PAGE_SIZE;
+  const filters: UserFilters = {
+    role: search.role,
+    is_active: search.is_active,
+    search: search.search,
+    page,
+    page_size: pageSize,
+  };
   const [pendingDelete, setPendingDelete] = useState<UserDetail | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
-  const { data, isPending, isError, error } = useUsers(filters);
+  const { data, isPending, isError, error, isPlaceholderData } = useUsers(filters);
   const remove = useDeleteUser();
 
-  /** Any filter change resets to page 1, or a filter applied on page 3 looks empty. */
-  function applyFilters(next: UserFilters) {
-    setFilters({ ...next, page: 1, page_size: PAGE_SIZE });
+  /** Edits replace the history entry and keep the scroll position (D47). */
+  function editSearch(update: SearchUpdate) {
+    void navigate({ search: update, replace: true, resetScroll: false });
   }
+
+  /** Any filter change resets to page 1, or a filter applied on page 3 looks empty. */
+  function applyFilters(patch: UserFilterPatch) {
+    editSearch((prev) => ({ ...prev, ...patch, page: undefined }));
+  }
+
+  // Typed text goes through a draft: the router's transition would revert a
+  // controlled input bound straight to the URL (D50).
+  const searchDraft = useSearchParamDraft(search.search ?? "", (value) =>
+    applyFilters({ search: value === "" ? undefined : value }),
+  );
+
+  function setPageSize(next: PageSize) {
+    editSearch((prev) => ({ ...prev, page_size: next, page: undefined }));
+  }
+
+  function goToPage(next: number) {
+    void navigate({ search: (prev: UserListSearch) => ({ ...prev, page: next }) });
+  }
+
+  // A page past the end is a 404; page 1 never is, so this cannot loop (D54).
+  const pageOutOfRange = error instanceof ApiError && error.status === 404 && page > 1;
+  useEffect(() => {
+    if (!pageOutOfRange) return;
+    void navigate({
+      search: (prev: UserListSearch) => ({ ...prev, page: undefined }),
+      replace: true,
+      resetScroll: false,
+    });
+  }, [pageOutOfRange, navigate]);
 
   function beginDelete(user: UserDetail) {
     setDeleteError(null);
@@ -62,10 +110,8 @@ export function UserListPage() {
             <input
               id="search"
               type="search"
-              value={filters.search ?? ""}
-              onChange={(event) =>
-                applyFilters({ ...filters, search: event.target.value || undefined })
-              }
+              value={searchDraft.draft}
+              onChange={(event) => searchDraft.setDraft(event.target.value)}
               className="rounded border border-slate-300 px-3 py-2 text-sm"
             />
           </div>
@@ -75,9 +121,9 @@ export function UserListPage() {
             </label>
             <select
               id="role-filter"
-              value={filters.role ?? ""}
+              value={search.role ?? ""}
               onChange={(event) =>
-                applyFilters({ ...filters, role: (event.target.value || undefined) as Role })
+                applyFilters({ role: (event.target.value || undefined) as Role | undefined })
               }
               className="rounded border border-slate-300 px-3 py-2 text-sm"
             >
@@ -92,9 +138,9 @@ export function UserListPage() {
           <label className="flex items-center gap-1.5 text-sm text-slate-700">
             <input
               type="checkbox"
-              checked={filters.is_active === false}
+              checked={search.is_active === false}
               onChange={(event) =>
-                applyFilters({ ...filters, is_active: event.target.checked ? false : undefined })
+                applyFilters({ is_active: event.target.checked ? false : undefined })
               }
             />
             Inactive only
@@ -108,7 +154,7 @@ export function UserListPage() {
         </p>
       )}
 
-      {isError && (
+      {isError && !pageOutOfRange && (
         <p role="alert" className="text-sm text-status-overdue">
           {error instanceof ApiError ? error.message : "Could not load users."}
         </p>
@@ -121,7 +167,11 @@ export function UserListPage() {
       )}
 
       {data !== undefined && data.results.length > 0 && (
-        <>
+        // The previous page stays while the next loads (D53).
+        <div
+          aria-busy={isPlaceholderData}
+          className={clsx("transition-opacity", isPlaceholderData && "opacity-60")}
+        >
           {/* The table collapses to stacked cards below md (spec §5.2). */}
           <div className="hidden overflow-x-auto md:block">
             <UserTable users={data.results} onDelete={beginDelete} />
@@ -134,13 +184,12 @@ export function UserListPage() {
 
           <Pagination
             count={data.count}
-            page={filters.page ?? 1}
-            pageSize={PAGE_SIZE}
-            hasNext={data.next !== null}
-            hasPrevious={data.previous !== null}
-            onPageChange={(page) => setFilters({ ...filters, page })}
+            page={page}
+            pageSize={pageSize}
+            onPageChange={goToPage}
+            onPageSizeChange={setPageSize}
           />
-        </>
+        </div>
       )}
 
       {pendingDelete !== null && (

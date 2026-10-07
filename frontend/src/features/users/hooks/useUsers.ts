@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import * as userService from "../services/user-service";
 import type { UserCreateInput, UserFilters, UserUpdateInput } from "../types";
@@ -14,6 +14,8 @@ export function useUsers(filters: UserFilters) {
   return useQuery({
     queryKey: userKeys.list(filters),
     queryFn: () => userService.listUsers(filters),
+    // A page move keeps the current rows and the pager on screen (D53).
+    placeholderData: keepPreviousData,
   });
 }
 
