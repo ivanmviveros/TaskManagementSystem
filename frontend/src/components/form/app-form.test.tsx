@@ -40,6 +40,41 @@ function Harness({ save }: { save: (values: { email: string }) => Promise<unknow
   );
 }
 
+/** A form with one checkbox group, to exercise the group's updater-based toggle. */
+function GroupHarness({ save }: { save: (values: { status: ("A" | "B")[] }) => void }) {
+  const form = useAppForm({
+    defaultValues: { status: [] as ("A" | "B")[] },
+    onSubmit: ({ value }) => {
+      save(value);
+    },
+  });
+  return (
+    <form
+      noValidate
+      aria-label="Group harness"
+      onSubmit={(event) => {
+        event.preventDefault();
+        void form.handleSubmit();
+      }}
+    >
+      <form.AppField name="status">
+        {(field) => (
+          <field.CheckboxGroupField
+            legend="Status"
+            options={[
+              { value: "A", label: "A" },
+              { value: "B", label: "B" },
+            ]}
+          />
+        )}
+      </form.AppField>
+      <form.AppForm>
+        <form.SubmitButton label="Save" pendingLabel="Saving…" />
+      </form.AppForm>
+    </form>
+  );
+}
+
 const taken = () => new ApiError(400, "Invalid input.", "validation_error", { email: ["Taken."] });
 
 describe("useAppForm", () => {
@@ -75,5 +110,17 @@ describe("useAppForm", () => {
     render(<Harness save={() => new Promise(() => {})} />);
     await userEvent.setup().click(screen.getByRole("button", { name: "Save" }));
     expect(await screen.findByRole("button", { name: "Saving…" })).toBeDisabled();
+  });
+
+  it("toggles a checkbox group's values in a fieldset", async () => {
+    const save = vi.fn();
+    render(<GroupHarness save={save} />);
+    expect(screen.getByRole("group", { name: "Status" })).toBeInTheDocument();
+    const user = userEvent.setup();
+    await user.click(screen.getByLabelText("A"));
+    await user.click(screen.getByLabelText("B"));
+    await user.click(screen.getByLabelText("A"));
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(save).toHaveBeenCalledWith({ status: ["B"] }));
   });
 });

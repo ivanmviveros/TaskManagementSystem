@@ -1,4 +1,4 @@
-import { useStore } from "@tanstack/react-form";
+import { useSelector } from "@tanstack/react-form";
 
 import { useFieldContext } from "../form-contexts";
 import type { SelectOption } from "./SelectField";
@@ -12,7 +12,7 @@ export function CheckboxGroupField<T extends string>({
   options: readonly SelectOption<T>[];
 }) {
   const field = useFieldContext<T[]>();
-  const selected = useStore(field.store, (state) => state.value);
+  const selected = useSelector(field.store, (state) => state.value);
 
   function toggle(value: T) {
     field.handleChange((current) =>

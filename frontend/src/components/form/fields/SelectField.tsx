@@ -1,4 +1,4 @@
-import { useStore } from "@tanstack/react-form";
+import { useSelector } from "@tanstack/react-form";
 import clsx from "clsx";
 
 import { useFieldContext } from "../form-contexts";
@@ -23,7 +23,7 @@ export function SelectField<T extends string>({
   density = "default",
 }: SelectFieldProps<T>) {
   const field = useFieldContext<T>();
-  const value = useStore(field.store, (state) => state.value);
+  const value = useSelector(field.store, (state) => state.value);
   const compact = density === "compact";
   return (
     <div className={compact ? undefined : "mb-4"}>

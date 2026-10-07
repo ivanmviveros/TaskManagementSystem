@@ -1,4 +1,4 @@
-import { useStore } from "@tanstack/react-form";
+import { useSelector } from "@tanstack/react-form";
 
 import { Button } from "../Button";
 import { useFormContext } from "./form-contexts";
@@ -14,7 +14,7 @@ export function SubmitButton({
   className?: string;
 }) {
   const form = useFormContext();
-  const isSubmitting = useStore(form.store, (state) => state.isSubmitting);
+  const isSubmitting = useSelector(form.store, (state) => state.isSubmitting);
   return (
     <Button type="submit" disabled={isSubmitting} className={className}>
       {isSubmitting ? pendingLabel : label}

@@ -35,6 +35,7 @@ export function TextField({
           error === undefined ? "border-slate-300" : "border-status-overdue",
           className,
         )}
+        // Last, so a caller's aria-invalid / aria-describedby win; an explicit undefined also hides the error link.
         {...input}
       />
       {error !== undefined && (

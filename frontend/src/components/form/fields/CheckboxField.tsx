@@ -1,4 +1,4 @@
-import { useStore } from "@tanstack/react-form";
+import { useSelector } from "@tanstack/react-form";
 import clsx from "clsx";
 
 import { useFieldContext } from "../form-contexts";
@@ -12,7 +12,7 @@ export function CheckboxField({
   density?: "default" | "compact";
 }) {
   const field = useFieldContext<boolean>();
-  const checked = useStore(field.store, (state) => state.value);
+  const checked = useSelector(field.store, (state) => state.value);
   return (
     <label
       className={clsx(
