@@ -1,9 +1,9 @@
-import { Link, useNavigate, useSearch } from "@tanstack/react-router";
+import { useNavigate, useSearch } from "@tanstack/react-router";
 import clsx from "clsx";
 import { useEffect, useState } from "react";
 
 import type { UserListSearch } from "../../app/search-params";
-import { Button } from "../../components/Button";
+import { ButtonLink } from "../../components/ButtonLink";
 import { Pagination } from "../../components/Pagination";
 import { ApiError } from "../../lib/api-error";
 import { DEFAULT_PAGE_SIZE, type PageSize } from "../../lib/pagination";
@@ -96,9 +96,9 @@ export function UserListPage() {
     <section>
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <h1 className="text-xl font-semibold text-slate-900">Users</h1>
-        <Link to="/users/new" className="ml-auto">
-          <Button>New user</Button>
-        </Link>
+        <ButtonLink to="/users/new" className="ml-auto">
+          New user
+        </ButtonLink>
       </div>
 
       <section aria-label="Filters" className="mb-4 rounded-lg bg-white p-4 shadow-sm">

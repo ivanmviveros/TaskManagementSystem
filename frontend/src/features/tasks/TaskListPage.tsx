@@ -1,9 +1,9 @@
-import { Link, useNavigate, useSearch } from "@tanstack/react-router";
+import { useNavigate, useSearch } from "@tanstack/react-router";
 import clsx from "clsx";
 import { useEffect, useState } from "react";
 
 import type { TaskListSearch } from "../../app/search-params";
-import { Button } from "../../components/Button";
+import { ButtonLink } from "../../components/ButtonLink";
 import { FormError } from "../../components/FormError";
 import { Pagination } from "../../components/Pagination";
 import { ApiError } from "../../lib/api-error";
@@ -130,9 +130,9 @@ export function TaskListPage() {
     <section>
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <h1 className="text-xl font-semibold text-slate-900">Tasks</h1>
-        <Link to="/tasks/new" className="ml-auto">
-          <Button>New task</Button>
-        </Link>
+        <ButtonLink to="/tasks/new" className="ml-auto">
+          New task
+        </ButtonLink>
       </div>
 
       <TaskFilters filters={filters} onChange={applyFilters} onClear={clearFilters} />

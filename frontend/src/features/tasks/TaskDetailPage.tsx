@@ -1,7 +1,8 @@
-import { Link, useNavigate, useParams } from "@tanstack/react-router";
+import { useNavigate, useParams } from "@tanstack/react-router";
 import { useState } from "react";
 
 import { Button } from "../../components/Button";
+import { ButtonLink } from "../../components/ButtonLink";
 import { FormError } from "../../components/FormError";
 import { ApiError } from "../../lib/api-error";
 import { DeleteTaskDialog } from "./components/DeleteTaskDialog";
@@ -108,9 +109,9 @@ export function TaskDetailPage() {
             Mark complete
           </Button>
         )}
-        <Link to="/tasks/$taskId/edit" params={{ taskId: task.id }}>
-          <Button variant="secondary">Edit</Button>
-        </Link>
+        <ButtonLink variant="secondary" to="/tasks/$taskId/edit" params={{ taskId: task.id }}>
+          Edit
+        </ButtonLink>
         {task.can_delete && (
           <Button
             variant="danger"
@@ -122,9 +123,9 @@ export function TaskDetailPage() {
             Delete
           </Button>
         )}
-        <Link to="/tasks">
-          <Button variant="secondary">Back to tasks</Button>
-        </Link>
+        <ButtonLink variant="secondary" to="/tasks">
+          Back to tasks
+        </ButtonLink>
       </div>
 
       {confirmingDelete && (

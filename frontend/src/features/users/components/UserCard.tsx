@@ -1,6 +1,6 @@
-import { Link } from "@tanstack/react-router";
 
 import { Button } from "../../../components/Button";
+import { ButtonLink } from "../../../components/ButtonLink";
 import type { UserDetail } from "../types";
 
 interface UserCardProps {
@@ -29,11 +29,14 @@ export function UserCard({ user, onDelete }: UserCardProps) {
         <dd>{user.is_active ? "Yes" : "No"}</dd>
       </dl>
       <div className="flex flex-wrap gap-2">
-        <Link to="/users/$userId" params={{ userId: user.id }}>
-          <Button variant="secondary" aria-label={`Edit ${user.email}`}>
-            Edit
-          </Button>
-        </Link>
+        <ButtonLink
+          variant="secondary"
+          to="/users/$userId"
+          params={{ userId: user.id }}
+          aria-label={`Edit ${user.email}`}
+        >
+          Edit
+        </ButtonLink>
         <Button
           variant="danger"
           aria-label={`Deactivate ${user.email}`}

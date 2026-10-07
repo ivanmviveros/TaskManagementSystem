@@ -213,6 +213,8 @@ describe("StatsPage", () => {
     await renderApp("/dashboard");
     const newTask = await screen.findByRole("link", { name: /new task/i });
     expect(newTask.getAttribute("href")).toBe("/tasks/new");
+    // One element, one Tab stop (D48): no <button> nested inside the link.
+    expect(within(newTask).queryByRole("button")).not.toBeInTheDocument();
   });
 
   it("keeps New task available when stats fail to load", async () => {
