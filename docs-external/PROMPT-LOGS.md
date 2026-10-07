@@ -270,3 +270,11 @@ Following  features specs in @docs\superpowers\specs:
 - Do a complete analysis of frontend features, pages and components, using playwrigth mcp and generating a final report with validations performed and results. The analysis should be oriented to correct responsive behavior, forms validations and navigability
 - Do a complete test suite run for frontend and backend and include in report, include coverage.
 ```
+
+```
+I have a potential issue to add to findings, there its no indication of sort ordering in tables, the sort its applied but nothing in UI shows short direction
+```
+
+```
+Based in @docs/qa/2026-10-07-frontend-qa-report.md  reasearch and plan fixes for each finding using /superpowers-extended-cc:brainstorming
+```
