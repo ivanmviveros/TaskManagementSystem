@@ -6,6 +6,7 @@ import { ApiError } from "../../lib/api-error";
 import { Pagination } from "../tasks/components/Pagination";
 import type { Role } from "../auth/types";
 import { DeleteUserDialog } from "./components/DeleteUserDialog";
+import { UserTable } from "./components/UserTable";
 import { useDeleteUser, useUsers } from "./hooks/useUsers";
 import type { UserDetail, UserFilters } from "./types";
 
@@ -117,58 +118,13 @@ export function UserListPage() {
       {data !== undefined && data.results.length > 0 && (
         <>
           <div className="overflow-x-auto">
-            <table className="w-full border-collapse bg-white text-left text-sm shadow-sm">
-              <thead>
-                <tr className="border-b border-slate-200">
-                  <th scope="col" className="p-3 font-medium text-slate-700">
-                    Name
-                  </th>
-                  <th scope="col" className="p-3 font-medium text-slate-700">
-                    Email
-                  </th>
-                  <th scope="col" className="p-3 font-medium text-slate-700">
-                    Role
-                  </th>
-                  <th scope="col" className="p-3 font-medium text-slate-700">
-                    Active
-                  </th>
-                  <th scope="col" className="p-3 font-medium text-slate-700">
-                    Actions
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.results.map((user) => (
-                  <tr key={user.id} className="border-b border-slate-100">
-                    <td className="p-3">
-                      {user.first_name} {user.last_name}
-                    </td>
-                    <td className="p-3 text-slate-600">{user.email}</td>
-                    <td className="p-3 text-slate-600">{user.role}</td>
-                    <td className="p-3 text-slate-600">{user.is_active ? "Yes" : "No"}</td>
-                    <td className="p-3">
-                      <div className="flex flex-wrap gap-2">
-                        <Link to="/users/$userId" params={{ userId: user.id }}>
-                          <Button variant="secondary" aria-label={`Edit ${user.email}`}>
-                            Edit
-                          </Button>
-                        </Link>
-                        <Button
-                          variant="danger"
-                          aria-label={`Deactivate ${user.email}`}
-                          onClick={() => {
-                            setDeleteError(null);
-                            setPendingDelete(user);
-                          }}
-                        >
-                          Deactivate
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <UserTable
+              users={data.results}
+              onDelete={(user) => {
+                setDeleteError(null);
+                setPendingDelete(user);
+              }}
+            />
           </div>
 
           <Pagination
