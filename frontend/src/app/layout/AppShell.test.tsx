@@ -43,8 +43,15 @@ beforeEach(() => {
         ? HttpResponse.json({ detail: "x", code: "x" }, { status: 401 })
         : HttpResponse.json(USERS[signedInAs]),
     ),
+    // Session-aware, like /users/me/ above. The bootstrap is refresh-first
+    // (D35), so an unconditional 401 here would sign out every test below.
     http.post(`${BASE}/auth/refresh/`, () =>
-      HttpResponse.json({ detail: "no cookie", code: "refresh_cookie_missing" }, { status: 401 }),
+      signedInAs === null
+        ? HttpResponse.json(
+            { detail: "no cookie", code: "refresh_cookie_missing" },
+            { status: 401 },
+          )
+        : HttpResponse.json({ access: "rotated-access-token" }),
     ),
   );
 });

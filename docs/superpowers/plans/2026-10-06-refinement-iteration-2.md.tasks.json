@@ -87,7 +87,7 @@
     {
       "id": 12,
       "subject": "Task 12: Invert the bootstrap",
-      "status": "pending",
+      "status": "completed",
       "blockedBy": [
         11
       ]
@@ -144,5 +144,5 @@
       ]
     }
   ],
-  "lastUpdated": "2026-10-07T01:19:52+00:00"
+  "lastUpdated": "2026-10-07T01:22:57+00:00"
 }
