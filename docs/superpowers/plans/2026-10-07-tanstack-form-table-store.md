@@ -1795,7 +1795,7 @@ export const { fieldContext, formContext, useFieldContext, useFormContext } =
 `src/components/form/fields/TextField.tsx`:
 
 ```tsx
-import { useStore } from "@tanstack/react-form";
+import { useSelector } from "@tanstack/react-form";
 import type { InputHTMLAttributes } from "react";
 
 import { TextField as TextFieldView } from "../../TextField";
@@ -1816,8 +1816,8 @@ interface TextFieldProps extends InputProps {
 /** A text-like input bound to its form field, showing the field's server error (D80). */
 export function TextField(props: TextFieldProps) {
   const field = useFieldContext<string>();
-  const value = useStore(field.store, (state) => state.value);
-  const error = useStore(field.store, (state) => serverMessage(state.meta.errorMap));
+  const value = useSelector(field.store, (state) => state.value);
+  const error = useSelector(field.store, (state) => serverMessage(state.meta.errorMap));
   return (
     <TextFieldView
       {...props}
@@ -1833,14 +1833,14 @@ export function TextField(props: TextFieldProps) {
 `src/components/form/fields/TextareaField.tsx`:
 
 ```tsx
-import { useStore } from "@tanstack/react-form";
+import { useSelector } from "@tanstack/react-form";
 
 import { useFieldContext } from "../form-contexts";
 
 /** A textarea bound to its form field. No form routes an error here (D80). */
 export function TextareaField({ id, label, rows = 4 }: { id: string; label: string; rows?: number }) {
   const field = useFieldContext<string>();
-  const value = useStore(field.store, (state) => state.value);
+  const value = useSelector(field.store, (state) => state.value);
   return (
     <div className="mb-4">
       <label htmlFor={id} className="mb-1 block text-sm font-medium text-slate-700">
@@ -1862,7 +1862,7 @@ export function TextareaField({ id, label, rows = 4 }: { id: string; label: stri
 `src/components/form/fields/SelectField.tsx`:
 
 ```tsx
-import { useStore } from "@tanstack/react-form";
+import { useSelector } from "@tanstack/react-form";
 import clsx from "clsx";
 
 import { useFieldContext } from "../form-contexts";
@@ -1887,7 +1887,7 @@ export function SelectField<T extends string>({
   density = "default",
 }: SelectFieldProps<T>) {
   const field = useFieldContext<T>();
-  const value = useStore(field.store, (state) => state.value);
+  const value = useSelector(field.store, (state) => state.value);
   const compact = density === "compact";
   return (
     <div className={compact ? undefined : "mb-4"}>
@@ -1916,7 +1916,7 @@ export function SelectField<T extends string>({
 `src/components/form/fields/CheckboxField.tsx`:
 
 ```tsx
-import { useStore } from "@tanstack/react-form";
+import { useSelector } from "@tanstack/react-form";
 import clsx from "clsx";
 
 import { useFieldContext } from "../form-contexts";
@@ -1930,7 +1930,7 @@ export function CheckboxField({
   density?: "default" | "compact";
 }) {
   const field = useFieldContext<boolean>();
-  const checked = useStore(field.store, (state) => state.value);
+  const checked = useSelector(field.store, (state) => state.value);
   return (
     <label
       className={clsx(
@@ -1953,7 +1953,7 @@ export function CheckboxField({
 `src/components/form/fields/CheckboxGroupField.tsx`:
 
 ```tsx
-import { useStore } from "@tanstack/react-form";
+import { useSelector } from "@tanstack/react-form";
 
 import { useFieldContext } from "../form-contexts";
 import type { SelectOption } from "./SelectField";
@@ -1967,7 +1967,7 @@ export function CheckboxGroupField<T extends string>({
   options: readonly SelectOption<T>[];
 }) {
   const field = useFieldContext<T[]>();
-  const selected = useStore(field.store, (state) => state.value);
+  const selected = useSelector(field.store, (state) => state.value);
 
   function toggle(value: T) {
     field.handleChange((current) =>
@@ -2000,7 +2000,7 @@ export function CheckboxGroupField<T extends string>({
 `src/components/form/SubmitButton.tsx`:
 
 ```tsx
-import { useStore } from "@tanstack/react-form";
+import { useSelector } from "@tanstack/react-form";
 
 import { Button } from "../Button";
 import { useFormContext } from "./form-contexts";
@@ -2016,7 +2016,7 @@ export function SubmitButton({
   className?: string;
 }) {
   const form = useFormContext();
-  const isSubmitting = useStore(form.store, (state) => state.isSubmitting);
+  const isSubmitting = useSelector(form.store, (state) => state.isSubmitting);
   return (
     <Button type="submit" disabled={isSubmitting} className={className}>
       {isSubmitting ? pendingLabel : label}
@@ -2028,7 +2028,7 @@ export function SubmitButton({
 `src/components/form/ServerFormError.tsx`:
 
 ```tsx
-import { useStore } from "@tanstack/react-form";
+import { useSelector } from "@tanstack/react-form";
 
 import { FormError } from "../FormError";
 import { useFormContext } from "./form-contexts";
@@ -2037,7 +2037,7 @@ import { serverMessage } from "./server-errors";
 /** The form-level server message, in the role="alert" that D75 focuses (D80). */
 export function ServerFormError() {
   const form = useFormContext();
-  const message = useStore(form.store, (state) => serverMessage(state.errorMap) ?? null);
+  const message = useSelector(form.store, (state) => serverMessage(state.errorMap) ?? null);
   return <FormError message={message} />;
 }
 ```
@@ -3265,7 +3265,7 @@ git commit -m "feat: add useUrlFieldSync, the form-field successor of useSearchP
 Replace `src/features/tasks/components/TaskFilters.tsx` entirely:
 
 ```tsx
-import { useStore } from "@tanstack/react-form";
+import { useSelector } from "@tanstack/react-form";
 import { useId, useState } from "react";
 
 import { Button } from "../../../components/Button";
@@ -3344,8 +3344,8 @@ export function TaskFilters({ filters, onChange, onClear }: TaskFiltersProps) {
     delayMs: 0,
   });
 
-  const afterDay = useStore(form.store, (state) => state.values.due_date_after);
-  const beforeDay = useStore(form.store, (state) => state.values.due_date_before);
+  const afterDay = useSelector(form.store, (state) => state.values.due_date_after);
+  const beforeDay = useSelector(form.store, (state) => state.values.due_date_before);
   // D78: explained, not prevented — the URL keeps what was entered (D45). ISO
   // days compare correctly as strings.
   const inverted = afterDay !== "" && beforeDay !== "" && afterDay > beforeDay;

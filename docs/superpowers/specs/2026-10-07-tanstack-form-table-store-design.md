@@ -194,15 +194,15 @@ singleton.
 |---|---|
 | `form-contexts.ts` | `createFormHookContexts()` → `fieldContext`, `formContext`, `useFieldContext`, `useFormContext`. A module of its own, so the hook factory and the field components do not import each other |
 | `fields/TextField.tsx`, `TextareaField.tsx`, `SelectField.tsx`, `CheckboxField.tsx`, `CheckboxGroupField.tsx` | Bound field components. Each reads `useFieldContext()` and renders today's markup |
-| `SubmitButton.tsx`, `FormError.tsx` | Form components. `SubmitButton` subscribes to `isSubmitting` (disabled, `label` / `pendingLabel`); `FormError` renders the form-level `onServer` message through the existing `components/FormError.tsx` |
-| `app-form.ts` | `createFormHook({ fieldContext, formContext, fieldComponents, formComponents })` → `useAppForm`, `withForm` |
+| `SubmitButton.tsx`, `ServerFormError.tsx` | Form components. `SubmitButton` subscribes to `isSubmitting` (disabled, `label` / `pendingLabel`); `ServerFormError` renders the form-level `onServer` message through the existing `components/FormError.tsx` |
+| `app-form.ts` | `createFormHook({ fieldContext, formContext, fieldComponents, formComponents })` → `useAppForm` |
 | `server-errors.ts` | `toServerErrors`, `setServerErrors`, `clearServerErrors` (§5.2) |
 
 **Field markup is the contract.** The bound fields keep today's ids, labels,
 `aria-invalid="true"` only when there is an error, `aria-describedby` → `${id}-error`, and
-`<p id="${id}-error">` for the message. Each field shows its `onServer` error when it has one.
-Only the fields that show an error today ever receive one, because `toServerErrors` routes only
-`renderedFields` (§5.2). The task form's description and status and the user form's role and
+`<p id="${id}-error">` for the message. Only `TextField` (and the assignee combobox, wired in
+`TaskForm`) displays an `onServer` error: they are the only fields that show an error today, and
+`toServerErrors` routes only `renderedFields` (§5.2). The task form's description and status and the user form's role and
 Active checkbox never get one. The fields:
 
 - accept the input attributes the forms use today (`type`, `required`, `maxLength`, `readOnly`,
