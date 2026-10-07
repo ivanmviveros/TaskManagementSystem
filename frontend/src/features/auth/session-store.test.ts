@@ -1,7 +1,7 @@
 import { http, HttpResponse } from "msw";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { clearAccessToken } from "../../lib/api-client";
+import { apiClient, clearAccessToken, setAccessToken } from "../../lib/api-client";
 import { server } from "../../test/msw-server";
 import { createSessionStore } from "./session-store";
 import type { CurrentUser } from "./types";
@@ -16,6 +16,18 @@ const ME: CurrentUser = {
 };
 
 afterEach(() => clearAccessToken());
+
+/** Registers a probe endpoint and returns a getter for the Authorization header it saw. */
+function recordAuthorization(): () => string | null {
+  let sent: string | null = "unset";
+  server.use(
+    http.get(`${BASE}/tasks/stats/`, ({ request }) => {
+      sent = request.headers.get("Authorization");
+      return HttpResponse.json({});
+    }),
+  );
+  return () => sent;
+}
 
 describe("session store", () => {
   it("starts loading, with nobody signed in", () => {
@@ -34,9 +46,13 @@ describe("session store", () => {
     server.use(
       http.post(`${BASE}/auth/login/`, () => HttpResponse.json({ access: "token", user: ME })),
     );
+    const authorization = recordAuthorization();
     const store = createSessionStore();
     await expect(store.actions.signIn("supervisor@demo.local", "pw")).resolves.toEqual(ME);
     expect(store.state.user).toEqual(ME);
+
+    await apiClient.get("/tasks/stats/");
+    expect(authorization()).toBe("Bearer token");
   });
 
   it("signOut never rejects, and clears the user even when the server fails", async () => {
@@ -45,10 +61,15 @@ describe("session store", () => {
         HttpResponse.json({ detail: "x", code: "x", errors: null }, { status: 500 }),
       ),
     );
+    const authorization = recordAuthorization();
     const store = createSessionStore();
     store.actions.settle(ME);
+    setAccessToken("t");
     await expect(store.actions.signOut()).resolves.toBeUndefined();
     expect(store.state.user).toBeNull();
+
+    await apiClient.get("/tasks/stats/");
+    expect(authorization()).toBeNull();
   });
 
   it("expire clears the user and keeps loading settled", () => {

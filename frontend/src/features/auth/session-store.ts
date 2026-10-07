@@ -17,7 +17,8 @@ export type SessionState = {
   isLoading: boolean;
 };
 
-export const initialSessionState: SessionState = { user: null, isLoading: true };
+/** Frozen: every store created from it shares this one object. */
+export const initialSessionState: SessionState = Object.freeze({ user: null, isLoading: true });
 
 export const sessionActions = ({ setState }: StoreApi<SessionState>) => ({
   /** Ends the bootstrap probe, signed in or not. */
@@ -58,10 +59,4 @@ export const createSessionStore = () => createStore(initialSessionState, session
 export type SessionStore = ReturnType<typeof createSessionStore>;
 
 /** What useAuth() returns: the same shape the old auth context provided (D86). */
-export interface AuthState {
-  user: CurrentUser | null;
-  /** True until the initial "who am I?" probe settles, so guards can wait. */
-  isLoading: boolean;
-  signIn: (email: string, password: string) => Promise<CurrentUser>;
-  signOut: () => Promise<void>;
-}
+export type AuthState = SessionState & Pick<SessionStore["actions"], "signIn" | "signOut">;

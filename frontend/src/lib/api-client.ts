@@ -16,8 +16,9 @@ const NO_REFRESH_PATHS = new Set([REFRESH_PATH, "/auth/login/"]);
 
 /**
  * The access token lives here, in module memory, and never in localStorage or
- * sessionStorage (root AGENTS.md § Authentication). the session store is the only
- * writer; keeping the value out of React state avoids a second copy that could
+ * sessionStorage (root AGENTS.md § Authentication). Outside this module, the
+ * session store is the only writer; keeping the value out of React state avoids
+ * a second copy that could
  * disagree with what the imperative client actually sends.
  */
 let accessToken: string | null = null;
