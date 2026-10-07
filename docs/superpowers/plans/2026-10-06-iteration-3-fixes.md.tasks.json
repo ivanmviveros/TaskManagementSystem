@@ -49,7 +49,7 @@
     {
       "id": 8,
       "subject": "Task 8: Verify locally, then in GitHub Actions",
-      "status": "in_progress",
+      "status": "completed",
       "blockedBy": [
         1,
         2,
@@ -63,11 +63,11 @@
     {
       "id": 9,
       "subject": "Task 9: Persist insights to claude-insights/",
-      "status": "pending",
+      "status": "completed",
       "blockedBy": [
         8
       ]
     }
   ],
-  "lastUpdated": "2026-10-07T04:02:17+00:00"
+  "lastUpdated": "2026-10-07T12:42:50+00:00"
 }
