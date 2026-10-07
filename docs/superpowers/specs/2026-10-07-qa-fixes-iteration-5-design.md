@@ -52,7 +52,7 @@ Continues from D65.
 |---|---|---|
 | D66 | **An Admin cannot act on their own account.** Self-delete is refused by a new `IsNotSelf` object permission (**403** `cannot_delete_self`). A PATCH that would *change* the actor's own `role` or set their own `is_active` to false is refused by `UserService.update` (**400** `cannot_change_own_access`). The UI hides Deactivate on the actor's own row and renders Role and Active read-only on their own edit form. | Recovering a locked-out system needs shell access, because there is no restore endpoint (D20). The two status codes follow §7.3's layering: "may you do this to this row?" is the object-permission layer (403, like D27's `delete_requires_creator`), while "this field is not yours to set" is field validation (400, like `assignee_immutable`). The service compares against the current values, not field presence, because `UserEditPage` always sends `role` and `is_active`. |
 | D67 | **One sort model, `features/tasks/sorting.ts`, owns the orderings, the default and the toggle.** `DEFAULT_ORDERING = "-created_at"` mirrors the API default (spec §8.3), so "no parameter" is shown as what it is. | The table, the mobile select and URL validation must agree on one list. A second copy is how they would drift. |
-| D68 | **The table shows its sort state:** `aria-sort` on every sortable `<th>`, a ▲/▼ glyph and stronger style on the active one, a faint ↕ on the others. Button names describe the action they will take. | F6. An invisible toggle is a guess, and a screen reader got nothing. |
+| D68 | **The table shows its sort state:** `aria-sort` on every sortable `<th>`, a ▲/▼ glyph and stronger style on the active one, a faint ↕ on the others. Each button's name is its visible label alone; `aria-sort` carries the state. | F6. An invisible toggle is a guess, and a screen reader got nothing. *Amended during implementation:* the first version named each button for its next action ("Due date, sorted ascending. Sort descending"). Code review showed that this became the column header's name, which screen readers repeat on every row, with the state spoken twice. The WAI-ARIA APG sortable-table pattern keeps the plain label. |
 | D69 | **Below `lg` the task list renders cards plus a "Sort by" `<select>`;** the table starts at `lg`. The Users list keeps `md`. | F3 and F8. This **overrides spec §11.6** ("the task table collapses to stacked cards below `md`") for this one table: at `md` the six columns do not fit (chosen by the project owner). The Users table has five short columns and fits. |
 | D70 | **Links from the task list carry its search in history state (`tasksSearch`).** Detail, edit and create forward it, and every "back to the list" path uses it, after running it through `validateTaskListSearch`. Without state, `/tasks` is the fallback. | F5. It is explicit (no hidden global), survives a reload of the same tab, and degrades cleanly for deep links. A React-context memory and `history.back()` were rejected (§5.1). |
 | D71 | **A shared `NotFoundPanel` handles every not-found state.** The router uses `notFoundMode: "root"` and a `defaultNotFoundComponent` that renders the panel inside a `ShellLayout` extracted from `AppShell`. | F4. A not-found page should keep the user inside the app and offer the way back. Under the default `"fuzzy"` mode, an unknown path below a known prefix (`/tasks/a/b`) renders inside `AppShell`'s `<Outlet>`, while `/does-not-exist` renders at the root. One component would then have to work in both places, and wrapping it in the shell would double the header for the first. `"root"` gives one place and one component. The router options are the framework's mechanism (AGENTS.md principle 12) and remove TanStack's console warning. |
@@ -193,12 +193,9 @@ For each entry in `SORT_FIELDS`, `const active = parsed.field === field`:
 - Label plus an `aria-hidden` glyph: ▲ (ascending) / ▼ (descending) when active, a
   `text-slate-300` ↕ otherwise.
 - The active label is `text-slate-900 font-semibold`; inactive labels keep today's style.
-- The button's `aria-label` describes the next action:
-  - active: `"Due date, sorted ascending. Sort descending"`;
-  - inactive: `"Status. Sort ascending"`.
-
-  Existing tests that query `/sort by due date/i` change to these names. That is a budgeted
-  change.
+- The button has no `aria-label`. Its accessible name is the visible label ("Due date"), and
+  the glyph is `aria-hidden`. The state is announced through the `<th>`'s `aria-sort`, per the
+  WAI-ARIA APG sortable-table pattern (D68, as amended).
 
 ### 4.3 `TaskSortSelect` (F3)
 
@@ -464,7 +461,7 @@ Coverage of `apps/` stays at 100 %.
 | Finding | Test |
 |---|---|
 | F1 | `UserListPage`: no Deactivate for the signed-in Admin's own row (table and card), present for others. `UserForm`: own account renders Role read-only and no Active checkbox; a `cannot_change_own_access` response shows the alert |
-| F6 | `sorting.test.ts`: parse (incl. default), toggle, whitelist, options, and `nextOrdering` returning `undefined` for the default. `TaskListPage`: with no `ordering`, Created has `aria-sort="descending"`; after clicking Due date, it has `aria-sort="ascending"` and the next-action name. Others have `none`. Clicking Created twice leaves no `ordering` in the URL |
+| F6 | `sorting.test.ts`: parse (incl. default), toggle, whitelist, options, and `nextOrdering` returning `undefined` for the default. `TaskListPage`: with no `ordering`, Created has `aria-sort="descending"`; after clicking Due date, it has `aria-sort="ascending"`. Others have `none`. Clicking Created twice leaves no `ordering` in the URL |
 | F3 / F8 | The sort select shows "Newest first" by default; choosing "Due date, latest first" writes `ordering=-due_date` and resets the page. It is still present on an empty result. Wrapper classes are `lg:block` and `lg:hidden` (jsdom applies no CSS; layout is verified in §7.3) |
 | F10 | `search-params.test.ts`: `["BOGUS"]` becomes `undefined`; `["PENDING","BOGUS"]` becomes `["PENDING"]`; an unknown `ordering` is dropped and a known one kept |
 | F11 | `auth-routing.test.tsx`: an anonymous visit to `/dashboard` makes exactly one request (the refresh) and none to `/tasks/stats/`, then lands on `/login`. Must fail before §5.5. The harness's switch to `useRouterAuthSync` lands in the same commit, so the test runs production code |
