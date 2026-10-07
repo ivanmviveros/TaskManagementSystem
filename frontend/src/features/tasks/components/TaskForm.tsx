@@ -95,7 +95,11 @@ export function TaskForm({ task, onSubmit, onCancel }: TaskFormProps) {
         // exactly why spec §8.7 keeps the two assignee codes separate.
         if (caught.code === "validation_error") {
           setFieldErrors(caught.errors);
-          setFormError(null);
+          // An error keyed on a field this form does not render (description,
+          // status, non_field_errors) would otherwise vanish; show the message.
+          const rendered = canChooseAssignee ? ["title", "due_date", "assignee"] : ["title", "due_date"];
+          const hasRenderedError = rendered.some((key) => caught.errors?.[key] !== undefined);
+          setFormError(hasRenderedError ? null : caught.message);
         } else if (caught.code === "assignee_not_assignable") {
           setFieldErrors({ assignee: [caught.message] });
         } else {

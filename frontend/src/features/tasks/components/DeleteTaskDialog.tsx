@@ -1,3 +1,5 @@
+import { useEffect } from "react";
+
 import { Button } from "../../../components/Button";
 import { FormError } from "../../../components/FormError";
 import { useModalDialog } from "../../../components/useModalDialog";
@@ -24,6 +26,17 @@ export function DeleteTaskDialog({
   onCancel,
 }: DeleteTaskDialogProps) {
   const dialogRef = useModalDialog<HTMLDivElement>(onCancel, !isDeleting);
+
+  // D75: the buttons are disabled while the request runs, which drops focus to
+  // <body> (outside the aria-modal dialog) in real browsers. On a failure, focus
+  // the error, so the trap holds and the message is reached first. Every caller
+  // resets `error` to null before each attempt, so a repeat failure with the
+  // same message still re-runs this effect.
+  useEffect(() => {
+    if (error !== null) {
+      dialogRef.current?.querySelector<HTMLElement>('[role="alert"]')?.focus();
+    }
+  }, [error, dialogRef]);
   return (
     <div
       ref={dialogRef}

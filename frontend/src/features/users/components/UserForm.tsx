@@ -59,6 +59,11 @@ export function UserForm({ user, onSubmit, onCancel }: UserFormProps) {
       if (caught instanceof ApiError) {
         if (caught.code === "validation_error") {
           setFieldErrors(caught.errors);
+          // An error keyed on a field this form does not render would otherwise
+          // vanish; show the message.
+          const rendered = ["email", "first_name", "last_name", "password"];
+          const hasRenderedError = rendered.some((key) => caught.errors?.[key] !== undefined);
+          setFormError(hasRenderedError ? null : caught.message);
         } else if (caught.code === "email_already_in_use") {
           // Against the field, not the form: it is the email that is wrong.
           setFieldErrors({ email: [caught.message] });

@@ -120,6 +120,29 @@ const COMPLETED = {
 };
 
 describe("TaskForm", () => {
+  it("shows the message in the alert, focused, when the errors name no rendered field (D75)", async () => {
+    signedInAs(SUPERVISOR);
+    server.use(
+      http.post(`${BASE}/tasks/`, () =>
+        HttpResponse.json(
+          {
+            detail: "Invalid input.",
+            code: "validation_error",
+            errors: { description: ["Too long."] },
+          },
+          { status: 400 },
+        ),
+      ),
+    );
+    await renderApp("/tasks/new");
+    const user = userEvent.setup();
+    await user.type(await screen.findByLabelText(/title/i), "A task");
+    await user.click(screen.getByRole("button", { name: /create task/i }));
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(/invalid input/i);
+    await waitFor(() => expect(alert).toHaveFocus());
+  });
+
   it("moves focus to the first invalid field after a failed save, every time (D75)", async () => {
     signedInAs(SUPERVISOR);
     server.use(
@@ -795,6 +818,9 @@ describe("TaskDetailPage", () => {
     const dialog = screen.getByRole("dialog");
     await user.click(within(dialog).getByRole("button", { name: /^delete$/i }));
     await within(dialog).findByRole("alert");
-    await waitFor(() => expect(dialog).toContainElement(document.activeElement as HTMLElement));
+    // jsdom cannot reproduce the browser's focus drop, which is why this asserts
+    // focus is ON the alert rather than merely inside the dialog.
+    await waitFor(() => expect(within(dialog).getByRole("alert")).toHaveFocus());
+    expect(dialog).toContainElement(document.activeElement as HTMLElement);
   });
 });
