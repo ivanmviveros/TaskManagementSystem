@@ -2,6 +2,7 @@ import { Link } from "@tanstack/react-router";
 import clsx from "clsx";
 
 import type { TaskListSearch } from "../../../app/search-params";
+import { formatDueDate } from "../../../lib/dates";
 import { SORT_FIELDS, nextOrdering, parseOrdering } from "../sorting";
 import type { TaskListItem } from "../types";
 import { OverdueBadge, StatusBadge } from "./StatusBadge";
@@ -89,7 +90,7 @@ export function TaskTable({
               {task.is_overdue && <OverdueBadge />}
             </td>
             <td className="p-3 text-slate-600">
-              {task.due_date === null ? "—" : new Date(task.due_date).toLocaleDateString()}
+              {task.due_date === null ? "—" : formatDueDate(task.due_date)}
             </td>
             <td className="p-3">
               <StatusBadge status={task.status} />

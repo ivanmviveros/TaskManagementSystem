@@ -1,6 +1,7 @@
 import { Link } from "@tanstack/react-router";
 
 import type { TaskListSearch } from "../../../app/search-params";
+import { formatDueDate } from "../../../lib/dates";
 import type { TaskListItem } from "../types";
 import { OverdueBadge, StatusBadge } from "./StatusBadge";
 import { TaskRowActions } from "./TaskRowActions";
@@ -47,7 +48,7 @@ export function TaskCard({
           <StatusBadge status={task.status} />
         </dd>
         <dt className="font-medium">Due</dt>
-        <dd>{task.due_date === null ? "—" : new Date(task.due_date).toLocaleDateString()}</dd>
+        <dd>{task.due_date === null ? "—" : formatDueDate(task.due_date)}</dd>
         {showAssignee && (
           <>
             <dt className="font-medium">Assignee</dt>

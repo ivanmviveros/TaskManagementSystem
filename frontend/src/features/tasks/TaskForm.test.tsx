@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
 
+import { formatDueDate } from "../../lib/dates";
 import { server } from "../../test/msw-server";
 import { renderApp } from "../../test/render-app";
 import type { TaskDetail } from "./types";
@@ -638,6 +639,16 @@ describe("TaskDetailPage", () => {
       ),
     );
   }
+
+  it("shows a due date as a date, without an invented time (D76)", async () => {
+    signedInAs(SUPERVISOR);
+    taskDetail({ due_date: "2026-01-01T12:00:00Z" });
+    await renderApp(`/tasks/${TASK_ID}`);
+    const term = await screen.findByText("Due date");
+    const value = term.nextElementSibling as HTMLElement;
+    expect(value).toHaveTextContent(formatDueDate("2026-01-01T12:00:00Z"));
+    expect(value.textContent).not.toMatch(/:/);
+  });
 
   it("explains a missing task without saying why, and links back (D72)", async () => {
     signedInAs(SUPERVISOR);

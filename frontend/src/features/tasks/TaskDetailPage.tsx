@@ -5,6 +5,7 @@ import { Button } from "../../components/Button";
 import { ButtonLink } from "../../components/ButtonLink";
 import { FormError } from "../../components/FormError";
 import { ApiError } from "../../lib/api-error";
+import { formatDueDate } from "../../lib/dates";
 import { DeleteTaskDialog } from "./components/DeleteTaskDialog";
 import { OverdueBadge, StatusBadge } from "./components/StatusBadge";
 import { TaskNotFound } from "./components/TaskNotFound";
@@ -94,7 +95,7 @@ export function TaskDetailPage() {
         </dd>
         <dt className="font-medium text-slate-700">Due date</dt>
         <dd className="text-slate-600">
-          {task.due_date === null ? "No deadline" : new Date(task.due_date).toLocaleString()}
+          {task.due_date === null ? "No deadline" : formatDueDate(task.due_date)}
         </dd>
         <dt className="font-medium text-slate-700">Assignee</dt>
         <dd className="text-slate-600">
