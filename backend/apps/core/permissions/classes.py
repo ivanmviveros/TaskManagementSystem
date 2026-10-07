@@ -1,5 +1,5 @@
 """Permission classes. RolePermission answers endpoint reachability from the
-matrix; IsTaskCreator answers the one object-level rule."""
+matrix; IsTaskCreator and IsNotSelf answer the object-level rules."""
 
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.permissions import BasePermission
@@ -69,4 +69,23 @@ class IsTaskCreator(BasePermission):
         raise PermissionDenied(
             detail="Only the creator of a task may delete it.",
             code="delete_requires_creator",
+        )
+
+
+class IsNotSelf(BasePermission):
+    """D66: an Admin may not delete their own account.
+
+    Object-level, like IsTaskCreator: the row is visible and readable, but this
+    action on it is refused. Without it, one click leaves an Admin locked out,
+    and D20 provides no restore endpoint.
+    """
+
+    def has_object_permission(self, request, view, obj) -> bool:
+        if obj.pk != request.user.pk:
+            return True
+        # RAISED, not returned: returning False yields DRF's generic
+        # permission_denied code, and the error contract names this one.
+        raise PermissionDenied(
+            detail="You cannot delete your own account.",
+            code="cannot_delete_self",
         )

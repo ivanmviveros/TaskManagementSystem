@@ -38,6 +38,25 @@ beforeEach(() => {
 });
 
 describe("UserForm", () => {
+  it("moves focus to the email field when the address is taken (D75)", async () => {
+    server.use(
+      http.post(`${BASE}/users/`, () =>
+        HttpResponse.json(
+          { detail: "A user with this email address already exists.", code: "email_already_in_use", errors: null },
+          { status: 400 },
+        ),
+      ),
+    );
+    await renderApp("/users/new");
+    const user = userEvent.setup();
+    await user.type(await screen.findByLabelText(/^email$/i), "dupe@demo.local");
+    await user.type(screen.getByLabelText(/first name/i), "D");
+    await user.type(screen.getByLabelText(/last name/i), "Upe");
+    await user.type(screen.getByLabelText(/^password$/i), "a-strong-password-1");
+    await user.click(screen.getByRole("button", { name: /create user/i }));
+    await waitFor(() => expect(screen.getByLabelText(/^email$/i)).toHaveFocus());
+  });
+
   it("creates a user", async () => {
     let body: Record<string, unknown> | null = null;
     server.use(
@@ -154,5 +173,79 @@ describe("UserForm", () => {
     await user.click(screen.getByRole("button", { name: /save changes/i }));
     await waitFor(() => expect(body).not.toBeNull());
     expect(body).toMatchObject({ password: "a-new-strong-password-1" });
+  });
+
+  it("shows an Admin's own role read-only, with no Active control (D66)", async () => {
+    let body: Record<string, unknown> | null = null;
+    server.use(
+      http.get(`${BASE}/users/${ADMIN.id}/`, () => HttpResponse.json(ADMIN)),
+      http.patch(`${BASE}/users/${ADMIN.id}/`, async ({ request }) => {
+        body = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json(ADMIN);
+      }),
+      http.get(`${BASE}/users/`, () =>
+        HttpResponse.json({ count: 0, next: null, previous: null, results: [] }),
+      ),
+    );
+    await renderApp(`/users/${ADMIN.id}`);
+    expect(
+      await screen.findByText(/you can't change your own role or deactivate your own account/i),
+    ).toBeInTheDocument();
+    expect(screen.queryByLabelText(/^role$/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole("checkbox", { name: /active/i })).not.toBeInTheDocument();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: /save changes/i }));
+    await waitFor(() => expect(body).not.toBeNull());
+    // Unchanged values, which the API accepts (D66).
+    expect(body).toMatchObject({ role: "ADMIN", is_active: true });
+  });
+
+  it("explains a missing user and links back to the list", async () => {
+    server.use(
+      http.get(`${BASE}/users/${TARGET.id}/`, () =>
+        HttpResponse.json({ detail: "Not found.", code: "not_found", errors: null }, { status: 404 }),
+      ),
+    );
+    await renderApp(`/users/${TARGET.id}`);
+    expect(await screen.findByRole("heading", { name: /user not found/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /back to users/i })).toHaveAttribute("href", "/users");
+  });
+
+  it("keeps a generic message for other load errors, with the way back", async () => {
+    server.use(
+      http.get(`${BASE}/users/${TARGET.id}/`, () =>
+        HttpResponse.json({ detail: "Database is down.", code: "server_error" }, { status: 500 }),
+      ),
+    );
+    await renderApp(`/users/${TARGET.id}`);
+    expect(await screen.findByRole("alert")).toHaveTextContent("Could not load that user.");
+    expect(screen.getByRole("link", { name: /back to users/i })).toHaveAttribute("href", "/users");
+  });
+
+  it("still offers role and Active when editing someone else", async () => {
+    server.use(http.get(`${BASE}/users/${TARGET.id}/`, () => HttpResponse.json(TARGET)));
+    await renderApp(`/users/${TARGET.id}`);
+    expect(await screen.findByLabelText(/^role$/i)).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: /active/i })).toBeInTheDocument();
+  });
+
+  it("shows a cannot_change_own_access refusal as a form-level message", async () => {
+    server.use(
+      http.get(`${BASE}/users/${TARGET.id}/`, () => HttpResponse.json(TARGET)),
+      http.patch(`${BASE}/users/${TARGET.id}/`, () =>
+        HttpResponse.json(
+          {
+            detail: "You cannot change your own role or deactivate your own account.",
+            code: "cannot_change_own_access",
+            errors: null,
+          },
+          { status: 400 },
+        ),
+      ),
+    );
+    await renderApp(`/users/${TARGET.id}`);
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: /save changes/i }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(/cannot change your own role/i);
   });
 });

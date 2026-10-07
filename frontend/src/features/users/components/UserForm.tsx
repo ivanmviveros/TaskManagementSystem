@@ -4,15 +4,11 @@ import type { FormEvent } from "react";
 import { Button } from "../../../components/Button";
 import { FormError } from "../../../components/FormError";
 import { TextField } from "../../../components/TextField";
+import { useFocusFirstError } from "../../../components/useFocusFirstError";
 import { ApiError } from "../../../lib/api-error";
-import { ROLES, type Role } from "../../auth/types";
+import { useAuth } from "../../auth/hooks/useAuth";
+import { ROLE_LABEL, ROLES, type Role } from "../../auth/types";
 import type { UserDetail } from "../types";
-
-const ROLE_LABEL: Record<Role, string> = {
-  ADMIN: "Admin",
-  SUPERVISOR: "Supervisor",
-  OPERATOR: "Operator",
-};
 
 export interface UserFormValues {
   email: string;
@@ -30,7 +26,12 @@ interface UserFormProps {
 }
 
 export function UserForm({ user, onSubmit, onCancel }: UserFormProps) {
+  const { ref: formRef, signalFailure } = useFocusFirstError<HTMLFormElement>();
   const isEdit = user !== undefined;
+  const { user: currentUser } = useAuth();
+  // D66: an Admin's own role and active flag are not theirs to change. The
+  // values are still submitted, unchanged, which the API accepts.
+  const isSelf = user !== undefined && user.id === currentUser?.id;
   const [email, setEmail] = useState(user?.email ?? "");
   const [password, setPassword] = useState("");
   const [firstName, setFirstName] = useState(user?.first_name ?? "");
@@ -52,6 +53,11 @@ export function UserForm({ user, onSubmit, onCancel }: UserFormProps) {
       if (caught instanceof ApiError) {
         if (caught.code === "validation_error") {
           setFieldErrors(caught.errors);
+          // An error keyed on a field this form does not render would otherwise
+          // vanish; show the message.
+          const rendered = ["email", "first_name", "last_name", "password"];
+          const hasRenderedError = rendered.some((key) => caught.errors?.[key] !== undefined);
+          setFormError(hasRenderedError ? null : caught.message);
         } else if (caught.code === "email_already_in_use") {
           // Against the field, not the form: it is the email that is wrong.
           setFieldErrors({ email: [caught.message] });
@@ -61,13 +67,14 @@ export function UserForm({ user, onSubmit, onCancel }: UserFormProps) {
       } else {
         setFormError("Could not save. Try again.");
       }
+      signalFailure();
     } finally {
       setIsSubmitting(false);
     }
   }
 
   return (
-    <form onSubmit={handleSubmit} noValidate aria-label={isEdit ? "Edit user" : "New user"}>
+    <form ref={formRef} onSubmit={handleSubmit} noValidate aria-label={isEdit ? "Edit user" : "New user"}>
       <TextField
         id="email"
         label="Email"
@@ -110,25 +117,36 @@ export function UserForm({ user, onSubmit, onCancel }: UserFormProps) {
         onChange={(event) => setPassword(event.target.value)}
       />
 
-      <div className="mb-4">
-        <label htmlFor="role" className="mb-1 block text-sm font-medium text-slate-700">
-          Role
-        </label>
-        <select
-          id="role"
-          value={role}
-          onChange={(event) => setRole(event.target.value as Role)}
-          className="w-full rounded border border-slate-300 px-3 py-2"
-        >
-          {ROLES.map((option) => (
-            <option key={option} value={option}>
-              {ROLE_LABEL[option]}
-            </option>
-          ))}
-        </select>
-      </div>
+      {isSelf ? (
+        <div className="mb-4">
+          {/* Plain text, not a <label>: there is no control to label. */}
+          <p className="mb-1 text-sm font-medium text-slate-700">Role</p>
+          <p className="text-sm text-slate-900">{ROLE_LABEL[role]}</p>
+          <p className="mt-1 text-sm text-slate-500">
+            You can&apos;t change your own role or deactivate your own account.
+          </p>
+        </div>
+      ) : (
+        <div className="mb-4">
+          <label htmlFor="role" className="mb-1 block text-sm font-medium text-slate-700">
+            Role
+          </label>
+          <select
+            id="role"
+            value={role}
+            onChange={(event) => setRole(event.target.value as Role)}
+            className="w-full rounded border border-slate-300 px-3 py-2"
+          >
+            {ROLES.map((option) => (
+              <option key={option} value={option}>
+                {ROLE_LABEL[option]}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
 
-      {isEdit && (
+      {isEdit && !isSelf && (
         <label className="mb-4 flex items-center gap-2 text-sm text-slate-700">
           <input
             type="checkbox"

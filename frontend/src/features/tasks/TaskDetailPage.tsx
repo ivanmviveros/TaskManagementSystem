@@ -5,14 +5,18 @@ import { Button } from "../../components/Button";
 import { ButtonLink } from "../../components/ButtonLink";
 import { FormError } from "../../components/FormError";
 import { ApiError } from "../../lib/api-error";
+import { formatDueDate } from "../../lib/dates";
 import { DeleteTaskDialog } from "./components/DeleteTaskDialog";
 import { OverdueBadge, StatusBadge } from "./components/StatusBadge";
+import { TaskNotFound } from "./components/TaskNotFound";
 import { useCompleteTask, useDeleteTask } from "./hooks/useTaskMutations";
 import { useTask } from "./hooks/useTasks";
+import { useTasksBackSearch } from "./hooks/useTasksBackSearch";
 
 export function TaskDetailPage() {
   const { taskId } = useParams({ from: "/shell/tasks/$taskId" });
   const navigate = useNavigate();
+  const back = useTasksBackSearch();
   const { data: task, isPending, isError, error } = useTask(taskId);
   const complete = useCompleteTask();
   const remove = useDeleteTask();
@@ -29,10 +33,18 @@ export function TaskDetailPage() {
   }
 
   if (isError || task === undefined) {
+    if (error instanceof ApiError && error.status === 404) {
+      return <TaskNotFound backSearch={back} />;
+    }
     return (
-      <p role="alert" className="text-sm text-status-overdue">
-        {error instanceof ApiError ? error.message : "Could not load that task."}
-      </p>
+      <section>
+        <p role="alert" className="mb-4 text-sm text-status-overdue">
+          {error instanceof ApiError ? error.message : "Could not load that task."}
+        </p>
+        <ButtonLink variant="secondary" to="/tasks" search={back}>
+          Back to tasks
+        </ButtonLink>
+      </section>
     );
   }
 
@@ -58,7 +70,7 @@ export function TaskDetailPage() {
       // does not carry the early return's narrowing into it — `task` would still
       // be TaskDetail | undefined here (TS18048). The route param is a string.
       await remove.mutateAsync(taskId);
-      await navigate({ to: "/tasks" });
+      await navigate({ to: "/tasks", search: back });
     } catch (caught) {
       setDeleteError(
         caught instanceof ApiError ? caught.message : "Could not delete that task.",
@@ -83,7 +95,7 @@ export function TaskDetailPage() {
         </dd>
         <dt className="font-medium text-slate-700">Due date</dt>
         <dd className="text-slate-600">
-          {task.due_date === null ? "No deadline" : new Date(task.due_date).toLocaleString()}
+          {task.due_date === null ? "No deadline" : formatDueDate(task.due_date)}
         </dd>
         <dt className="font-medium text-slate-700">Assignee</dt>
         <dd className="text-slate-600">
@@ -109,7 +121,12 @@ export function TaskDetailPage() {
             Mark complete
           </Button>
         )}
-        <ButtonLink variant="secondary" to="/tasks/$taskId/edit" params={{ taskId: task.id }}>
+        <ButtonLink
+          variant="secondary"
+          to="/tasks/$taskId/edit"
+          params={{ taskId: task.id }}
+          state={{ tasksSearch: back }}
+        >
           Edit
         </ButtonLink>
         {task.can_delete && (
@@ -123,7 +140,7 @@ export function TaskDetailPage() {
             Delete
           </Button>
         )}
-        <ButtonLink variant="secondary" to="/tasks">
+        <ButtonLink variant="secondary" to="/tasks" search={back}>
           Back to tasks
         </ButtonLink>
       </div>

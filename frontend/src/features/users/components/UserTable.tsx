@@ -1,15 +1,20 @@
 
 import { Button } from "../../../components/Button";
 import { ButtonLink } from "../../../components/ButtonLink";
+import { ROLE_LABEL } from "../../auth/types";
 import type { UserDetail } from "../types";
 
 interface UserTableProps {
   users: UserDetail[];
   onDelete: (user: UserDetail) => void;
+  currentUserId: string | undefined;
 }
 
-/** The ≥`md` presentation of the user list, mirroring TaskTable. */
-export function UserTable({ users, onDelete }: UserTableProps) {
+/**
+ * The ≥`md` presentation of the user list. Follows TaskTable's pattern but keeps
+ * the `md` breakpoint (TaskTable starts at `lg`, D69).
+ */
+export function UserTable({ users, onDelete, currentUserId }: UserTableProps) {
   return (
     <table className="w-full border-collapse bg-white text-left text-sm shadow-sm">
       <thead>
@@ -38,7 +43,7 @@ export function UserTable({ users, onDelete }: UserTableProps) {
               {user.first_name} {user.last_name}
             </td>
             <td className="p-3 text-slate-600">{user.email}</td>
-            <td className="p-3 text-slate-600">{user.role}</td>
+            <td className="p-3 text-slate-600">{ROLE_LABEL[user.role]}</td>
             <td className="p-3 text-slate-600">{user.is_active ? "Yes" : "No"}</td>
             <td className="p-3">
               <div className="flex flex-wrap gap-2">
@@ -50,13 +55,16 @@ export function UserTable({ users, onDelete }: UserTableProps) {
                 >
                   Edit
                 </ButtonLink>
-                <Button
-                  variant="danger"
-                  aria-label={`Deactivate ${user.email}`}
-                  onClick={() => onDelete(user)}
-                >
-                  Deactivate
-                </Button>
+                {/* D66, the UX mirror of IsNotSelf: never offer a refusal. */}
+                {user.id !== currentUserId && (
+                  <Button
+                    variant="danger"
+                    aria-label={`Deactivate ${user.email}`}
+                    onClick={() => onDelete(user)}
+                  >
+                    Deactivate
+                  </Button>
+                )}
               </div>
             </td>
           </tr>

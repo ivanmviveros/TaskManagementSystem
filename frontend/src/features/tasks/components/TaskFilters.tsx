@@ -1,9 +1,8 @@
+import { useId } from "react";
 import { Button } from "../../../components/Button";
 import { useSearchParamDraft } from "../../../lib/useSearchParamDraft";
 import { STATUS_LABEL } from "./StatusBadge";
-import type { TaskFilters as Filters, TaskStatus } from "../types";
-
-const STATUSES: TaskStatus[] = ["PENDING", "IN_PROGRESS", "COMPLETED", "CANCELLED"];
+import { TASK_STATUSES, type TaskFilters as Filters, type TaskStatus } from "../types";
 
 /** What this panel edits. Paging and ordering belong to the list. */
 export type FilterPatch = Partial<
@@ -32,6 +31,10 @@ export function TaskFilters({ filters, onChange, onClear }: TaskFiltersProps) {
   const before = useSearchParamDraft(filters.due_date_before?.slice(0, 10) ?? "", (day) =>
     onChange({ due_date_before: toBound(day, "23:59:59") }),
   );
+  // D78: explained, not prevented — the URL keeps what was entered (D45). ISO
+  // days compare correctly as strings.
+  const inverted = after.draft !== "" && before.draft !== "" && after.draft > before.draft;
+  const rangeErrorId = useId();
 
   function toggleStatus(status: TaskStatus) {
     const next = selected.includes(status)
@@ -53,7 +56,7 @@ export function TaskFilters({ filters, onChange, onClear }: TaskFiltersProps) {
       <fieldset className="mb-3">
         <legend className="mb-2 text-sm font-medium text-slate-700">Status</legend>
         <div className="flex flex-wrap gap-3">
-          {STATUSES.map((status) => (
+          {TASK_STATUSES.map((status) => (
             <label key={status} className="flex items-center gap-1.5 text-sm text-slate-700">
               <input
                 type="checkbox"
@@ -75,6 +78,8 @@ export function TaskFilters({ filters, onChange, onClear }: TaskFiltersProps) {
             id="due-after"
             type="date"
             value={after.draft}
+            max={before.draft || undefined}
+            aria-describedby={inverted ? rangeErrorId : undefined}
             onChange={(event) => after.setDraft(event.target.value)}
             className="rounded border border-slate-300 px-3 py-2 text-sm"
           />
@@ -87,6 +92,9 @@ export function TaskFilters({ filters, onChange, onClear }: TaskFiltersProps) {
             id="due-before"
             type="date"
             value={before.draft}
+            min={after.draft || undefined}
+            aria-invalid={inverted || undefined}
+            aria-describedby={inverted ? rangeErrorId : undefined}
             onChange={(event) => before.setDraft(event.target.value)}
             className="rounded border border-slate-300 px-3 py-2 text-sm"
           />
@@ -103,6 +111,19 @@ export function TaskFilters({ filters, onChange, onClear }: TaskFiltersProps) {
           Clear filters
         </Button>
       </div>
+      {/* Always mounted: a live region is announced reliably only if it exists
+          before its text changes. Not role="alert" (focus lookups use it). */}
+      <p
+        id={rangeErrorId}
+        aria-live="polite"
+        className={inverted ? "mt-2 text-sm text-status-overdue" : undefined}
+      >
+        {inverted ? (
+          <>
+            &ldquo;Due after&rdquo; is later than &ldquo;Due before&rdquo;, so no task can match.
+          </>
+        ) : null}
+      </p>
     </section>
   );
 }

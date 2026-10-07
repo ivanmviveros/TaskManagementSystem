@@ -1,8 +1,12 @@
 import { useNavigate, useParams } from "@tanstack/react-router";
 
+import { ButtonLink } from "../../components/ButtonLink";
+import { ApiError } from "../../lib/api-error";
 import { TaskForm, type TaskFormValues } from "./components/TaskForm";
+import { TaskNotFound } from "./components/TaskNotFound";
 import { useCreateTask, useUpdateTask } from "./hooks/useTaskMutations";
 import { useTask } from "./hooks/useTasks";
+import { useTasksBackSearch } from "./hooks/useTasksBackSearch";
 
 /**
  * Creation is a ROUTE, not a modal: it is deep-linkable, guarded by exactly the
@@ -12,6 +16,7 @@ import { useTask } from "./hooks/useTasks";
 export function TaskCreatePage() {
   const navigate = useNavigate();
   const create = useCreateTask();
+  const back = useTasksBackSearch();
 
   async function handleSubmit(values: TaskFormValues) {
     const task = await create.mutateAsync({
@@ -22,14 +27,21 @@ export function TaskCreatePage() {
       // an explicit null would be refused as choosing a different assignee.
       ...(values.assignee === undefined ? {} : { assignee: values.assignee }),
     });
-    await navigate({ to: "/tasks/$taskId", params: { taskId: task.id } });
+    await navigate({
+      to: "/tasks/$taskId",
+      params: { taskId: task.id },
+      state: { tasksSearch: back },
+    });
   }
 
   return (
     <section>
       <h1 className="mb-4 text-xl font-semibold text-slate-900">New task</h1>
       <div className="max-w-xl rounded-lg bg-white p-4 shadow-sm sm:p-6">
-        <TaskForm onSubmit={handleSubmit} onCancel={() => void navigate({ to: "/tasks" })} />
+        <TaskForm
+          onSubmit={handleSubmit}
+          onCancel={() => void navigate({ to: "/tasks", search: back })}
+        />
       </div>
     </section>
   );
@@ -38,16 +50,26 @@ export function TaskCreatePage() {
 export function TaskEditPage() {
   const { taskId } = useParams({ from: "/shell/tasks/$taskId/edit" });
   const navigate = useNavigate();
-  const { data: task, isPending, isError } = useTask(taskId);
+  const { data: task, isPending, isError, error } = useTask(taskId);
   const update = useUpdateTask(taskId);
+  const back = useTasksBackSearch();
 
   if (isPending) return <p role="status">Loading task…</p>;
-  if (isError || task === undefined)
+  if (isError || task === undefined) {
+    if (error instanceof ApiError && error.status === 404) {
+      return <TaskNotFound backSearch={back} />;
+    }
     return (
-      <p role="alert" className="text-status-overdue">
-        Could not load that task.
-      </p>
+      <section>
+        <p role="alert" className="mb-4 text-status-overdue">
+          Could not load that task.
+        </p>
+        <ButtonLink variant="secondary" to="/tasks" search={back}>
+          Back to tasks
+        </ButtonLink>
+      </section>
     );
+  }
 
   async function handleSubmit(values: TaskFormValues) {
     await update.mutateAsync({
@@ -59,7 +81,7 @@ export function TaskEditPage() {
       // sent as-is, because null is how a PATCH unassigns (D32).
       ...(values.assignee === undefined ? {} : { assignee: values.assignee }),
     });
-    await navigate({ to: "/tasks/$taskId", params: { taskId } });
+    await navigate({ to: "/tasks/$taskId", params: { taskId }, state: { tasksSearch: back } });
   }
 
   return (
@@ -69,7 +91,9 @@ export function TaskEditPage() {
         <TaskForm
           task={task}
           onSubmit={handleSubmit}
-          onCancel={() => void navigate({ to: "/tasks/$taskId", params: { taskId } })}
+          onCancel={() =>
+            void navigate({ to: "/tasks/$taskId", params: { taskId }, state: { tasksSearch: back } })
+          }
         />
       </div>
     </section>

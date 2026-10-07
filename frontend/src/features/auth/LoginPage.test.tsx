@@ -54,6 +54,39 @@ async function fillAndSubmit(email = "supervisor@demo.local", password = "DemoPa
 }
 
 describe("LoginPage", () => {
+  it("moves focus to the first invalid field when sign-in fails validation (D75)", async () => {
+    server.use(
+      http.post(`${BASE}/auth/login/`, () =>
+        HttpResponse.json(
+          {
+            detail: "Invalid input.",
+            code: "validation_error",
+            errors: { email: ["This field may not be blank."], password: ["This field may not be blank."] },
+          },
+          { status: 400 },
+        ),
+      ),
+    );
+    await renderApp("/login");
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: /sign in/i }));
+    await waitFor(() => expect(screen.getByLabelText(/email/i)).toHaveFocus());
+  });
+
+  it("moves focus to the alert when the failure names no field", async () => {
+    server.use(
+      http.post(`${BASE}/auth/login/`, () =>
+        HttpResponse.json(
+          { detail: "No active account found with the given credentials.", code: "no_active_account", errors: null },
+          { status: 401 },
+        ),
+      ),
+    );
+    await renderApp("/login");
+    await fillAndSubmit("nobody@demo.local", "wrong-password");
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveFocus());
+  });
+
   it("signs in and lands on the role's page", async () => {
     server.use(loginSucceeds());
     await renderApp("/login");

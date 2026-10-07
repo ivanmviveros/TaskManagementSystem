@@ -4,11 +4,13 @@ import type { FormEvent } from "react";
 import { Button } from "../../components/Button";
 import { FormError } from "../../components/FormError";
 import { TextField } from "../../components/TextField";
+import { useFocusFirstError } from "../../components/useFocusFirstError";
 import { ApiError } from "../../lib/api-error";
 import { useAuth } from "./hooks/useAuth";
 
 export function LoginPage() {
   const { signIn } = useAuth();
+  const { ref: formRef, signalFailure } = useFocusFirstError<HTMLFormElement>();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -37,6 +39,7 @@ export function LoginPage() {
       } else {
         setError("Could not reach the server. Try again.");
       }
+      signalFailure();
     } finally {
       setIsSubmitting(false);
     }
@@ -45,6 +48,7 @@ export function LoginPage() {
   return (
     <main className="flex min-h-full items-center justify-center p-4">
       <form
+        ref={formRef}
         onSubmit={handleSubmit}
         noValidate
         aria-label="Sign in"

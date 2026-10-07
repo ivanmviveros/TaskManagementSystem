@@ -1,6 +1,10 @@
 import type { CurrentUser } from "../auth/types";
+import type { Ordering } from "./sorting";
 
 export type TaskStatus = "PENDING" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED";
+
+/** Every status, in display order. One list, as D56 did for ROLES (D73). */
+export const TASK_STATUSES: TaskStatus[] = ["PENDING", "IN_PROGRESS", "COMPLETED", "CANCELLED"];
 
 /** The §8.3 pagination envelope. */
 export interface Paginated<T> {
@@ -55,7 +59,7 @@ export interface TaskFilters {
   due_date_before?: string;
   overdue?: boolean;
   assignee?: string;
-  ordering?: string;
+  ordering?: Ordering;
   page?: number;
   page_size?: number;
 }

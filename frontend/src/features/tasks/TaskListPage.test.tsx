@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import { server } from "../../test/msw-server";
 import { renderApp } from "../../test/render-app";
-import type { TaskListItem } from "./types";
+import type { TaskDetail, TaskListItem } from "./types";
 
 const BASE = "http://localhost:8000/api/v1";
 
@@ -359,6 +359,15 @@ describe("task deletion from the list", () => {
 });
 
 describe("TaskListPage URL state", () => {
+  it("ignores an unknown status in the URL instead of sending it to the API (F10)", async () => {
+    signedInAs(SUPERVISOR);
+    tasksRespondWith([task()]);
+    await renderApp(`/tasks?status=${encodeURIComponent(JSON.stringify(["BOGUS"]))}`);
+    await screen.findByRole("table");
+    expect(lastQuery().getAll("status")).toEqual([]);
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
   it("reads the page, the page size and the filters from the URL", async () => {
     signedInAs(SUPERVISOR);
     tasksPaged(187);
@@ -549,5 +558,280 @@ describe("TaskListPage URL state", () => {
     release();
     expect(await within(table).findByText("Task on page 2")).toBeInTheDocument();
     expect(table.closest("[aria-busy]")).toHaveAttribute("aria-busy", "false");
+  });
+});
+
+describe("sort state in the table header (F6)", () => {
+  it("marks the default order — Created, descending — when the URL names none", async () => {
+    signedInAs(SUPERVISOR);
+    tasksRespondWith([task()]);
+    await renderApp("/tasks");
+    const table = await screen.findByRole("table");
+    expect(within(table).getByRole("columnheader", { name: /created/i })).toHaveAttribute(
+      "aria-sort",
+      "descending",
+    );
+    expect(within(table).getByRole("columnheader", { name: /due date/i })).toHaveAttribute(
+      "aria-sort",
+      "none",
+    );
+    expect(within(table).getByRole("columnheader", { name: /^title$/i })).not.toHaveAttribute(
+      "aria-sort",
+    );
+  });
+
+  it("shows the new column and direction after a click", async () => {
+    signedInAs(SUPERVISOR);
+    tasksRespondWith([task()]);
+    await renderApp("/tasks");
+    const user = userEvent.setup();
+    await user.click(
+      within(await screen.findByRole("table")).getByRole("button", {
+        name: /^due date$/i,
+      }),
+    );
+    await waitFor(() => expect(lastQuery().get("ordering")).toBe("due_date"));
+    const table = screen.getByRole("table");
+    expect(within(table).getByRole("columnheader", { name: /due date/i })).toHaveAttribute(
+      "aria-sort",
+      "ascending",
+    );
+    expect(within(table).getByRole("button", { name: /^due date$/i })).toBeInTheDocument();
+    expect(within(table).getByRole("columnheader", { name: /created/i })).toHaveAttribute(
+      "aria-sort",
+      "none",
+    );
+  });
+
+  it("returns to a URL with no ordering when Created is clicked back to newest first", async () => {
+    signedInAs(SUPERVISOR);
+    tasksRespondWith([task()]);
+    const { router } = await renderApp("/tasks");
+    const user = userEvent.setup();
+    await user.click(
+      within(await screen.findByRole("table")).getByRole("button", {
+        name: /^created$/i,
+      }),
+    );
+    await waitFor(() => expect(router.state.location.search.ordering).toBe("created_at"));
+    expect(
+      within(screen.getByRole("table")).getByRole("columnheader", { name: /created/i }),
+    ).toHaveAttribute("aria-sort", "ascending");
+    await user.click(
+      within(screen.getByRole("table")).getByRole("button", {
+        name: /^created$/i,
+      }),
+    );
+    await waitFor(() => expect(router.state.location.search.ordering).toBeUndefined());
+    expect(router.state.location.href).not.toContain("ordering");
+  });
+});
+
+describe("sorting and layout below lg (F3, F8)", () => {
+  it("offers a Sort by select, showing the default order", async () => {
+    signedInAs(SUPERVISOR);
+    tasksRespondWith([task()]);
+    await renderApp("/tasks");
+    await screen.findByRole("table");
+    expect(screen.getByLabelText(/sort by/i)).toHaveDisplayValue("Newest first");
+  });
+
+  it("writes the chosen ordering to the URL and returns to page 1", async () => {
+    signedInAs(SUPERVISOR);
+    tasksRespondWith([task()], 60);
+    const { router } = await renderApp("/tasks?page=2");
+    await screen.findByRole("table");
+    const user = userEvent.setup();
+    await user.selectOptions(screen.getByLabelText(/sort by/i), "Due date, latest first");
+    await waitFor(() => expect(lastQuery().get("ordering")).toBe("-due_date"));
+    expect(router.state.location.search.page).toBeUndefined();
+  });
+
+  it("writes no ordering for Newest first, the default", async () => {
+    signedInAs(SUPERVISOR);
+    tasksRespondWith([task()]);
+    const { router } = await renderApp("/tasks?ordering=due_date");
+    await screen.findByRole("table");
+    const user = userEvent.setup();
+    await user.selectOptions(screen.getByLabelText(/sort by/i), "Newest first");
+    await waitFor(() => expect(router.state.location.search.ordering).toBeUndefined());
+  });
+
+  it("keeps the select when a filter empties the list", async () => {
+    signedInAs(SUPERVISOR);
+    tasksRespondWith([]);
+    await renderApp("/tasks");
+    await screen.findByText(/no tasks match these filters/i);
+    expect(screen.getByLabelText(/sort by/i)).toBeInTheDocument();
+  });
+
+  it("switches between table and cards at lg, not md (D69)", async () => {
+    signedInAs(SUPERVISOR);
+    tasksRespondWith([task()]);
+    await renderApp("/tasks");
+    const table = await screen.findByRole("table");
+    expect(table.parentElement).toHaveClass("hidden", "lg:block");
+    expect(table.parentElement).not.toHaveClass("md:block");
+    expect(screen.getByRole("article").parentElement).toHaveClass("lg:hidden");
+    expect(screen.getByLabelText(/sort by/i).closest("div")).toHaveClass("lg:hidden");
+  });
+});
+
+describe("returning to the list (F5, D70)", () => {
+  const PENDING = encodeURIComponent(JSON.stringify(["PENDING"]));
+  const LIST = `/tasks?status=${PENDING}&page=2&ordering=due_date`;
+  const EXPECTED = { status: ["PENDING"], page: 2, ordering: "due_date" };
+
+  function detailOf(item: TaskListItem): TaskDetail {
+    return {
+      ...item,
+      description: "",
+      created_by: SUPERVISOR,
+      completed_at: null,
+      updated_at: item.created_at,
+      allowed_transitions: ["IN_PROGRESS", "CANCELLED"],
+    };
+  }
+
+  function serveTask(item: TaskListItem) {
+    tasksRespondWith([item], 60);
+    server.use(
+      http.get(`${BASE}/tasks/${item.id}/`, () => HttpResponse.json(detailOf(item))),
+      http.patch(`${BASE}/tasks/${item.id}/`, () => HttpResponse.json(detailOf(item))),
+      http.delete(`${BASE}/tasks/${item.id}/`, () => new HttpResponse(null, { status: 204 })),
+    );
+  }
+
+  async function openFromList(item: TaskListItem) {
+    const user = userEvent.setup();
+    const table = await screen.findByRole("table");
+    await user.click(within(table).getByRole("link", { name: item.title }));
+    await screen.findByRole("heading", { level: 1, name: item.title });
+    return user;
+  }
+
+  it("returns to the same filters, page and sort from Back to tasks", async () => {
+    signedInAs(SUPERVISOR);
+    const item = task();
+    serveTask(item);
+    const { router } = await renderApp(LIST);
+    const user = await openFromList(item);
+    await user.click(screen.getByRole("link", { name: /back to tasks/i }));
+    await screen.findByRole("table");
+    expect(router.state.location.search).toEqual(EXPECTED);
+  });
+
+  it("keeps the list through an edit and save", async () => {
+    signedInAs(SUPERVISOR);
+    const item = task();
+    serveTask(item);
+    const { router } = await renderApp(LIST);
+    const user = await openFromList(item);
+    await user.click(screen.getByRole("link", { name: /^edit$/i }));
+    await user.click(await screen.findByRole("button", { name: /save changes/i }));
+    await screen.findByRole("heading", { level: 1, name: item.title });
+    await user.click(screen.getByRole("link", { name: /back to tasks/i }));
+    await screen.findByRole("table");
+    expect(router.state.location.search).toEqual(EXPECTED);
+  });
+
+  it("returns to the same list after deleting the task", async () => {
+    signedInAs(SUPERVISOR);
+    const item = task({ can_delete: true });
+    serveTask(item);
+    const { router } = await renderApp(LIST);
+    const user = await openFromList(item);
+    await user.click(screen.getByRole("button", { name: /^delete$/i }));
+    await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: /^delete$/i }));
+    await screen.findByRole("table");
+    expect(router.state.location.search).toEqual(EXPECTED);
+  });
+
+  it("returns to the same list from Back to tasks when opened through a card", async () => {
+    signedInAs(SUPERVISOR);
+    const item = task();
+    serveTask(item);
+    const { router } = await renderApp(LIST);
+    const user = userEvent.setup();
+    await screen.findByRole("table");
+    await user.click(within(screen.getAllByRole("article")[0]).getByRole("link", { name: item.title }));
+    await screen.findByRole("heading", { level: 1, name: item.title });
+    await user.click(screen.getByRole("link", { name: /back to tasks/i }));
+    await screen.findByRole("table");
+    expect(router.state.location.search).toEqual(EXPECTED);
+  });
+
+  it("keeps the list through creating a task from New task", async () => {
+    signedInAs(SUPERVISOR);
+    const item = task();
+    serveTask(item);
+    server.use(http.post(`${BASE}/tasks/`, () => HttpResponse.json(detailOf(item), { status: 201 })));
+    const { router } = await renderApp(LIST);
+    const user = userEvent.setup();
+    await screen.findByRole("table");
+    await user.click(screen.getByRole("link", { name: /new task/i }));
+    await user.type(await screen.findByLabelText(/title/i), item.title);
+    await user.click(screen.getByRole("button", { name: /create task/i }));
+    await screen.findByRole("heading", { level: 1, name: item.title });
+    await user.click(screen.getByRole("link", { name: /back to tasks/i }));
+    await screen.findByRole("table");
+    expect(router.state.location.search).toEqual(EXPECTED);
+  });
+
+  it("falls back to the plain list for a task opened directly", async () => {
+    signedInAs(SUPERVISOR);
+    const item = task();
+    serveTask(item);
+    await renderApp(`/tasks/${item.id}`);
+    await screen.findByRole("heading", { level: 1, name: item.title });
+    expect(screen.getByRole("link", { name: /back to tasks/i })).toHaveAttribute("href", "/tasks");
+  });
+});
+
+describe("an impossible date range (F9, D78)", () => {
+  const AFTER = encodeURIComponent("2026-10-10T00:00:00.000Z");
+  const BEFORE = encodeURIComponent("2026-10-01T23:59:59.000Z");
+
+  it("says why nothing can match, on the Due before field", async () => {
+    signedInAs(SUPERVISOR);
+    tasksRespondWith([]);
+    await renderApp(`/tasks?due_date_after=${AFTER}&due_date_before=${BEFORE}`);
+    const before = await screen.findByLabelText(/due before/i);
+    expect(before).toHaveAttribute("aria-invalid", "true");
+    expect(before).toHaveAccessibleDescription(/later than .due before., so no task can match/i);
+    expect(screen.getByLabelText(/due after/i)).toHaveAccessibleDescription(
+      /later than .due before., so no task can match/i,
+    );
+    // The URL still holds what was entered (D45); the empty state still shows.
+    // findBy, not getBy: the filters render before the list query settles.
+    expect(await screen.findByText(/no tasks match these filters/i)).toBeInTheDocument();
+  });
+
+  it("limits each picker to days the other allows", async () => {
+    signedInAs(SUPERVISOR);
+    tasksRespondWith([]);
+    await renderApp(`/tasks?due_date_after=${AFTER}&due_date_before=${BEFORE}`);
+    expect(await screen.findByLabelText(/due after/i)).toHaveAttribute("max", "2026-10-01");
+    expect(screen.getByLabelText(/due before/i)).toHaveAttribute("min", "2026-10-10");
+  });
+
+  it("treats a single-day range as valid", async () => {
+    signedInAs(SUPERVISOR);
+    tasksRespondWith([]);
+    const from = encodeURIComponent("2026-10-05T00:00:00.000Z");
+    const to = encodeURIComponent("2026-10-05T23:59:59.000Z");
+    await renderApp(`/tasks?due_date_after=${from}&due_date_before=${to}`);
+    const before = await screen.findByLabelText(/due before/i);
+    expect(before).not.toHaveAttribute("aria-invalid");
+    expect(screen.queryByText(/so no task can match/i)).not.toBeInTheDocument();
+  });
+
+  it("says nothing for a valid range", async () => {
+    signedInAs(SUPERVISOR);
+    tasksRespondWith([]);
+    await renderApp(`/tasks?due_date_after=${BEFORE}&due_date_before=${AFTER}`);
+    const before = await screen.findByLabelText(/due before/i);
+    expect(before).not.toHaveAttribute("aria-invalid");
+    expect(screen.queryByText(/so no task can match/i)).not.toBeInTheDocument();
   });
 });

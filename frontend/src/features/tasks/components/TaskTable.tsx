@@ -1,5 +1,9 @@
 import { Link } from "@tanstack/react-router";
+import clsx from "clsx";
 
+import type { TaskListSearch } from "../../../app/search-params";
+import { formatDueDate } from "../../../lib/dates";
+import { SORT_FIELDS, nextOrdering, parseOrdering, type Ordering } from "../sorting";
 import type { TaskListItem } from "../types";
 import { OverdueBadge, StatusBadge } from "./StatusBadge";
 import { TaskRowActions } from "./TaskRowActions";
@@ -8,21 +12,13 @@ interface TaskTableProps {
   tasks: TaskListItem[];
   /** Hidden for an Operator, whose list is self-scoped so the column is noise. */
   showAssignee: boolean;
-  ordering: string | undefined;
-  onOrderingChange: (ordering: string) => void;
+  ordering: Ordering | undefined;
+  onOrderingChange: (ordering: Ordering | undefined) => void;
   onComplete: (id: string) => void;
   onDelete: (id: string) => void;
   busyId?: string | null;
-}
-
-const SORTABLE: { field: string; label: string }[] = [
-  { field: "due_date", label: "Due date" },
-  { field: "status", label: "Status" },
-  { field: "created_at", label: "Created" },
-];
-
-function nextOrdering(current: string | undefined, field: string): string {
-  return current === field ? `-${field}` : field;
+  /** Left in history state by each title link, so the detail can return here (D70). */
+  listSearch: TaskListSearch;
 }
 
 export function TaskTable({
@@ -33,7 +29,9 @@ export function TaskTable({
   onComplete,
   onDelete,
   busyId = null,
+  listSearch,
 }: TaskTableProps) {
+  const sort = parseOrdering(ordering);
   return (
     <table className="w-full border-collapse bg-white text-left text-sm shadow-sm">
       <thead>
@@ -41,18 +39,32 @@ export function TaskTable({
           <th scope="col" className="p-3 font-medium text-slate-700">
             Title
           </th>
-          {SORTABLE.map(({ field, label }) => (
-            <th key={field} scope="col" className="p-3 font-medium text-slate-700">
-              <button
-                type="button"
-                onClick={() => onOrderingChange(nextOrdering(ordering, field))}
-                aria-label={`Sort by ${label.toLowerCase()}`}
-                className="font-medium text-slate-700 underline-offset-2 hover:underline"
+          {SORT_FIELDS.map(({ field, label }) => {
+            const active = sort.field === field;
+            return (
+              <th
+                key={field}
+                scope="col"
+                // D68: the state a screen reader announces, and the visible glyph below.
+                aria-sort={active ? sort.direction : "none"}
+                className="p-3 font-medium text-slate-700"
               >
-                {label}
-              </button>
-            </th>
-          ))}
+                <button
+                  type="button"
+                  onClick={() => onOrderingChange(nextOrdering(ordering, field))}
+                  className={clsx(
+                    "inline-flex items-center gap-1 underline-offset-2 hover:underline",
+                    active ? "font-semibold text-slate-900" : "font-medium text-slate-700",
+                  )}
+                >
+                  {label}
+                  <span aria-hidden="true" className={active ? undefined : "text-slate-300"}>
+                    {active ? (sort.direction === "ascending" ? "▲" : "▼") : "↕"}
+                  </span>
+                </button>
+              </th>
+            );
+          })}
           {showAssignee && (
             <th scope="col" className="p-3 font-medium text-slate-700">
               Assignee
@@ -67,13 +79,18 @@ export function TaskTable({
         {tasks.map((task) => (
           <tr key={task.id} className="border-b border-slate-100">
             <td className="p-3">
-              <Link to="/tasks/$taskId" params={{ taskId: task.id }} className="text-status-progress underline-offset-2 hover:underline">
+              <Link
+                to="/tasks/$taskId"
+                params={{ taskId: task.id }}
+                state={{ tasksSearch: listSearch }}
+                className="text-status-progress underline-offset-2 hover:underline"
+              >
                 {task.title}
               </Link>
               {task.is_overdue && <OverdueBadge />}
             </td>
             <td className="p-3 text-slate-600">
-              {task.due_date === null ? "—" : new Date(task.due_date).toLocaleDateString()}
+              {task.due_date === null ? "—" : formatDueDate(task.due_date)}
             </td>
             <td className="p-3">
               <StatusBadge status={task.status} />

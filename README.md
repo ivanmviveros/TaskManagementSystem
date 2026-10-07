@@ -985,6 +985,62 @@ for both meanings, which broke two things:
 The form now leaves `assignee` out when the actor may not choose one, and sends `null` only
 when "Unassigned" was chosen.
 
+### Fixes from the QA report (D66–D78)
+
+A browser QA pass (`docs/qa/2026-10-07-frontend-qa-report.md`) found fourteen issues; the
+design is `docs/superpowers/specs/2026-10-07-qa-fixes-iteration-5-design.md`. Each fix has a
+test that failed first.
+
+- **An Admin cannot act on their own account (D66).**
+  - Deleting yourself is refused by an object permission, `IsNotSelf`: **403
+    `cannot_delete_self`**, the same layer and shape as D27's `delete_requires_creator`.
+  - Changing your own role, or deactivating yourself, is refused by the service: **400
+    `cannot_change_own_access`**, a field-level refusal like `assignee_immutable`. The service
+    compares against the current values rather than testing for presence, because the edit
+    page always sends both fields.
+  - The UI hides Deactivate on your own row, shows your role read-only and hides the Active checkbox.
+  - Two Admins can still remove each other; see Accepted risks.
+- **The task table shows its sort (D67, D68).** One sort model, `features/tasks/sorting.ts`,
+  serves the headers, the mobile select and URL validation. The default, newest first, is
+  marked like any other order. Headers carry `aria-sort` and a ▲/▼ glyph; each sort button's
+  accessible name is just its visible label, and `aria-sort` alone announces the state, as in
+  the WAI-ARIA APG sortable-table pattern. (Review amended this: the first version named the
+  action each button would take.)
+- **Phones and tablets can sort, and get cards below `lg` (D69).** At `md` the table's six
+  columns did not fit, so badges and actions wrapped. This departs from design spec §11.6's
+  "below `md`" for the task table only; the users table keeps `md`.
+- **Back to tasks returns to the same list (D70).** List links leave the list's search in the
+  router's history state; detail, edit and create forward it, validated like a URL. A deep
+  link falls back to the plain list, and so does a task opened in a new tab (Ctrl or middle
+  click), because a new tab starts with no history state.
+- **Not-found pages explain and lead back (D71, D72).** A shared `NotFoundPanel`, rendered by
+  the root route's `notFoundComponent` (`AppNotFound`) with `notFoundMode: "root"`, so both
+  unmatched paths and any thrown `notFound()` render once, at the root, inside the app frame
+  when signed in. Signed out, the page uses the sign-in page's centred frame, and because child
+  guards do not run in root mode, a signed-out `/tasks/a/b` shows it instead of redirecting.
+  (Review moved this from the router's `defaultNotFoundComponent`.) A task 404 never says
+  whether the task was deleted or is someone else's.
+- **Unknown statuses and orderings are dropped from the URL (D73).**
+- **No route loads while auth is still loading (D74).** `router.invalidate()` loads, and a
+  load before the session was known mounted the page and fetched its data before the
+  redirect. The test harness had copied the effect by hand; both now share
+  `useRouterAuthSync`, in its own module `src/app/useRouterAuthSync.ts`. Callers must not
+  render `RouterProvider` until auth has settled.
+- **Focus moves to the first error after a failed submit (D75).** This covers the forms and
+  also the two delete dialogs: after a failed delete the dialog focuses its error. A jsdom-only
+  probe had missed that real browsers drop focus to `<body>` when the focused button becomes
+  disabled, so the dialog focus trap (`useModalDialog`) now also pulls focus back into the
+  dialog from a non-tabbable element or `<body>`, and keeps Tab inside while every control is
+  disabled. A validation error naming a field the form does not render now shows as the
+  form-level message.
+- **Due dates show as the UTC day the form edits, with no time (D76).** A seeded due date
+  carrying a real time shows its UTC day.
+- **The current menu item is marked, and header targets are 44 px (D77).**
+- **An impossible date range is explained, not hidden (D78).** The message is an
+  always-mounted polite live region that both date inputs reference through `aria-describedby`,
+  so it is announced whichever field caused the inversion; only Due before is marked
+  `aria-invalid`. A single-day range (after equals before) is valid.
+
 ## Deliberate overrides of AGENTS.md
 
 | Override | AGENTS.md says | This project does | Why |
@@ -1010,6 +1066,7 @@ about it, so the next person decides rather than rediscovers.
 | **Python 3.14 support is verified for only part of the stack** | Only simplejwt and drf-spectacular were checked package-by-package; DRF, django-simple-history, django-filter, Celery, psycopg and factory_boy were not. | `compat` stage 1 runs `uv sync`, which fails outright if anything caps below 3.14 — a resolution error, not a subtle runtime bug. It resolved cleanly. |
 | **A git-pinned dependency sits outside advisory tooling** | `pip-audit` and Dependabot cannot track a git SHA, and this is the **authentication** library. | The D3 exit criterion below; `compat` signals when a PyPI release can replace it. |
 | **Django 6.0 is a security-fix-only branch** | 6.0 left mainstream support when 6.1 shipped (Aug 2026). | The same exit criterion. |
+| **Two Admins can remove each other** | D66 stops an Admin acting on their own account, but a "last active Admin" rule was declined: one Admin can deactivate another, who could have done the same. With no restore endpoint (D20), recovering from zero Admins needs shell access (`createsuperuser`). | A service check that refuses to deactivate, delete or demote the last active Admin, under a row lock so two concurrent requests cannot both pass it. |
 
 ### Exit criteria
 
@@ -1150,3 +1207,21 @@ dialog, which had landed in `TaskListPage` in the meantime.
 
 The request's own example pager, "1, 3, 5 (current), 7, 10", read two ways. The project owner
 chose a contiguous window over literal steps of two.
+
+**QA fixes (iteration 5).** A Playwright pass produced the QA report; brainstorming turned it
+into a spec, and a spec review caught four claims that would have failed at implementation:
+
+- a not-found component wrapped in the app frame would have rendered a **second** header for
+  `/tasks/a/b`, because TanStack's default "fuzzy" not-found mode renders it inside the shell;
+- the bootstrap regression test would have exercised the test harness's **hand copy** of the
+  effect, not the app's;
+- the URL whitelist commit needed a module the next commit created;
+- the timezone test's example input did not cross midnight, so the bug it targeted would have
+  passed it.
+
+Root causes were confirmed in the installed router source (`invalidate()` ends in `load()`)
+rather than assumed.
+
+Code review during execution then changed three more decisions: D68's button names, D71's
+not-found owner, and D75's dialog focus. The last was found by a real-browser check, because
+jsdom cannot reproduce the focus drop.

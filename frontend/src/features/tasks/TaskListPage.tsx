@@ -12,9 +12,11 @@ import { useAuth } from "../auth/hooks/useAuth";
 import { DeleteTaskDialog } from "./components/DeleteTaskDialog";
 import { TaskCard } from "./components/TaskCard";
 import { TaskFilters, type FilterPatch } from "./components/TaskFilters";
+import { TaskSortSelect } from "./components/TaskSortSelect";
 import { TaskTable } from "./components/TaskTable";
 import { useCompleteTask, useDeleteTask } from "./hooks/useTaskMutations";
 import { useTasks } from "./hooks/useTasks";
+import type { Ordering } from "./sorting";
 import type { TaskFilters as Filters, TaskListItem } from "./types";
 
 type SearchUpdate = (prev: TaskListSearch) => TaskListSearch;
@@ -30,7 +32,7 @@ export function TaskListPage() {
   const page = search.page ?? 1;
   const pageSize: PageSize = search.page_size ?? DEFAULT_PAGE_SIZE;
   const filters: Filters = {
-    status: search.status as Filters["status"],
+    status: search.status,
     due_date_after: search.due_date_after,
     due_date_before: search.due_date_before,
     overdue: search.overdue,
@@ -72,6 +74,11 @@ export function TaskListPage() {
 
   function setPageSize(next: PageSize) {
     editSearch((prev) => ({ ...prev, page_size: next, page: undefined }));
+  }
+
+  /** A sort change is an edit, like a filter: replace, keep scroll, page 1 (D47). */
+  function setOrdering(ordering: Ordering | undefined) {
+    editSearch((prev) => ({ ...prev, ordering, page: undefined }));
   }
 
   function goToPage(next: number) {
@@ -130,13 +137,15 @@ export function TaskListPage() {
     <section>
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <h1 className="text-xl font-semibold text-slate-900">Tasks</h1>
-        <ButtonLink to="/tasks/new" className="ml-auto">
+        <ButtonLink to="/tasks/new" state={{ tasksSearch: search }} className="ml-auto">
           New task
         </ButtonLink>
       </div>
 
       <TaskFilters filters={filters} onChange={applyFilters} onClear={clearFilters} />
       <FormError message={actionError} />
+      {/* Outside the results, so it survives an empty result (spec §4.3). */}
+      <TaskSortSelect ordering={filters.ordering} onChange={setOrdering} className="lg:hidden" />
 
       {isPending && (
         <p role="status" className="text-sm text-slate-500">
@@ -162,21 +171,21 @@ export function TaskListPage() {
           aria-busy={isPlaceholderData}
           className={clsx("transition-opacity", isPlaceholderData && "opacity-60")}
         >
-          {/* The table collapses to stacked cards below md (spec §11.6). */}
-          <div className="hidden overflow-x-auto md:block">
+          {/* Cards below lg, not md (D69): at md the table's six columns and two
+              action buttons do not fit, so badges and actions wrapped. */}
+          <div className="hidden overflow-x-auto lg:block">
             <TaskTable
               tasks={data.results}
               showAssignee={showAssignee}
               ordering={filters.ordering}
-              onOrderingChange={(ordering) =>
-                editSearch((prev) => ({ ...prev, ordering, page: undefined }))
-              }
+              onOrderingChange={setOrdering}
               onComplete={(id) => void runAction(id, complete.mutateAsync)}
               onDelete={beginDelete}
               busyId={busyId}
+              listSearch={search}
             />
           </div>
-          <div className="md:hidden">
+          <div className="lg:hidden">
             {data.results.map((task) => (
               <TaskCard
                 key={task.id}
@@ -185,6 +194,7 @@ export function TaskListPage() {
                 onComplete={(id) => void runAction(id, complete.mutateAsync)}
                 onDelete={beginDelete}
                 isBusy={busyId === task.id}
+                listSearch={search}
               />
             ))}
           </div>

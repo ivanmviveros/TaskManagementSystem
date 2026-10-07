@@ -11,7 +11,7 @@ from rest_framework.views import APIView
 
 from apps.core.constants import UUID_LOOKUP_REGEX
 from apps.core.ordering import TiebrokenOrderingFilter
-from apps.core.permissions.classes import RolePermission
+from apps.core.permissions.classes import IsNotSelf, RolePermission
 from apps.core.permissions.matrix import Resource
 from apps.core.roles import Role
 from apps.users.dto import UserCreateInput, UserUpdateInput
@@ -42,6 +42,14 @@ class UserViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.Gen
 
     def get_queryset(self):
         return scoped_users(self.request.user)
+
+    def get_permissions(self):
+        # D66, scoped to destroy as TaskViewSet scopes IsTaskCreator: an Admin may
+        # still read and edit their own account. The service refuses the edits
+        # that would lock them out.
+        if self.action == "destroy":
+            return [*super().get_permissions(), IsNotSelf()]
+        return super().get_permissions()
 
     def get_serializer_class(self):
         if self.action == "create":

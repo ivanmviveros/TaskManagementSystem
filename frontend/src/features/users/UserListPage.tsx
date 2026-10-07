@@ -8,7 +8,8 @@ import { Pagination } from "../../components/Pagination";
 import { ApiError } from "../../lib/api-error";
 import { DEFAULT_PAGE_SIZE, type PageSize } from "../../lib/pagination";
 import { useSearchParamDraft } from "../../lib/useSearchParamDraft";
-import { ROLES, type Role } from "../auth/types";
+import { useAuth } from "../auth/hooks/useAuth";
+import { ROLE_LABEL, ROLES, type Role } from "../auth/types";
 import { DeleteUserDialog } from "./components/DeleteUserDialog";
 import { UserCard } from "./components/UserCard";
 import { UserTable } from "./components/UserTable";
@@ -19,6 +20,7 @@ type SearchUpdate = (prev: UserListSearch) => UserListSearch;
 type UserFilterPatch = Partial<Pick<UserListSearch, "role" | "is_active" | "search">>;
 
 export function UserListPage() {
+  const { user: currentUser } = useAuth();
   // The URL is the list's only state (D45). Annotated because the router is
   // not type-registered, so useSearch returns any.
   const search: UserListSearch = useSearch({ from: "/shell/users" });
@@ -130,7 +132,7 @@ export function UserListPage() {
               <option value="">All roles</option>
               {ROLES.map((role) => (
                 <option key={role} value={role}>
-                  {role}
+                  {ROLE_LABEL[role]}
                 </option>
               ))}
             </select>
@@ -174,11 +176,20 @@ export function UserListPage() {
         >
           {/* The table collapses to stacked cards below md (spec §5.2). */}
           <div className="hidden overflow-x-auto md:block">
-            <UserTable users={data.results} onDelete={beginDelete} />
+            <UserTable
+              users={data.results}
+              onDelete={beginDelete}
+              currentUserId={currentUser?.id}
+            />
           </div>
           <div className="md:hidden">
             {data.results.map((user) => (
-              <UserCard key={user.id} user={user} onDelete={beginDelete} />
+              <UserCard
+                key={user.id}
+                user={user}
+                onDelete={beginDelete}
+                currentUserId={currentUser?.id}
+              />
             ))}
           </div>
 

@@ -161,3 +161,114 @@ describe("session expiry", () => {
     expect(await screen.findByLabelText(/email/i)).toBeInTheDocument();
   });
 });
+
+describe("unknown addresses (F4, D71)", () => {
+  it.each(["/does-not-exist", "/tasks/a/b"])(
+    "renders %s inside exactly one shell, with a link home",
+    async (path) => {
+      signedInAs = "SUPERVISOR";
+      await renderApp(path);
+      expect(await screen.findByRole("heading", { name: /page not found/i })).toBeInTheDocument();
+      // A banner count is unreliable for a <header> nested in <main>; the named nav is not.
+      expect(screen.getAllByRole("navigation", { name: /main/i })).toHaveLength(1);
+      expect(screen.getByRole("link", { name: /go to your home page/i })).toHaveAttribute(
+        "href",
+        "/",
+      );
+    },
+  );
+
+  it("marks no menu section as current on a not-found page", async () => {
+    // TanStack's prefix match would otherwise mark Tasks on /tasks/a/b.
+    signedInAs = "SUPERVISOR";
+    await renderApp("/tasks/a/b");
+    await screen.findByRole("heading", { name: /page not found/i });
+    for (const link of within(nav()).getAllByRole("link")) {
+      expect(link).not.toHaveAttribute("aria-current");
+      expect(link).not.toHaveClass("border-status-progress");
+    }
+    expect(within(nav()).getByRole("link", { name: /tasks/i })).toHaveClass("border-transparent");
+  });
+
+  it("offers a signed-out visitor the sign-in page, with no app menu", async () => {
+    signedInAs = null;
+    await renderApp("/does-not-exist");
+    expect(await screen.findByRole("heading", { name: /page not found/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /sign in/i })).toHaveAttribute("href", "/login");
+    expect(screen.queryByRole("navigation", { name: /main/i })).not.toBeInTheDocument();
+  });
+});
+
+describe("unknown addresses under a shell path, signed out", () => {
+  it("shows the bare not-found page, not a redirect (child guards do not run in root mode)", async () => {
+    signedInAs = null;
+    await renderApp("/tasks/a/b");
+    expect(await screen.findByRole("heading", { name: /page not found/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /sign in/i })).toHaveAttribute("href", "/login");
+    expect(screen.queryByRole("navigation", { name: /main/i })).not.toBeInTheDocument();
+  });
+});
+
+describe("the menu marks where you are (F7, F14, D77)", () => {
+  it("marks the current section, and only it", async () => {
+    signedInAs = "SUPERVISOR";
+    await renderApp("/dashboard");
+    await screen.findByRole("heading", { name: /dashboard/i });
+    const dashboard = within(nav()).getByRole("link", { name: /dashboard/i });
+    const tasks = within(nav()).getByRole("link", { name: /tasks/i });
+    expect(dashboard).toHaveAttribute("aria-current", "page");
+    expect(dashboard).toHaveClass("border-status-progress");
+    expect(dashboard).not.toHaveClass("border-transparent");
+    expect(tasks).not.toHaveAttribute("aria-current");
+    expect(tasks).toHaveClass("border-transparent");
+  });
+
+  it.each([`/tasks?status=${encodeURIComponent(JSON.stringify(["PENDING"]))}`, "/tasks/new"])(
+    "keeps Tasks marked on %s",
+    async (path) => {
+      signedInAs = "SUPERVISOR";
+      await renderApp(path);
+      await screen.findByRole("heading", { level: 1 });
+      expect(within(nav()).getByRole("link", { name: /tasks/i })).toHaveClass(
+        "border-status-progress",
+      );
+    },
+  );
+
+  it("keeps Tasks marked on a task's own page", async () => {
+    const id = "0199a0f0-0000-7000-8000-0000000000a1";
+    signedInAs = "SUPERVISOR";
+    server.use(
+      http.get(`${BASE}/tasks/${id}/`, () =>
+        HttpResponse.json({
+          id,
+          title: "Review the brief",
+          description: "Read it closely.",
+          status: "PENDING",
+          allowed_transitions: ["IN_PROGRESS", "CANCELLED"],
+          due_date: null,
+          assignee: USERS.OPERATOR,
+          created_by: USERS.SUPERVISOR,
+          is_overdue: false,
+          can_delete: true,
+          completed_at: null,
+          created_at: "2026-10-01T09:00:00Z",
+          updated_at: "2026-10-01T09:00:00Z",
+        }),
+      ),
+    );
+    await renderApp(`/tasks/${id}`);
+    await screen.findByRole("heading", { level: 1 });
+    expect(within(nav()).getByRole("link", { name: /tasks/i })).toHaveClass(
+      "border-status-progress",
+    );
+  });
+
+  it("gives every header control a 44px target", async () => {
+    signedInAs = "SUPERVISOR";
+    await renderApp("/dashboard");
+    await screen.findByRole("heading", { name: /dashboard/i });
+    for (const link of within(nav()).getAllByRole("link")) expect(link).toHaveClass("min-h-11");
+    expect(screen.getByRole("button", { name: /sign out/i })).toHaveClass("min-h-11");
+  });
+});

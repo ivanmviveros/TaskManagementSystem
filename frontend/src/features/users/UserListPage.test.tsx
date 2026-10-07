@@ -65,6 +65,19 @@ describe("UserListPage", () => {
     expect(within(table).getByText("operator@demo.local")).toBeInTheDocument();
   });
 
+  it("shows roles by their label, never the stored value (F13)", async () => {
+    usersRespondWith([operator()]);
+    await renderApp("/users");
+    const table = await screen.findByRole("table");
+    expect(within(table).getByRole("cell", { name: "Operator" })).toBeInTheDocument();
+    expect(within(table).queryByText("OPERATOR")).not.toBeInTheDocument();
+    expect(within(screen.getByRole("article")).getByText("Operator")).toBeInTheDocument();
+    const option = within(screen.getByLabelText(/^role$/i)).getByRole("option", {
+      name: "Operator",
+    });
+    expect(option).toHaveValue("OPERATOR");
+  });
+
   it("shows an empty state rather than an empty table", async () => {
     usersRespondWith([]);
     await renderApp("/users");
@@ -189,6 +202,29 @@ describe("UserListPage", () => {
     expect(screen.getByRole("dialog")).toBeInTheDocument();
   });
 
+  it("moves focus to the error inside the dialog when deletion fails (D75)", async () => {
+    usersRespondWith([operator()]);
+    server.use(
+      http.delete(`${BASE}/users/:id/`, () =>
+        HttpResponse.json(
+          { detail: "That user still holds tasks.", code: "protected" },
+          { status: 409 },
+        ),
+      ),
+    );
+    await renderApp("/users");
+    const user = userEvent.setup();
+    const table = await screen.findByRole("table");
+    await user.click(
+      await within(table).findByRole("button", { name: /deactivate operator@demo.local/i }),
+    );
+    const dialog = await screen.findByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: /^deactivate$/i }));
+    // jsdom cannot reproduce the browser's focus drop, which is why this asserts
+    // focus is ON the alert rather than merely inside the dialog.
+    await waitFor(() => expect(within(dialog).getByRole("alert")).toHaveFocus());
+  });
+
   it("renders a card per user for narrow viewports", async () => {
     // jsdom applies no CSS, so BOTH presentations are in the DOM. That is why
     // the table assertions above are scoped, and why the card gets its own test
@@ -202,6 +238,25 @@ describe("UserListPage", () => {
     expect(
       within(cards[0]).getByRole("button", { name: /deactivate operator@demo.local/i }),
     ).toBeInTheDocument();
+  });
+
+  it("never offers the signed-in Admin a Deactivate for their own account (D66)", async () => {
+    usersRespondWith([ADMIN, operator()]);
+    await renderApp("/users");
+    const table = await screen.findByRole("table");
+    expect(
+      within(table).queryByRole("button", { name: /deactivate admin@demo.local/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(table).getByRole("button", { name: /deactivate operator@demo.local/i }),
+    ).toBeInTheDocument();
+    const ownCard = screen
+      .getAllByRole("article")
+      .find((card) => within(card).queryByText("admin@demo.local") !== null);
+    expect(ownCard).toBeDefined();
+    expect(within(ownCard as HTMLElement).queryByRole("button", { name: /deactivate/i })).toBeNull();
+    // Edit stays: an Admin may still rename themselves.
+    expect(within(table).getByRole("link", { name: /edit admin@demo.local/i })).toBeInTheDocument();
   });
 });
 

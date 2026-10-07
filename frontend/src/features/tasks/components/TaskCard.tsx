@@ -1,5 +1,7 @@
 import { Link } from "@tanstack/react-router";
 
+import type { TaskListSearch } from "../../../app/search-params";
+import { formatDueDate } from "../../../lib/dates";
 import type { TaskListItem } from "../types";
 import { OverdueBadge, StatusBadge } from "./StatusBadge";
 import { TaskRowActions } from "./TaskRowActions";
@@ -10,10 +12,12 @@ interface TaskCardProps {
   onComplete: (id: string) => void;
   onDelete: (id: string) => void;
   isBusy?: boolean;
+  /** Left in history state by the title link, so the detail can return here (D70). */
+  listSearch: TaskListSearch;
 }
 
 /**
- * The below-`md` presentation of a row. A separate component rather than a CSS
+ * The below-`lg` presentation (D69) of a row. A separate component rather than a CSS
  * variant of the table, because a table that reflows into blocks loses its
  * header association and reads poorly to a screen reader (spec §11.6).
  */
@@ -23,11 +27,17 @@ export function TaskCard({
   onComplete,
   onDelete,
   isBusy = false,
+  listSearch,
 }: TaskCardProps) {
   return (
     <article className="mb-3 rounded-lg bg-white p-4 shadow-sm">
       <h3 className="mb-2 font-medium">
-        <Link to="/tasks/$taskId" params={{ taskId: task.id }} className="text-status-progress">
+        <Link
+          to="/tasks/$taskId"
+          params={{ taskId: task.id }}
+          state={{ tasksSearch: listSearch }}
+          className="text-status-progress"
+        >
           {task.title}
         </Link>
         {task.is_overdue && <OverdueBadge />}
@@ -38,7 +48,7 @@ export function TaskCard({
           <StatusBadge status={task.status} />
         </dd>
         <dt className="font-medium">Due</dt>
-        <dd>{task.due_date === null ? "—" : new Date(task.due_date).toLocaleDateString()}</dd>
+        <dd>{task.due_date === null ? "—" : formatDueDate(task.due_date)}</dd>
         {showAssignee && (
           <>
             <dt className="font-medium">Assignee</dt>

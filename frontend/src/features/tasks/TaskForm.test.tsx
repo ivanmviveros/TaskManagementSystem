@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
 
+import { formatDueDate } from "../../lib/dates";
 import { server } from "../../test/msw-server";
 import { renderApp } from "../../test/render-app";
 import type { TaskDetail } from "./types";
@@ -120,6 +121,54 @@ const COMPLETED = {
 };
 
 describe("TaskForm", () => {
+  it("shows the message in the alert, focused, when the errors name no rendered field (D75)", async () => {
+    signedInAs(SUPERVISOR);
+    server.use(
+      http.post(`${BASE}/tasks/`, () =>
+        HttpResponse.json(
+          {
+            detail: "Invalid input.",
+            code: "validation_error",
+            errors: { description: ["Too long."] },
+          },
+          { status: 400 },
+        ),
+      ),
+    );
+    await renderApp("/tasks/new");
+    const user = userEvent.setup();
+    await user.type(await screen.findByLabelText(/title/i), "A task");
+    await user.click(screen.getByRole("button", { name: /create task/i }));
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(/invalid input/i);
+    await waitFor(() => expect(alert).toHaveFocus());
+  });
+
+  it("moves focus to the first invalid field after a failed save, every time (D75)", async () => {
+    signedInAs(SUPERVISOR);
+    server.use(
+      http.post(`${BASE}/tasks/`, () =>
+        HttpResponse.json(
+          {
+            detail: "Invalid input.",
+            code: "validation_error",
+            errors: { title: ["This field may not be blank."] },
+          },
+          { status: 400 },
+        ),
+      ),
+    );
+    await renderApp("/tasks/new");
+    const user = userEvent.setup();
+    const submit = await screen.findByRole("button", { name: /create task/i });
+    const title = screen.getByLabelText(/title/i);
+    await user.click(submit);
+    await waitFor(() => expect(title).toHaveFocus());
+    // Clicking moves focus to the button; identical errors must still refocus.
+    await user.click(submit);
+    await waitFor(() => expect(title).toHaveFocus());
+  });
+
   it("creates a task and invalidates the list", async () => {
     signedInAs(SUPERVISOR);
     assignableUsers();
@@ -580,6 +629,69 @@ describe("TaskForm", () => {
 });
 
 describe("TaskDetailPage", () => {
+  function taskIsGone() {
+    server.use(
+      http.get(`${BASE}/tasks/${TASK_ID}/`, () =>
+        HttpResponse.json(
+          { detail: "No Task matches the given query.", code: "not_found", errors: null },
+          { status: 404 },
+        ),
+      ),
+    );
+  }
+
+  it("shows a due date as a date, without an invented time (D76)", async () => {
+    signedInAs(SUPERVISOR);
+    taskDetail({ due_date: "2026-01-01T12:00:00Z" });
+    await renderApp(`/tasks/${TASK_ID}`);
+    const term = await screen.findByText("Due date");
+    const value = term.nextElementSibling as HTMLElement;
+    expect(value).toHaveTextContent(formatDueDate("2026-01-01T12:00:00Z"));
+    expect(value.textContent).not.toMatch(/:/);
+  });
+
+  it("explains a missing task without saying why, and links back (D72)", async () => {
+    signedInAs(SUPERVISOR);
+    taskIsGone();
+    await renderApp(`/tasks/${TASK_ID}`);
+    expect(await screen.findByRole("heading", { name: /task not found/i })).toBeInTheDocument();
+    expect(screen.getByText(/deleted, or it isn't assigned to you/i)).toBeInTheDocument();
+    expect(screen.queryByText(/no task matches/i)).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /back to tasks/i })).toHaveAttribute("href", "/tasks");
+  });
+
+  it("does the same on the edit page", async () => {
+    signedInAs(SUPERVISOR);
+    taskIsGone();
+    await renderApp(`/tasks/${TASK_ID}/edit`);
+    expect(await screen.findByRole("heading", { name: /task not found/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /back to tasks/i })).toBeInTheDocument();
+  });
+
+  it("keeps the edit page's generic message for other errors, with the way back", async () => {
+    signedInAs(SUPERVISOR);
+    server.use(
+      http.get(`${BASE}/tasks/${TASK_ID}/`, () =>
+        HttpResponse.json({ detail: "Database is down.", code: "server_error" }, { status: 500 }),
+      ),
+    );
+    await renderApp(`/tasks/${TASK_ID}/edit`);
+    expect(await screen.findByRole("alert")).toHaveTextContent("Could not load that task.");
+    expect(screen.getByRole("link", { name: /back to tasks/i })).toBeInTheDocument();
+  });
+
+  it("keeps other errors' message and still offers the way back", async () => {
+    signedInAs(SUPERVISOR);
+    server.use(
+      http.get(`${BASE}/tasks/${TASK_ID}/`, () =>
+        HttpResponse.json({ detail: "Database is down.", code: "server_error" }, { status: 500 }),
+      ),
+    );
+    await renderApp(`/tasks/${TASK_ID}`);
+    expect(await screen.findByRole("alert")).toHaveTextContent(/database is down/i);
+    expect(screen.getByRole("link", { name: /back to tasks/i })).toBeInTheDocument();
+  });
+
   it("shows the complete button only for a non-terminal task", async () => {
     signedInAs(SUPERVISOR);
     taskDetail({ status: "PENDING" });
@@ -703,5 +815,76 @@ describe("TaskDetailPage", () => {
     await user.click(within(dialog).getByRole("button", { name: /^delete$/i }));
     expect(await within(dialog).findByRole("alert")).toHaveTextContent(/only delete tasks you created/i);
     expect(screen.getByRole("dialog")).toBeInTheDocument();
+  });
+
+  it("keeps focus inside the dialog when deletion fails (D75)", async () => {
+    signedInAs(SUPERVISOR);
+    taskDetail({ can_delete: true });
+    deletesRespondWith(() =>
+      HttpResponse.json({ detail: "Refused.", code: "permission_denied" }, { status: 403 }),
+    );
+    await renderApp(`/tasks/${TASK_ID}`);
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: /^delete$/i }));
+    const dialog = screen.getByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: /^delete$/i }));
+    await within(dialog).findByRole("alert");
+    // jsdom cannot reproduce the browser's focus drop, which is why this asserts
+    // focus is ON the alert rather than merely inside the dialog.
+    await waitFor(() => expect(within(dialog).getByRole("alert")).toHaveFocus());
+    expect(dialog).toContainElement(document.activeElement as HTMLElement);
+  });
+
+  it("swallows Tab while the request is pending and every control is disabled (D60)", async () => {
+    signedInAs(SUPERVISOR);
+    taskDetail({ can_delete: true });
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    server.use(
+      http.delete(`${BASE}/tasks/${TASK_ID}/`, async () => {
+        await gate;
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+    await renderApp(`/tasks/${TASK_ID}`);
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: /^delete$/i }));
+    const dialog = screen.getByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: /^delete$/i }));
+    await within(dialog).findByRole("button", { name: /deleting/i });
+    // jsdom keeps focus on the disabled button; what matters is that the trap
+    // cancels the Tab, so the browser's own tab order cannot leave the dialog.
+    let prevented = false;
+    const probe = (event: KeyboardEvent) => {
+      if (event.key === "Tab") prevented = event.defaultPrevented;
+    };
+    document.addEventListener("keydown", probe);
+    await user.tab();
+    document.removeEventListener("keydown", probe);
+    expect(prevented).toBe(true);
+    release();
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  });
+
+  it.each([
+    ["Shift+Tab", true],
+    ["Tab", false],
+  ])("keeps %s inside the dialog when the focused error is the starting point (D60, D75)", async (_name, shift) => {
+    signedInAs(SUPERVISOR);
+    taskDetail({ can_delete: true });
+    deletesRespondWith(() =>
+      HttpResponse.json({ detail: "Refused.", code: "permission_denied" }, { status: 403 }),
+    );
+    await renderApp(`/tasks/${TASK_ID}`);
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: /^delete$/i }));
+    const dialog = screen.getByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: /^delete$/i }));
+    await waitFor(() => expect(within(dialog).getByRole("alert")).toHaveFocus());
+    await user.tab({ shift });
+    expect(dialog).toContainElement(document.activeElement as HTMLElement);
+    expect(document.activeElement).not.toBe(document.body);
   });
 });
