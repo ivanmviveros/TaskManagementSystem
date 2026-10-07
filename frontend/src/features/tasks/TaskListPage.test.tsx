@@ -626,3 +626,53 @@ describe("sort state in the table header (F6)", () => {
     expect(router.state.location.href).not.toContain("ordering");
   });
 });
+
+describe("sorting and layout below lg (F3, F8)", () => {
+  it("offers a Sort by select, showing the default order", async () => {
+    signedInAs(SUPERVISOR);
+    tasksRespondWith([task()]);
+    await renderApp("/tasks");
+    await screen.findByRole("table");
+    expect(screen.getByLabelText(/sort by/i)).toHaveDisplayValue("Newest first");
+  });
+
+  it("writes the chosen ordering to the URL and returns to page 1", async () => {
+    signedInAs(SUPERVISOR);
+    tasksRespondWith([task()], 60);
+    const { router } = await renderApp("/tasks?page=2");
+    await screen.findByRole("table");
+    const user = userEvent.setup();
+    await user.selectOptions(screen.getByLabelText(/sort by/i), "Due date, latest first");
+    await waitFor(() => expect(lastQuery().get("ordering")).toBe("-due_date"));
+    expect(router.state.location.search.page).toBeUndefined();
+  });
+
+  it("writes no ordering for Newest first, the default", async () => {
+    signedInAs(SUPERVISOR);
+    tasksRespondWith([task()]);
+    const { router } = await renderApp("/tasks?ordering=due_date");
+    await screen.findByRole("table");
+    const user = userEvent.setup();
+    await user.selectOptions(screen.getByLabelText(/sort by/i), "Newest first");
+    await waitFor(() => expect(router.state.location.search.ordering).toBeUndefined());
+  });
+
+  it("keeps the select when a filter empties the list", async () => {
+    signedInAs(SUPERVISOR);
+    tasksRespondWith([]);
+    await renderApp("/tasks");
+    await screen.findByText(/no tasks match these filters/i);
+    expect(screen.getByLabelText(/sort by/i)).toBeInTheDocument();
+  });
+
+  it("switches between table and cards at lg, not md (D69)", async () => {
+    signedInAs(SUPERVISOR);
+    tasksRespondWith([task()]);
+    await renderApp("/tasks");
+    const table = await screen.findByRole("table");
+    expect(table.parentElement).toHaveClass("hidden", "lg:block");
+    expect(table.parentElement).not.toHaveClass("md:block");
+    expect(screen.getByRole("article").parentElement).toHaveClass("lg:hidden");
+    expect(screen.getByLabelText(/sort by/i).closest("div")).toHaveClass("lg:hidden");
+  });
+});

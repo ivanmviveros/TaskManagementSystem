@@ -13,7 +13,7 @@ interface TaskCardProps {
 }
 
 /**
- * The below-`md` presentation of a row. A separate component rather than a CSS
+ * The below-`lg` presentation (D69) of a row. A separate component rather than a CSS
  * variant of the table, because a table that reflows into blocks loses its
  * header association and reads poorly to a screen reader (spec §11.6).
  */
