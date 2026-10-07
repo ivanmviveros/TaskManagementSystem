@@ -6,12 +6,22 @@ interface TextFieldProps extends InputHTMLAttributes<HTMLInputElement> {
   label: string;
   /** A server-side field error, rendered beside the input (F3). */
   error?: string;
+  /** "compact" is the filter bar's look: smaller text, auto width, no bottom margin. */
+  density?: "default" | "compact";
 }
 
-export function TextField({ id, label, error, className, ...input }: TextFieldProps) {
+export function TextField({
+  id,
+  label,
+  error,
+  density = "default",
+  className,
+  ...input
+}: TextFieldProps) {
   const errorId = `${id}-error`;
+  const compact = density === "compact";
   return (
-    <div className="mb-4">
+    <div className={compact ? undefined : "mb-4"}>
       <label htmlFor={id} className="mb-1 block text-sm font-medium text-slate-700">
         {label}
       </label>
@@ -20,7 +30,8 @@ export function TextField({ id, label, error, className, ...input }: TextFieldPr
         aria-invalid={error === undefined ? undefined : true}
         aria-describedby={error === undefined ? undefined : errorId}
         className={clsx(
-          "w-full rounded border px-3 py-2 text-slate-900",
+          "rounded border px-3 py-2",
+          compact ? "text-sm" : "w-full text-slate-900",
           error === undefined ? "border-slate-300" : "border-status-overdue",
           className,
         )}
