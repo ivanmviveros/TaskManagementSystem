@@ -99,7 +99,7 @@ In "The `compat` CI job, and when to delete it", stage 2 becomes:
    measurement that belongs to the `backend` job.
 ```
 
-In "Running the checks", replace the sentence beginning "`pytest` carries `--cov=apps …` in `addopts`, so a local run and CI apply the same gate":
+In "Running the checks", replace the **whole paragraph** that begins "`pytest` carries `--cov=apps …` in `addopts`, so a local run and CI apply the same gate" (it ends "80 is a floor, not a target."), so its last sentence is not duplicated:
 
 ```markdown
 `pytest` carries `--cov=apps --cov-report=term-missing --cov-fail-under=80` in `addopts`,
@@ -172,7 +172,7 @@ def test_the_list_payload_does_not_carry_allowed_transitions():
     assert "allowed_transitions" not in TaskListSerializer(TaskFactory()).data
 ```
 
-Add the import at the top: `from django.utils import timezone`.
+Add `from django.utils import timezone` after `import pytest` and before `from rest_framework.test import APIRequestFactory`, so ruff's import sorting (I001) stays clean.
 
 - [ ] **Step 2: Run them and watch them fail**
 
@@ -406,6 +406,8 @@ Inside `describe("TaskForm", …)`:
       await waitFor(() => expect(patches.bodies).toHaveLength(1));
       expect(patches.bodies[0]).not.toHaveProperty("status");
     } finally {
+      // Restores the shared singleton. isFocused() then resolves to true, which
+      // fires one more focus refetch — harmless, the handlers are still in place.
       focusManager.setFocused(undefined);
     }
   });
@@ -745,7 +747,9 @@ In `TaskListPage.tsx`:
 - [ ] **Step 5: Run them and watch them pass**
 
 ```bash
-npm run --prefix frontend test -- TaskListPage
+npm run --prefix frontend test
+npm run --prefix frontend typecheck
+npm run --prefix frontend lint
 ```
 Expected: all pass, including the existing "hides/shows the delete control" tests.
 
@@ -861,7 +865,10 @@ In `TaskDetailPage.tsx`:
   async function confirmDelete() {
     setDeleteError(null);
     try {
-      await remove.mutateAsync(task.id);
+      // taskId, not task.id: a function DECLARATION is hoisted, so TypeScript
+      // does not carry the early return's narrowing into it — `task` would still
+      // be TaskDetail | undefined here (TS18048). The route param is a string.
+      await remove.mutateAsync(taskId);
       await navigate({ to: "/tasks" });
     } catch (caught) {
       setDeleteError(
@@ -904,10 +911,12 @@ In `TaskDetailPage.tsx`:
 - [ ] **Step 4: Run them and watch them pass**
 
 ```bash
-npm run --prefix frontend test -- TaskForm
+npm run --prefix frontend test
 npm run --prefix frontend typecheck
+npm run --prefix frontend lint
 ```
-Expected: all pass.
+Expected: all pass. `typecheck` matters here specifically: Vitest strips types, so a `task.id`
+inside `confirmDelete` would pass every test and still fail CI's `frontend` job.
 
 - [ ] **Step 5: Commit**
 
@@ -989,7 +998,11 @@ and the same for `operatorTiles`.
 ```bash
 npm run --prefix frontend test -- StatsPage
 ```
-Expected: the card-based tests fail with `Unable to find role="group"`.
+Expected: **four** fail —
+- three card-based tests ("renders all six figures", "renders identically…", "gives every card…")
+  with `Unable to find role="group"`;
+- "links a status tile to that status's list" with `Unable to find … role "link" and name
+  /— pending$/i`, because today's tile link is named "Pending 4".
 
 - [ ] **Step 3: Rewrite `StatTile`**
 
@@ -1058,8 +1071,9 @@ The visible CTA reuses the secondary `Button`'s classes so it reads as a button;
 - [ ] **Step 4: Run them and watch them pass**
 
 ```bash
-npm run --prefix frontend test -- StatsPage
+npm run --prefix frontend test
 npm run --prefix frontend typecheck
+npm run --prefix frontend lint
 ```
 Expected: all pass. The href and drill-through tests are unchanged and still pass, because the CTA keeps each tile's `to` and `search`.
 
@@ -1285,9 +1299,8 @@ Candidates from this iteration:
 - [ ] **Step 2: Commit narrowly**
 
 ```bash
-cd D:/VirtualWrapper/code/claude-insights
-git add projects/task-management-system.md debugging-notes.md
-git commit -m "docs: add task management system iteration 3 insights"
+git -C D:/VirtualWrapper/code/claude-insights add projects/task-management-system.md debugging-notes.md
+git -C D:/VirtualWrapper/code/claude-insights commit -m "docs: add task management system iteration 3 insights"
 ```
 
 Other files in that repository carry unrelated modifications — stage only these two.
