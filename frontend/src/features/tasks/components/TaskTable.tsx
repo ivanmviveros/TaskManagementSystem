@@ -1,5 +1,7 @@
 import { Link } from "@tanstack/react-router";
+import clsx from "clsx";
 
+import { SORT_FIELDS, nextOrdering, parseOrdering } from "../sorting";
 import type { TaskListItem } from "../types";
 import { OverdueBadge, StatusBadge } from "./StatusBadge";
 import { TaskRowActions } from "./TaskRowActions";
@@ -9,20 +11,10 @@ interface TaskTableProps {
   /** Hidden for an Operator, whose list is self-scoped so the column is noise. */
   showAssignee: boolean;
   ordering: string | undefined;
-  onOrderingChange: (ordering: string) => void;
+  onOrderingChange: (ordering: string | undefined) => void;
   onComplete: (id: string) => void;
   onDelete: (id: string) => void;
   busyId?: string | null;
-}
-
-const SORTABLE: { field: string; label: string }[] = [
-  { field: "due_date", label: "Due date" },
-  { field: "status", label: "Status" },
-  { field: "created_at", label: "Created" },
-];
-
-function nextOrdering(current: string | undefined, field: string): string {
-  return current === field ? `-${field}` : field;
 }
 
 export function TaskTable({
@@ -34,6 +26,7 @@ export function TaskTable({
   onDelete,
   busyId = null,
 }: TaskTableProps) {
+  const sort = parseOrdering(ordering);
   return (
     <table className="w-full border-collapse bg-white text-left text-sm shadow-sm">
       <thead>
@@ -41,18 +34,37 @@ export function TaskTable({
           <th scope="col" className="p-3 font-medium text-slate-700">
             Title
           </th>
-          {SORTABLE.map(({ field, label }) => (
-            <th key={field} scope="col" className="p-3 font-medium text-slate-700">
-              <button
-                type="button"
-                onClick={() => onOrderingChange(nextOrdering(ordering, field))}
-                aria-label={`Sort by ${label.toLowerCase()}`}
-                className="font-medium text-slate-700 underline-offset-2 hover:underline"
+          {SORT_FIELDS.map(({ field, label }) => {
+            const active = sort.field === field;
+            const next = active && sort.direction === "ascending" ? "descending" : "ascending";
+            return (
+              <th
+                key={field}
+                scope="col"
+                // D68: the state a screen reader announces, and the visible glyph below.
+                aria-sort={active ? sort.direction : "none"}
+                className="p-3 font-medium text-slate-700"
               >
-                {label}
-              </button>
-            </th>
-          ))}
+                <button
+                  type="button"
+                  onClick={() => onOrderingChange(nextOrdering(ordering, field))}
+                  // Names the action the click will take, after the current state.
+                  aria-label={
+                    active ? `${label}, sorted ${sort.direction}. Sort ${next}` : `${label}. Sort ascending`
+                  }
+                  className={clsx(
+                    "inline-flex items-center gap-1 underline-offset-2 hover:underline",
+                    active ? "font-semibold text-slate-900" : "font-medium text-slate-700",
+                  )}
+                >
+                  {label}
+                  <span aria-hidden="true" className={active ? undefined : "text-slate-300"}>
+                    {active ? (sort.direction === "ascending" ? "▲" : "▼") : "↕"}
+                  </span>
+                </button>
+              </th>
+            );
+          })}
           {showAssignee && (
             <th scope="col" className="p-3 font-medium text-slate-700">
               Assignee
