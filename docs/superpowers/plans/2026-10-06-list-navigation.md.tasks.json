@@ -11,8 +11,8 @@
     { "id": 8, "subject": "Task 8: The user list reads and writes the URL", "status": "completed", "blockedBy": [7] },
     { "id": 9, "subject": "Task 9: Page titles", "status": "completed", "blockedBy": [5] },
     { "id": 10, "subject": "Task 10: Documentation", "status": "completed", "blockedBy": [8, 9] },
-    { "id": 11, "subject": "Task 11: Full verification", "status": "pending", "blockedBy": [10] },
-    { "id": 12, "subject": "Task 12: Persist insights to claude-insights/", "status": "pending", "blockedBy": [11] }
+    { "id": 11, "subject": "Task 11: Full verification", "status": "in_progress", "blockedBy": [10] },
+    { "id": 12, "subject": "Task 12: Persist insights to claude-insights/", "status": "completed", "blockedBy": [11] }
   ],
-  "lastUpdated": "2026-10-06T23:30:00Z"
+  "lastUpdated": "2026-10-07T09:30:00Z"
 }
