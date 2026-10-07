@@ -356,7 +356,8 @@ export type SessionState = {
   isLoading: boolean;
 };
 
-export const initialSessionState: SessionState = { user: null, isLoading: true };
+/** Frozen: every store created from it shares this one object. */
+export const initialSessionState: SessionState = Object.freeze({ user: null, isLoading: true });
 
 export const sessionActions = ({ setState }: StoreApi<SessionState>) => ({
   /** Ends the bootstrap probe, signed in or not. */
@@ -397,13 +398,7 @@ export const createSessionStore = () => createStore(initialSessionState, session
 export type SessionStore = ReturnType<typeof createSessionStore>;
 
 /** What useAuth() returns: the same shape the old auth context provided (D86). */
-export interface AuthState {
-  user: CurrentUser | null;
-  /** True until the initial "who am I?" probe settles, so guards can wait. */
-  isLoading: boolean;
-  signIn: (email: string, password: string) => Promise<CurrentUser>;
-  signOut: () => Promise<void>;
-}
+export type AuthState = SessionState & Pick<SessionStore["actions"], "signIn" | "signOut">;
 ```
 
 `src/features/auth/session-context.ts`:
@@ -521,7 +516,7 @@ Delete the old context: `git rm src/features/auth/AuthContext.tsx`
 
 Run: `git grep -n "AuthContext\|AuthProvider" -- src`
 Expected: only comments remain, in five places. Update each so it names the new owner:
-- `src/lib/api-client.ts:19` — "AuthContext is the only" → "the session store is the only";
+- `src/lib/api-client.ts:19` — "AuthContext is the only" → "Outside this module, the session store is the only";
 - `src/lib/api-client.ts:81` — "so AuthContext's bootstrap reuses" → "so SessionProvider's bootstrap reuses";
 - `src/lib/api-client.ts:140` — "AuthContext uses it to sign the user out" → "SessionProvider wires it to the session store's `expire`";
 - `src/app/layout/AppShell.test.tsx:147` — "AuthContext drops the user" → "the session store drops the user";
@@ -621,11 +616,12 @@ export type TaskActionsState = {
   actionError: string | null;
 };
 
-export const initialTaskActionsState: TaskActionsState = {
+/** Frozen: every store created from it shares this one object. */
+export const initialTaskActionsState: TaskActionsState = Object.freeze({
   delete: IDLE_DELETE,
   busyId: null,
   actionError: null,
-};
+});
 
 export const taskActions = (api: StoreApi<TaskActionsState>) => ({
   ...deleteFlowActions(api),
@@ -1176,7 +1172,8 @@ import type { UserDetail } from "./types";
 /** The user list's UI state (D87): its deactivate dialog. One store per page mount. */
 export type UserListState = { delete: DeleteFlow<UserDetail> };
 
-export const initialUserListState: UserListState = { delete: IDLE_DELETE };
+/** Frozen: every store created from it shares this one object. */
+export const initialUserListState: UserListState = Object.freeze({ delete: IDLE_DELETE });
 
 export const userListActions = (api: StoreApi<UserListState>) =>
   deleteFlowActions(api);
@@ -1353,7 +1350,12 @@ import type { StoreApi } from "../../../lib/store-api";
  */
 export type ComboboxState = { open: boolean; query: string | null; activeIndex: number };
 
-export const initialComboboxState: ComboboxState = { open: false, query: null, activeIndex: -1 };
+/** Frozen: every store created from it shares this one object. */
+export const initialComboboxState: ComboboxState = Object.freeze({
+  open: false,
+  query: null,
+  activeIndex: -1,
+});
 
 export const comboboxActions = ({ setState }: StoreApi<ComboboxState>) => ({
   /** Opens the list with `index` active. */
