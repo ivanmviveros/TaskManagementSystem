@@ -74,7 +74,7 @@
     {
       "id": 10,
       "subject": "Task 10: The default refresh handler",
-      "status": "pending"
+      "status": "completed"
     },
     {
       "id": 11,
@@ -144,5 +144,5 @@
       ]
     }
   ],
-  "lastUpdated": "2026-10-07T01:16:23+00:00"
+  "lastUpdated": "2026-10-07T01:17:57+00:00"
 }
