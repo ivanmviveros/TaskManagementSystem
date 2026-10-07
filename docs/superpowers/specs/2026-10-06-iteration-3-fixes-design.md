@@ -58,7 +58,7 @@ Continues from D37.
 |---|---|---|
 | D38 | **Task deletion confirms through a dedicated `DeleteTaskDialog`, mirroring `DeleteUserDialog`.** | Two dialogs do not yet justify a generic `ConfirmDialog`; extracting one would also touch the users feature and its tests for no behavioural gain. |
 | D39 | **The API reports `allowed_transitions` on the task detail; the SPA does not mirror `TRANSITIONS`.** | Same reasoning as `can_delete` (D27): a second copy of a business rule in TypeScript is how the UI and the API drift. `TRANSITIONS` stays the single source. |
-| D40 | **`status` is sent in a PATCH only when the user changed it — compared with the status the form *opened* with, not the live task; a task with no allowed transitions shows its status read-only.** | The PATCH then states only what the user did, and a terminal task offers no choice that the API would refuse. Comparing with the live `task.status` would be wrong: the detail query refetches (30 s `staleTime`, refetch on focus), so a status someone else changed while the form was open would make an untouched select look "changed" and silently undo their change. |
+| D40 | **The status field works from a snapshot taken when the form opens — `task.status` and `task.allowed_transitions`, captured once. Options, the read-only switch and the "did the user change it?" comparison all read that snapshot; `status` is sent only when it differs from the snapshot status.** | The PATCH then states only what the user did, and a terminal task offers no choice that the API would refuse. Comparing with the live `task.status` would be wrong: the detail query refetches (30 s `staleTime`, refetch on focus), so a status someone else changed while the form was open would make an untouched select look "changed" and silently undo their change. |
 | D41 | **Dashboard cards are plain containers whose single "View tasks" CTA is a stretched link.** | A button inside a link is invalid HTML and breaks keyboard and screen-reader navigation. The CTA's `::after` covers the card, so the whole card stays clickable with exactly one link. |
 | D42 | **"Due in 7 days" spans the full row at every breakpoint.** | The six cards before it divide evenly into both 2 and 3 columns, so a full-width last card leaves no breakpoint with a lone narrow one. Chosen by the project owner. |
 | D43 | **`compat` stage 2 runs with `--no-cov`; the coverage gate stays in `addopts`.** | Stage 2 is a smoke test of one module, not a coverage measurement. Moving the gate out of `addopts` would break the README's promise that a local run and CI apply the same gate. |
@@ -139,16 +139,32 @@ def get_allowed_transitions(self, task) -> list[str]:
 
 - `TaskDetail` in `features/tasks/types.ts` gains `allowed_transitions: TaskStatus[]`.
 - `TaskForm`:
-  - **Options** are the current status plus `allowed_transitions`, rendered in the fixed
-    display order `STATUS_LABEL` already declares (Pending, In progress, Completed,
-    Cancelled) — a display order, not a rule. `EDITABLE_STATUSES` is deleted.
-  - **Read-only when `allowed_transitions` is empty:** instead of a select, the form shows the
-    status (as a `StatusBadge`) with one line explaining that completed and cancelled tasks
-    keep their status. Nothing to choose, so nothing to get wrong.
-  - **Submit** includes `status` only when it differs from the status the form **opened**
-    with, captured once: `const [initialStatus] = useState(task?.status)`, then
-    `...(isEdit && status !== initialStatus ? { status } : {})`. See D40 for why not the live
-    `task.status`.
+  - **One snapshot, taken when the form opens** (D40):
+
+    ```ts
+    const [initialStatus] = useState(task?.status);
+    const [initialTransitions] = useState(task?.allowed_transitions ?? []);
+    ```
+
+    Everything about the status field reads this snapshot, and none of it changes when the
+    detail query refetches. The form holds three statuses — the live `task.status`, the
+    snapshot and the `status` state — and only the snapshot is a correct basis for each job:
+    - **Options** are `initialStatus` plus `initialTransitions`, rendered in the fixed display
+      order `STATUS_LABEL` already declares (Pending, In progress, Completed, Cancelled) — a
+      display order, not a rule. Basing them on the `status` *state* would be a bug: picking
+      In progress on a pending task would shrink the options to {In progress, Cancelled},
+      dropping Pending so the change could not be undone. `EDITABLE_STATUSES` is deleted.
+    - **Read-only when `initialTransitions` is empty:** instead of a select, the form shows the
+      status (as a `StatusBadge`) with one line explaining that completed and cancelled tasks
+      keep their status. The heading is plain text, not a `<label htmlFor="status">`, since
+      there is no control for it to label. Basing this on the *live* task would be a bug: a
+      refetch that made the task terminal after the user changed the select would remove the
+      control while the changed value kept being sent and refused — with no way to revert it.
+    - **Submit** includes `status` only when it differs from `initialStatus`:
+      `...(isEdit && status !== initialStatus ? { status } : {})`.
+
+    `TaskEditPage` mounts the form only after the task has loaded, so the snapshot always
+    captures real values, and a background refetch does not remount it.
 - **Budgeted test changes** in `TaskForm.test.tsx` — the only fixture typed as `TaskDetail`
   (`TaskEditPage` is the only edit-mode caller, and `msw-handlers.ts` has no task-detail
   default):
@@ -191,6 +207,10 @@ task does not depend on stats loading.
 - **Accessible name:** visible text "View tasks" plus a visually hidden suffix with the card's
   label, giving names like "View tasks — Overdue". Seven links named only "View tasks" would be
   indistinguishable in a screen reader's link list.
+- **The card is a named group:** `role="group"` with `aria-labelledby` pointing at the label,
+  so each card is addressable as `getByRole("group", { name: "Pending" })`. This is what the
+  tests use to read a card's number (§5.4) — a stable handle, unlike `closest("div")`, which
+  breaks the moment the wide card's label and value sit in a wrapper.
 - `focus-within` shows the focus ring on the card, since the focused element is the link.
 - The stretched `::after` would cover any other interactive element inside the card. The
   unused `children` prop is **removed**, so that constraint is enforced by the type rather
@@ -219,9 +239,10 @@ two of its assumptions break once the value moves out of the link:
   anchored at the start, and the new names begin with "View tasks". Re-anchor them on the
   label suffix (e.g. `/— pending$/i`).
 - **Value assertions fail.** "renders all six figures" asserts each number with
-  `toHaveTextContent` on the link; the number now sits on the card, outside it. The helper
-  returns the **card** for value assertions (the link's closest card container) and the link
-  for href assertions.
+  `toHaveTextContent` on the link; the number now sits on the card, outside it. Value
+  assertions move to the card's group (`getByRole("group", { name })`, §5.2); href assertions
+  keep using the link. Note the first assertion in that test — the "10" on "All tasks" — calls
+  `findByRole("link", …)` directly rather than through `tile()`, so it must be changed too.
 - **"renders identically for a Supervisor and an Operator"** still passes, but it compares link
   text, which no longer contains the numbers. It must compare card text so it still proves
   what its name says.
@@ -286,6 +307,7 @@ pre-push script — and not by `compat`'s smoke step.
 | Status, form | Saving a completed task sends a PATCH **without** `status` |
 | Status, form | A pending task offers Pending, In progress and Cancelled, and changing it sends `status` |
 | Status, form | Saving a pending task without touching the status sends no `status` |
+| Status, form | After changing a pending task to In progress, Pending is still offered — so the change can be undone (D40) |
 | Status, form | If the task's status changes underneath an open, untouched form (a refetch), saving still sends no `status` (D40) |
 | Dashboard | Each card has a "View tasks" link with the same href as before |
 | Dashboard | "New task" links to `/tasks/new` |
@@ -293,6 +315,14 @@ pre-push script — and not by `compat`'s smoke step.
 | Dashboard | Each card shows its number (asserted on the card, §5.4) |
 | Dashboard | The due-soon card carries `col-span-full` |
 | CI | Stage 2 and stage 3 exit 0 locally with the CI commands; all four jobs green in Actions |
+
+**Triggering the refetch in the D40 test.** `renderApp` does not expose its `QueryClient`,
+and the test client uses the default `staleTime` of 0, so a refetch is triggered with
+`focusManager.setFocused(false)` then `setFocused(true)` from `@tanstack/react-query`. The
+second `GET` returns `IN_PROGRESS`, so an implementation comparing against the live
+`task.status` would send `PENDING` and fail. The test asserts the `GET` was hit **twice**
+before saving: under the correct design the UI does not change on refetch, so without that
+count the test could pass without the refetch ever happening.
 
 **Query scoping in the delete tests.** jsdom renders both the table and the cards, so each
 row's "Delete <title>" button appears twice, and the dialog's own "Delete" button also matches
@@ -316,5 +346,9 @@ before the branch is pushed, at a width below and above `lg`.
   follows it for consistency; the cards avoid it because the CTA must itself be the link.
 - Replacing the client-side `isOpen` checks in `TaskRowActions` and `TaskDetailPage` with
   `allowed_transitions`.
+- `TaskEditPage` checks `isError` before `data`. In TanStack Query v5 a failed *background*
+  refetch sets `isError` while keeping `data`, so a transient failure on a focus refetch
+  unmounts the form and discards the user's unsaved edits. Pre-existing and independent of
+  these fixes, but D40 is reasoned around those refetches, so it is recorded here.
 - Whether completed tasks should be editable at all. Today the API allows editing their
   title, description, due date and assignee; this iteration leaves that unchanged.
