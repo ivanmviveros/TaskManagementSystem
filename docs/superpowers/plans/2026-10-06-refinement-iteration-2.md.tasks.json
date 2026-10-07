@@ -126,7 +126,7 @@
     {
       "id": 17,
       "subject": "Task 17: Full verification",
-      "status": "pending",
+      "status": "completed",
       "blockedBy": [
         8,
         7,
@@ -138,11 +138,11 @@
     {
       "id": 18,
       "subject": "Task 18: Persist insights to claude-insights/",
-      "status": "pending",
+      "status": "completed",
       "blockedBy": [
         17
       ]
     }
   ],
-  "lastUpdated": "2026-10-07T01:31:17+00:00"
+  "lastUpdated": "2026-10-07T01:37:48+00:00"
 }
