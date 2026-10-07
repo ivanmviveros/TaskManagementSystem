@@ -208,7 +208,10 @@ task does not depend on stats loading.
   label, giving names like "View tasks — Overdue". Seven links named only "View tasks" would be
   indistinguishable in a screen reader's link list.
 - **The card is a named group:** `role="group"` with `aria-labelledby` pointing at the label,
-  so each card is addressable as `getByRole("group", { name: "Pending" })`. This is what the
+  so each card is addressable as `getByRole("group", { name: "Pending" })`. The label's id
+  comes from `useId()`, **never from the label text**: `aria-labelledby` takes a
+  space-separated list of ids, so an id built from "In progress" would silently break that
+  card's name. This is what the
   tests use to read a card's number (§5.4) — a stable handle, unlike `closest("div")`, which
   breaks the moment the wide card's label and value sit in a wrapper.
 - `focus-within` shows the focus ring on the card, since the focused element is the link.
@@ -322,7 +325,15 @@ and the test client uses the default `staleTime` of 0, so a refetch is triggered
 second `GET` returns `IN_PROGRESS`, so an implementation comparing against the live
 `task.status` would send `PENDING` and fail. The test asserts the `GET` was hit **twice**
 before saving: under the correct design the UI does not change on refetch, so without that
-count the test could pass without the refetch ever happening.
+count the test could pass without the refetch ever happening. Three more requirements:
+
+- **Prove it can fail.** Run the test once against a live-`task.status` comparison and
+  confirm it goes red. The GET counter rises when MSW receives the request, not when the
+  form receives the data, so only a red run shows the test really distinguishes the designs.
+- **Reset the singleton.** `focusManager` is shared by the whole test file; restore it with
+  `focusManager.setFocused(undefined)` in a `finally` or `afterEach`.
+- **Wrap the focus changes in `act`**, so a stray "not wrapped in act" warning cannot fail the
+  test through `setup.ts`'s console guard.
 
 **Query scoping in the delete tests.** jsdom renders both the table and the cards, so each
 row's "Delete <title>" button appears twice, and the dialog's own "Delete" button also matches
