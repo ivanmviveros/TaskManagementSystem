@@ -9,7 +9,7 @@ import { ApiError } from "../../lib/api-error";
 import { DEFAULT_PAGE_SIZE, type PageSize } from "../../lib/pagination";
 import { useSearchParamDraft } from "../../lib/useSearchParamDraft";
 import { useAuth } from "../auth/hooks/useAuth";
-import { ROLES, type Role } from "../auth/types";
+import { ROLE_LABEL, ROLES, type Role } from "../auth/types";
 import { DeleteUserDialog } from "./components/DeleteUserDialog";
 import { UserCard } from "./components/UserCard";
 import { UserTable } from "./components/UserTable";
@@ -132,7 +132,7 @@ export function UserListPage() {
               <option value="">All roles</option>
               {ROLES.map((role) => (
                 <option key={role} value={role}>
-                  {role}
+                  {ROLE_LABEL[role]}
                 </option>
               ))}
             </select>

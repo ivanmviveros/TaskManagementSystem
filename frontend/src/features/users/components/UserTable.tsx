@@ -1,6 +1,7 @@
 
 import { Button } from "../../../components/Button";
 import { ButtonLink } from "../../../components/ButtonLink";
+import { ROLE_LABEL } from "../../auth/types";
 import type { UserDetail } from "../types";
 
 interface UserTableProps {
@@ -39,7 +40,7 @@ export function UserTable({ users, onDelete, currentUserId }: UserTableProps) {
               {user.first_name} {user.last_name}
             </td>
             <td className="p-3 text-slate-600">{user.email}</td>
-            <td className="p-3 text-slate-600">{user.role}</td>
+            <td className="p-3 text-slate-600">{ROLE_LABEL[user.role]}</td>
             <td className="p-3 text-slate-600">{user.is_active ? "Yes" : "No"}</td>
             <td className="p-3">
               <div className="flex flex-wrap gap-2">

@@ -7,14 +7,8 @@ import { TextField } from "../../../components/TextField";
 import { useFocusFirstError } from "../../../components/useFocusFirstError";
 import { ApiError } from "../../../lib/api-error";
 import { useAuth } from "../../auth/hooks/useAuth";
-import { ROLES, type Role } from "../../auth/types";
+import { ROLE_LABEL, ROLES, type Role } from "../../auth/types";
 import type { UserDetail } from "../types";
-
-const ROLE_LABEL: Record<Role, string> = {
-  ADMIN: "Admin",
-  SUPERVISOR: "Supervisor",
-  OPERATOR: "Operator",
-};
 
 export interface UserFormValues {
   email: string;

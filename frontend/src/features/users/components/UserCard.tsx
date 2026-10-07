@@ -1,6 +1,7 @@
 
 import { Button } from "../../../components/Button";
 import { ButtonLink } from "../../../components/ButtonLink";
+import { ROLE_LABEL } from "../../auth/types";
 import type { UserDetail } from "../types";
 
 interface UserCardProps {
@@ -25,7 +26,7 @@ export function UserCard({ user, onDelete, currentUserId }: UserCardProps) {
         <dt className="font-medium">Email</dt>
         <dd className="break-all">{user.email}</dd>
         <dt className="font-medium">Role</dt>
-        <dd>{user.role}</dd>
+        <dd>{ROLE_LABEL[user.role]}</dd>
         <dt className="font-medium">Active</dt>
         <dd>{user.is_active ? "Yes" : "No"}</dd>
       </dl>

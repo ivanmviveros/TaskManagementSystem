@@ -65,6 +65,19 @@ describe("UserListPage", () => {
     expect(within(table).getByText("operator@demo.local")).toBeInTheDocument();
   });
 
+  it("shows roles by their label, never the stored value (F13)", async () => {
+    usersRespondWith([operator()]);
+    await renderApp("/users");
+    const table = await screen.findByRole("table");
+    expect(within(table).getByRole("cell", { name: "Operator" })).toBeInTheDocument();
+    expect(within(table).queryByText("OPERATOR")).not.toBeInTheDocument();
+    expect(within(screen.getByRole("article")).getByText("Operator")).toBeInTheDocument();
+    const option = within(screen.getByLabelText(/^role$/i)).getByRole("option", {
+      name: "Operator",
+    });
+    expect(option).toHaveValue("OPERATOR");
+  });
+
   it("shows an empty state rather than an empty table", async () => {
     usersRespondWith([]);
     await renderApp("/users");
