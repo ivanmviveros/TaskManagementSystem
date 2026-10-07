@@ -1,6 +1,7 @@
 # Technical decisions
 
-Every implementation decision in this project (D1–D78), why it was made, and who made it. The
+Every implementation decision in this project (D1–D78 and D89–D93), why it was made, and who
+made it. D79–D88 are reserved by the TanStack refactor design on its own branch. The
 [README](../README.md) lists only the headline ones. Each decision's full design context lives in the
 spec of the iteration that introduced it ([Sources](#sources)).
 
@@ -31,8 +32,8 @@ substance. Examples are backend §49's ban on `utils.py` (D10) and frontend §8'
 backend business rules" (D39). The general engineering principles in root §2, such as "prefer
 framework mechanisms", do not count, or every decision would.
 
-Of the 79 numbered decisions (D1–D78 plus D8a), 10 are **Engineer**, 22 **Engineer + AI** and 47
-**AI**. The numbered log is mostly design detail. The choices that define the system are the
+Of the 84 numbered decisions (D1–D78, D89–D93 and D8a), 10 are **Engineer**, 24
+**Engineer + AI** and 50 **AI**. The numbered log is mostly design detail. The choices that define the system are the
 engineer's, and they come from the two sources below, which predate every numbered decision:
 - the **conventions in `AGENTS.md`**: the layering, the security posture, the testing bar and the
   frontend's state model;
@@ -86,7 +87,7 @@ rule below predates the code and the specs.
 
 Each rule's **Origin is Engineer**. The last column shows how the project applies it, and which
 numbered decisions built on it.
-- **Partly met:** A25 and A30. They are marked **Partly** in the tables and explained after them.
+- **Partly met:** A25. It is marked **Partly** in the table and explained after the tables.
 - **Departed from on purpose:** A4, A34 and A43. Those departures are listed in
   [Deliberate overrides](#deliberate-overrides-of-agentsmd).
 
@@ -128,12 +129,12 @@ numbered decisions built on it.
 | A27 | DRF's own throttling, stricter on authentication endpoints, rates in one place | §22a | `DEFAULT_THROTTLE_RATES`; `LoginRateThrottle`, `RefreshRateThrottle` |
 | A28 | Production security settings reviewed; secrets only from the environment | §23, §24 | `production.py` asserts `DEBUG=False` and sets HSTS and secure cookies; only `.env.example` is committed |
 | A29 | External services behind a boundary; retry only what is idempotent; idempotency backed by a constraint | §25–§27 | `NotificationDispatcher` Protocol; unique `dedupe_key`; retries on transport errors only |
-| A30 | Structured logging with request context; never log passwords, tokens or secrets | §28 | **Partly.** Event-style `key=value` lines with ids, and no secrets. There is no request id, method, status or duration, although design spec §9.4 says there is |
+| A30 | Structured logging with request context; never log passwords, tokens or secrets | §28 | Every line is a JSON object with a `request_id`, which follows the request into Celery tasks. Each request also gets one access line with method, path, status, duration and actor. Events carry their data as fields, and query strings and secrets stay out (D89–D93) |
 | A31 | Performance changes need evidence first | §30 | No index without a query that needs it; query-count tests |
 | A32 | Celery with Redis for genuinely asynchronous work; services enqueue, views never do; explicit retry rules; no extra queues | §32 | `apps/notifications`; `on_commit` enqueue in services; `autoretry_for` transport errors only; no result backend, because nothing reads results |
 | A33 | Versioned `/api/v1/` routes; plural REST names; state transitions as `POST /{id}/<action>/` | §33, §34 | Every route is under `/api/v1/`; `POST /tasks/{id}/complete/` (D18) |
 | A34 | Generated OpenAPI documentation with `drf-yasg` **or** `drf-spectacular` | §35 | drf-spectacular (D4) |
-| A35 | pytest with pytest-django and pytest-cov; at least 80% coverage on the critical paths; test-first preferred | §36 | 384 tests at 100%, gate at 80%; test-first plans |
+| A35 | pytest with pytest-django and pytest-cov; at least 80% coverage on the critical paths; test-first preferred | §36 | 432 tests at 100%, gate at 80%; test-first plans |
 | A36 | Tests protect authorization, ownership, validation, transitions, constraints, transactions and concurrency, including negative cases | §37–§42 | The permission-matrix suite, constraint tests, `test_on_commit.py`, `test_concurrency.py` |
 | A37 | Tooling declared in `pyproject.toml`; Poetry or uv; pre-commit hooks; ruff; commands documented | §44a | uv with `uv.lock` (D5); `.pre-commit-config.yaml`; README, "Running the tests" |
 | A38 | No `utils.py`, `helpers.py` or `common.py` dumping grounds | §49 | Named modules in `apps/core` (D10) |
@@ -155,15 +156,14 @@ numbered decisions built on it.
 
 ### Where the project falls short of AGENTS.md
 
-These are open, not deliberate. They were found while preparing this analysis on 2026-10-07.
+This is open, not deliberate. It was found while preparing this analysis on 2026-10-07.
 
 - **A25, account lockout.** Per-IP throttling slows brute force from one address, but nothing locks
   an account after repeated failures from many addresses. The fix would be a failed-attempt
   counter per account, reset on success, with a lockout window.
-- **A30, request context in logs.** The application logs well-named events with ids, and keeps
-  secrets out. It has no request-id middleware, and the log format is plain text. Design spec §9.4
-  describes structured logs with request id, method, status and duration; that part was never
-  built.
+
+A second gap found that day has since been closed. A30, request context in logs, was only partly
+met until iteration 6 added structured logs with request ids (D89–D93).
 
 ## Decision log
 
@@ -288,6 +288,16 @@ From the [QA report](qa/2026-10-07-frontend-qa-report.md); the engineer chose th
 | D77 | The current menu item is marked; header targets are 44 px | No visible "you are here", and small touch targets. | AI |
 | D78 | An impossible date range is explained in an announced message | The list went silently empty. | AI |
 
+### Structured logging (iteration 6)
+
+| # | Decision | Why | Origin |
+|---|---|---|---|
+| D89 | Every log line is one JSON object stamped with a request id held in a context variable | The engineer asked for structured logs with a request id kept in context variables, so all the lines of one request can be found together. The agent built it on the standard library alone: a `logging.Filter` copies the id onto each record and a JSON `Formatter` writes it, so no dependency is added. | Engineer + AI |
+| D90 | The request id crosses into Celery tasks as a message header | A notification email's lines belong to the request that caused it, even though another process writes them. A task with no originating request, such as the beat sweep, logs under its own task id. | AI |
+| D91 | A well-formed incoming `X-Request-ID` is kept; anything else is replaced by a UUIDv7; the response echoes it | A caller's or proxy's id joins their logs to ours. Only letters, digits and `._:-`, up to 128 characters, are accepted, so a header cannot forge a log line. | AI |
+| D92 | One access line per request, from `RequestIdMiddleware`; Django's 4xx lines and runserver's line are dropped | Both duplicate the access line without a request id, and runserver's logs the full query string. Unhandled errors are still logged by Django, inside the request, with a traceback. | AI |
+| D93 | Events are logged as a name plus fields, and paths without their query string | Applies backend §28 (A30): fields can be filtered and aggregated, while values packed into a message cannot. A query string can hold search terms and email addresses. | Engineer + AI |
+
 ## Deliberate overrides of AGENTS.md
 
 The three `AGENTS.md` files are the engineer's standing conventions for this repository (A1–A48
@@ -313,6 +323,8 @@ recorded here.
 | 4. List navigation | D45–D58 | [list-navigation-design](superpowers/specs/2026-10-06-list-navigation-design.md) | [plan](superpowers/plans/2026-10-06-list-navigation.md) |
 | 4. Browser-check fixes | D59–D65 | None: small fixes, recorded only here | — |
 | 5. QA fixes | D66–D78 | [qa-fixes-iteration-5-design](superpowers/specs/2026-10-07-qa-fixes-iteration-5-design.md) | [plan](superpowers/plans/2026-10-07-qa-fixes-iteration-5.md) |
+| — | D79–D88 | Reserved by the TanStack Form, Table and Store refactor design, on branch `refactor/tanstack-form-table-store`; not yet merged | — |
+| 6. Structured logging | D89–D93 | None: built test-first from one prompt, and recorded here | — |
 
 ## Rationale in depth
 
@@ -850,6 +862,62 @@ Each fix has a test that failed first.
   always-mounted polite live region that both date inputs reference through `aria-describedby`,
   so it is announced whichever field caused the inversion; only Due before is marked
   `aria-invalid`. A single-day range (after equals before) is valid.
+
+### Structured logs and the request id (D89–D93)
+
+Every line the API and the worker write is one JSON object. A failed login, for example,
+writes these two lines:
+
+```json
+{"timestamp": "2026-10-07T20:09:36.751+00:00", "level": "WARNING", "logger": "apps.users.auth_views", "message": "auth.login_failed", "request_id": "live-check-login", "ip": "127.0.0.1", "email": "supervisor@demo.local"}
+{"timestamp": "2026-10-07T20:09:36.751+00:00", "level": "WARNING", "logger": "apps.core.middleware", "message": "http.request", "request_id": "live-check-login", "method": "POST", "path": "/api/v1/auth/login/", "status": 401, "duration_ms": 904.1, "actor_id": null}
+```
+
+**How the id gets onto every line.**
+- `RequestIdMiddleware` is first in `MIDDLEWARE`. It binds the id in a `ContextVar`
+  (`apps/core/request_context.py`) before anything else runs, and resets it afterwards, even when
+  the view raises.
+- `RequestIdFilter` sits on the one console handler and copies the bound id onto each record as
+  it is emitted. Django's and Celery's lines get it as well as ours, with no code passing it
+  around.
+- A `ContextVar` rather than a thread-local: it is isolated per thread and per asyncio task, and
+  resetting with the token restores the outer value exactly. That matters for an eager Celery
+  task, which runs inside the request that called it.
+
+**Across the broker (D90).** `apps/core/celery_context.py` connects three Celery signals:
+- `before_task_publish` stamps the bound id onto the message as a `request_id` header;
+- `task_prerun` binds it in the worker;
+- `task_postrun` restores the previous value, so the next task on the same worker cannot inherit
+  it.
+
+A worker exposes message headers as attributes of `task.request`, while `Task.apply()` nests
+them under `task.request.headers`, so the handler reads both. A carried id is validated like any
+other input. With no carried id, an eager task keeps the request's id, and anything else (the
+beat sweep, a shell) logs under its own task id. `CELERY_WORKER_HIJACK_ROOT_LOGGER = False`
+stops the worker replacing the JSON handler with Celery's plain-text one. This was verified
+against a real worker: a task published inside a request logged that request's id, and the next
+task did not inherit it.
+
+**One access line per request (D92).** The middleware logs method, path, status, duration and
+actor. It logs at INFO, at WARNING for 4xx and at ERROR for 5xx. Django would log every 4xx a
+second time, *after* the middleware has unbound the id, so `django.request` is set to ERROR. An
+unhandled exception is still logged with its traceback, inside the request, with its id.
+runserver's own line is sent to a `NullHandler`: it duplicates the access line, has no id, and
+logs the full query string. A `NullHandler` rather than no handler, because a non-propagating
+logger with no handler falls through to Python's last-resort handler, which prints warnings as
+plain text.
+
+**Events are names plus fields (D93).** The pattern is
+`logger.info("task.updated", extra={"task_id": ..., "fields": [...], "actor_id": ...})`. The field
+names are shared across events: `actor_id` is always who acted, and `task_id` and `user_id` are
+what was acted on. `fields` lists the names of changed fields, never their values.
+
+**Following one request.** The response carries the id in `X-Request-ID`. Search both
+processes' logs for it:
+
+```bash
+docker compose logs backend worker | grep 01a117fc-4264-7521-9ae3-f93b790ec5c5
+```
 
 ## Known limitations and exit criteria
 

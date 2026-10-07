@@ -7,7 +7,7 @@ They began as copies of the [design spec](superpowers/specs/2026-10-05-task-mana
 diagrams. Since then, the data model was redrawn from the live schema, and the layering and frontend
 diagrams are new. Where this document and the spec differ, this document is current. The *why*
 behind each element is in [TECHNICAL-DECISIONS.md](TECHNICAL-DECISIONS.md), referenced by number
-(D1–D78).
+(D1–D78 and D89–D93).
 
 ## Containers
 
@@ -366,6 +366,40 @@ sequenceDiagram
 `celery beat` also triggers `sweep_overdue_tasks` every hour. Its dedupe key carries the date,
 so each recipient gets at most one overdue email per task per day.
 
+## Request ids in the logs
+
+Every log line is one JSON object carrying the `request_id` of the request that caused it,
+including the lines the Celery worker writes for that request (D89–D93).
+
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant MW as RequestIdMiddleware
+    participant V as View and service
+    participant Q as Redis
+    participant W as Celery worker
+
+    C->>MW: request, optionally with X-Request-ID
+    MW->>MW: bind request_id in a ContextVar
+    MW->>V: handle the request
+    V->>V: every log line stamped with request_id
+    V-->>Q: on_commit publish, request_id in the message headers
+    MW->>MW: access line http.request, then unbind
+    MW-->>C: response with X-Request-ID
+    Q->>W: deliver
+    W->>W: task_prerun binds request_id
+    W->>W: task log lines stamped with request_id
+    W->>W: task_postrun restores the previous value
+```
+
+| Piece | Module | Job |
+|---|---|---|
+| Context variable | `apps/core/request_context.py` | Holds the id; validates incoming ids; generates UUIDv7 ids |
+| Middleware | `apps/core/middleware.py` | Binds the id for the request, echoes it, writes the access line |
+| Filter and formatter | `apps/core/log_formatting.py` | Stamps each record with the id; writes it as one JSON line |
+| Celery signals | `apps/core/celery_context.py` | Carries the id through the message headers into the worker |
+| Configuration | `config/settings/base.py` `LOGGING` | One JSON console handler for every logger; Django's duplicate lines dropped |
+
 ## The capability matrix
 
 The authoritative, machine-readable version is `apps/core/permissions/matrix.py`. This table
@@ -471,7 +505,7 @@ Operators go to `/dashboard`.
 ├── backend/
 │   ├── config/                 settings (base, local, test, production), urls, celery
 │   └── apps/
-│       ├── core/               shared: permission matrix, soft-delete base, errors, pagination, throttles
+│       ├── core/               shared: permission matrix, soft-delete base, errors, pagination, throttles, request ids and logging
 │       ├── users/              accounts, JWT cookie auth, seed command
 │       ├── tasks/              tasks: views, serializers, DTOs, services, repositories, selectors
 │       └── notifications/      Celery email tasks, dedupe, overdue sweep

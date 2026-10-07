@@ -31,6 +31,8 @@ an hourly sweep emails about overdue work.
 - **Security:** JWT authentication with the refresh token in an HttpOnly cookie, rate limiting, and
   every rule enforced by the API, not by the UI.
 - **Responsive UI:** tables on desktop, cards with a sort selector on phones and tablets.
+- **Traceable logs:** every log line is JSON and carries the id of the request that caused it,
+  across the API and the worker.
 
 ## Tech stack
 
@@ -140,7 +142,7 @@ bash scripts/run-backend-tests.sh
 ```
 
 Every full run applies a coverage gate of 80%, through `--cov-fail-under=80` in `addopts`. The
-suite currently sits at **100%** of `apps/` with 384 tests. The tests use PostgreSQL, not SQLite,
+suite currently sits at **100%** of `apps/` with 432 tests. The tests use PostgreSQL, not SQLite,
 because the schema relies on partial indexes and a check constraint. To run against the Compose
 database from the host, use `POSTGRES_PORT=5442 uv run --directory backend pytest -q`.
 
@@ -231,6 +233,27 @@ All endpoints are under `/api/v1/`. The interactive reference is the Swagger UI 
 Every error has the same shape, `{"detail", "code", "errors"}`. Which role may call what is in the
 [capability matrix](docs/ARCHITECTURE.md#the-capability-matrix).
 
+## Logs
+
+The API and the Celery worker write one JSON object per line to stderr, so
+`docker compose logs` shows them. Every line carries a `request_id`:
+
+- **Every response returns it** in the `X-Request-ID` header. To use your own, send an
+  `X-Request-ID` header made of letters, digits and `._:-`, up to 128 characters.
+- **Worker lines carry it too.** Lines the worker writes for a request, such as its notification
+  emails, carry that request's id.
+- **One access line per request.** Each request also logs an `http.request` line with the method,
+  the path (without the query string), the status, `duration_ms` and `actor_id`.
+
+To follow one request across both processes, search for its id:
+
+```bash
+docker compose logs backend worker | grep 01a117fc-4264-7521-9ae3-f93b790ec5c5
+```
+
+`DJANGO_LOG_LEVEL` sets the level (default `INFO`). How it works is explained in
+[docs/TECHNICAL-DECISIONS.md](docs/TECHNICAL-DECISIONS.md#structured-logs-and-the-request-id-d89d93).
+
 ## Project structure
 
 ```text
@@ -250,7 +273,7 @@ for reads. The layout is explained in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.m
 The headline decisions, with their numbers in [docs/TECHNICAL-DECISIONS.md](docs/TECHNICAL-DECISIONS.md).
 That document also gives:
 - the 48 conventions the engineer set in the `AGENTS.md` files before any code (A1–A48);
-- all 79 numbered decisions, with the reasoning behind each and whether it was the engineer's call
+- all 84 numbered decisions, with the reasoning behind each and whether it was the engineer's call
   or the AI agent's.
 
 - **Strict role separation (D13).** An Admin has no task access at all. An Operator sees only the
@@ -274,6 +297,8 @@ That document also gives:
   session by refreshing first (D35).
 - **The URL holds list state (D45).** Refresh, Back, shared links and dashboard cards all open the
   same view.
+- **Structured logs with a request id (D89–D93).** Every line is JSON and carries the id of the
+  request that caused it, including lines written by the Celery worker for that request.
 - **drf-spectacular instead of drf-yasg (D4).** drf-yasg's support stops at Django 5.2, and it
   emits only OpenAPI 2.0. drf-spectacular still serves Swagger UI.
 - **Departures from the repository's `AGENTS.md` conventions are deliberate.** The main ones
@@ -290,7 +315,7 @@ API.
 |---|---|
 | [SUMMARY.md](SUMMARY.md) | Presentation guide: the brief's requirements mapped to code and docs |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Diagrams: containers, layers, data model with the history tables, flows, capability matrix, frontend |
-| [docs/TECHNICAL-DECISIONS.md](docs/TECHNICAL-DECISIONS.md) | The engineer's `AGENTS.md` conventions (A1–A48); every decision (D1–D78) with its reason and origin (engineer or AI); known limitations |
+| [docs/TECHNICAL-DECISIONS.md](docs/TECHNICAL-DECISIONS.md) | The engineer's `AGENTS.md` conventions (A1–A48); every decision (D1–D78 and D89–D93) with its reason and origin (engineer or AI); known limitations |
 | [docs/GENAI-WORKFLOW.md](docs/GENAI-WORKFLOW.md) | How the project was built with an AI agent, and how its output was validated and corrected |
 | [docs/qa/2026-10-07-frontend-qa-report.md](docs/qa/2026-10-07-frontend-qa-report.md) | Browser QA of responsiveness, forms and navigation; test and coverage results; re-test after fixes |
 | [docs/superpowers/specs/](docs/superpowers/specs/) and [plans/](docs/superpowers/plans/) | The design spec and implementation plan of each iteration |

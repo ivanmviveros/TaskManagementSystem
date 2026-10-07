@@ -71,6 +71,7 @@ produces a spec, then a plan; the engineer reviews both; then execution runs.
 | 4. List navigation | Numbered pager, page sizes, filters in the URL, tab titles | Spec, then a 12-task plan | D45–D58 |
 | 4. Browser-check fixes | Five issues from the agent's Playwright pass, assignee search, the unassign bug, the app title | Direct fixes | D59–D65 |
 | 5. QA | A Playwright QA report; the engineer added the missing sort indicator; then fixes for all 14 findings | QA report, spec, then a 15-task plan | D66–D78 |
+| 6. Structured logging | Structured logs with a request id held in context variables, so one request's lines can be found together. This closed the A30 gap found while documenting | Built test-first in an isolated git worktree, then checked against a live dev server and a real Celery worker | D89–D93 |
 
 ## The output
 
@@ -124,7 +125,7 @@ No agent output was accepted on its own say-so. Each layer below caught real def
    - the frontend runs `tsc`, oxlint and Vitest, with a console guard that fails any test that
      logs an unexpected error or warning.
 
-Current results: backend **384 tests, 100% coverage** (gate 80%); frontend **303 tests**,
+Current results: backend **432 tests, 100% coverage** (gate 80%); frontend **303 tests**,
 94.75% statement coverage; typecheck clean; lint at its 5-warning baseline.
 
 ## How edge cases, authentication and validation were handled
