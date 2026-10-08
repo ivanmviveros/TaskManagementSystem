@@ -12,13 +12,16 @@ afterEach(() => {
 });
 
 /** `write` stands in for the form field: it receives what the hook puts there. */
-function setup<T>(initial: T, options: { delayMs?: number; equals?: (a: T, b: T) => boolean } = {}) {
+function setup<T>(
+  initial: T,
+  { strict = false, ...options }: { strict?: boolean; delayMs?: number; equals?: (a: T, b: T) => boolean } = {},
+) {
   const commit = vi.fn<(value: T) => void>();
   const write = vi.fn<(value: T) => void>();
   const hook = renderHook(
     ({ committed, onCommit }: { committed: T; onCommit: (value: T) => void }) =>
       useUrlFieldSync({ committed, commit: onCommit, write, ...options }),
-    { initialProps: { committed: initial, onCommit: commit } },
+    { initialProps: { committed: initial, onCommit: commit }, reactStrictMode: strict },
   );
   return { commit, write, hook };
 }
@@ -132,12 +135,69 @@ describe("useUrlFieldSync: immediate fields", () => {
     expect(write).toHaveBeenCalledWith(["B"]);
   });
 
-  it("does not queue a write equal to the URL value, so it cannot hide a later change", () => {
+  it("treats later changes as news after a write equal to the URL value", () => {
+    // Writing where the URL already is changes nothing, so no echo follows. This
+    // pins the outcome, not the guard: with the heading baseline an entry
+    // queued for such a write is always cleared by the next URL change, so no
+    // observable behaviour depends on the guard (checked by simulation).
     const { commit, write, hook } = setup("a", { delayMs: 0 });
     act(() => hook.result.current.onChange("a"));
     expect(commit).toHaveBeenCalledWith("a");
     hook.rerender({ committed: "b", onCommit: commit });
     hook.rerender({ committed: "a", onCommit: commit });
     expect(write.mock.calls).toEqual([["b"], ["a"]]);
+  });
+
+  it("recognises the echo of a write back to the URL value while another is in flight", () => {
+    const { commit, write, hook } = setup("");
+    act(() => hook.result.current.onChange("om"));
+    act(() => vi.advanceTimersByTime(300));
+    act(() => hook.result.current.onChange(""));
+    act(() => vi.advanceTimersByTime(300));
+    act(() => hook.result.current.onChange("x"));
+    hook.rerender({ committed: "om", onCommit: commit });
+    hook.rerender({ committed: "", onCommit: commit });
+    expect(write).not.toHaveBeenCalled();
+    act(() => vi.advanceTimersByTime(300));
+    expect(commit).toHaveBeenLastCalledWith("x");
+  });
+
+  it("recognises that echo for immediate fields too", () => {
+    const { commit, write, hook } = setup<string[]>([], { delayMs: 0, equals: sameList });
+    act(() => hook.result.current.onChange(["A"]));
+    act(() => hook.result.current.onChange([]));
+    act(() => hook.result.current.onChange(["B"]));
+    hook.rerender({ committed: ["A"], onCommit: commit });
+    hook.rerender({ committed: [], onCommit: commit });
+    hook.rerender({ committed: ["B"], onCommit: commit });
+    expect(write).not.toHaveBeenCalled();
+  });
+
+  it("drops every write queued before the echo it matches", () => {
+    const { commit, write, hook } = setup<string[]>([], { delayMs: 0, equals: sameList });
+    act(() => hook.result.current.onChange(["A"]));
+    act(() => hook.result.current.onChange(["A", "B"]));
+    // The router skipped the [A] echo: [A, B] answers both writes.
+    hook.rerender({ committed: ["A", "B"], onCommit: commit });
+    // Back to [A] is news, not a late echo of the dropped first write.
+    hook.rerender({ committed: ["A"], onCommit: commit });
+    expect(write.mock.calls).toEqual([[["A"]]]);
+  });
+});
+
+describe("useUrlFieldSync: StrictMode", () => {
+  it("leaves the field alone on mount", () => {
+    const { commit, write } = setup("omar", { strict: true });
+    expect(write).not.toHaveBeenCalled();
+    expect(commit).not.toHaveBeenCalled();
+  });
+
+  it("commits once, 300 ms after the last change", () => {
+    const { commit, write, hook } = setup("", { strict: true });
+    act(() => hook.result.current.onChange("o"));
+    act(() => hook.result.current.onChange("om"));
+    act(() => vi.advanceTimersByTime(300));
+    expect(commit.mock.calls).toEqual([["om"]]);
+    expect(write).not.toHaveBeenCalled();
   });
 });

@@ -7,7 +7,7 @@ export interface UrlFieldSync<TValue> {
   cancel: () => void;
 }
 
-interface UrlFieldSyncOptions<TValue> {
+export interface UrlFieldSyncOptions<TValue> {
   /** The URL's current value for this field. */
   committed: TValue;
   /** Writes a value to the URL. */
@@ -35,6 +35,11 @@ interface UrlFieldSyncOptions<TValue> {
  * overwrite newer input. Any other URL value came from elsewhere: it replaces
  * the field and drops any pending write. A queue rather than one "last written"
  * value, because two quick checkbox clicks put two writes in flight.
+ *
+ * A superseded navigation that returns the URL to where it started (a status
+ * box checked and unchecked quickly) can leave an earlier entry queued; a later
+ * external change to exactly that value is then taken for an echo. This is the
+ * same limit the single last-written value of useSearchParamDraft had.
  */
 export function useUrlFieldSync<TValue>({
   committed,
@@ -78,8 +83,11 @@ export function useUrlFieldSync<TValue>({
 
   const send = useCallback((value: TValue) => {
     const { committed: current, commit: toUrl, equals: same } = latest.current;
-    // An equal write leaves the URL as it is, so no echo would ever remove it.
-    if (!same(value, current)) unechoed.current.push(value);
+    // Where the URL is heading: the newest write in flight, else where it is.
+    // Writing there leaves it as it is, so no echo would ever remove the entry.
+    const queue = unechoed.current;
+    const heading = queue.length > 0 ? queue[queue.length - 1] : current;
+    if (!same(value, heading)) queue.push(value);
     toUrl(value);
   }, []);
 
