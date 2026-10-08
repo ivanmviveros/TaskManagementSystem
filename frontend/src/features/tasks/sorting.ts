@@ -51,18 +51,6 @@ export function parseOrdering(ordering: string | undefined): {
   };
 }
 
-/**
- * A click on `field`: flips it if it is the active field, else starts ascending.
- * Returns undefined when the result is DEFAULT_ORDERING, so the URL stays
- * canonical (D48).
- */
-export function nextOrdering(current: string | undefined, field: SortField): Ordering | undefined {
-  const active = parseOrdering(current);
-  const next: Ordering =
-    active.field === field && active.direction === "ascending" ? `-${field}` : field;
-  return next === DEFAULT_ORDERING ? undefined : next;
-}
-
 /** Each sortable column's header label, from the same list (D67). */
 export const SORT_LABEL = Object.fromEntries(
   SORT_FIELDS.map(({ field, label }) => [field, label]),

@@ -6,7 +6,6 @@ import {
   SORT_LABEL,
   SORT_OPTIONS,
   isOrdering,
-  nextOrdering,
   orderingToSorting,
   parseOrdering,
   sortingToOrdering,
@@ -29,26 +28,6 @@ describe("parseOrdering", () => {
 
   it("treats an unknown ordering as the default", () => {
     expect(parseOrdering("title")).toEqual({ field: "created_at", direction: "descending" });
-  });
-});
-
-describe("nextOrdering", () => {
-  it("starts an inactive column ascending", () => {
-    expect(nextOrdering(undefined, "due_date")).toBe("due_date");
-    expect(nextOrdering("-status", "due_date")).toBe("due_date");
-  });
-
-  it("flips the active column", () => {
-    expect(nextOrdering("due_date", "due_date")).toBe("-due_date");
-    expect(nextOrdering("-due_date", "due_date")).toBe("due_date");
-  });
-
-  it("flips the default: the first click on Created is ascending", () => {
-    expect(nextOrdering(undefined, "created_at")).toBe("created_at");
-  });
-
-  it("writes no ordering when the result is the default, so the URL stays canonical (D48)", () => {
-    expect(nextOrdering("created_at", "created_at")).toBeUndefined();
   });
 });
 

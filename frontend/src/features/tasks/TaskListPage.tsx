@@ -1,28 +1,31 @@
 import { useCreateStore, useSelector } from "@tanstack/react-store";
 import { useNavigate, useSearch } from "@tanstack/react-router";
+import { functionalUpdate } from "@tanstack/react-table";
 import clsx from "clsx";
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 
 import type { TaskListSearch } from "../../app/search-params";
 import { ButtonLink } from "../../components/ButtonLink";
 import { FormError } from "../../components/FormError";
-import { Pagination } from "../../components/Pagination";
+import { useAppTable } from "../../components/table/app-table";
 import { ApiError } from "../../lib/api-error";
-import { DEFAULT_PAGE_SIZE, type PageSize } from "../../lib/pagination";
+import { DEFAULT_PAGE_SIZE, routePaginationChange, type PageSize } from "../../lib/pagination";
 import { useAuth } from "../auth/hooks/useAuth";
 import { DeleteTaskDialog } from "./components/DeleteTaskDialog";
 import { TaskCard } from "./components/TaskCard";
 import { TaskFilters, type FilterPatch } from "./components/TaskFilters";
 import { TaskSortSelect } from "./components/TaskSortSelect";
-import { TaskTable } from "./components/TaskTable";
 import { useTaskActions } from "./hooks/useTaskActions";
 import { useTasks } from "./hooks/useTasks";
-import type { Ordering } from "./sorting";
+import { orderingToSorting, sortingToOrdering, type Ordering } from "./sorting";
 import { TaskActionsProvider } from "./task-actions-context";
 import { initialTaskActionsState, taskActions } from "./task-actions-store";
-import type { TaskFilters as Filters } from "./types";
+import { taskColumns } from "./task-columns";
+import type { TaskFilters as Filters, TaskListItem } from "./types";
 
 type SearchUpdate = (prev: TaskListSearch) => TaskListSearch;
+
+const NO_TASKS: TaskListItem[] = [];
 
 export function TaskListPage() {
   const { user } = useAuth();
@@ -88,6 +91,25 @@ export function TaskListPage() {
     void navigate({ search: (prev: TaskListSearch) => ({ ...prev, page: next }) });
   }
 
+  // Memoised because orderingToSorting returns a new array on every call and the
+  // table compares controlled state shallowly: unmemoised, it would be seen as a
+  // change and re-published on every render. The pagination and column-visibility
+  // objects are flat, so their memos are only for uniformity.
+  const sorting = useMemo(() => orderingToSorting(search.ordering), [search.ordering]);
+  const pagination = useMemo(() => ({ pageIndex: page - 1, pageSize }), [page, pageSize]);
+  const columnVisibility = useMemo(() => ({ assignee: showAssignee }), [showAssignee]);
+  // The table owns no state: the URL's sort, page and size go in, and every
+  // change goes back out as a navigation (D83–D85).
+  const table = useAppTable({
+    columns: taskColumns,
+    data: data?.results ?? NO_TASKS,
+    rowCount: data?.count ?? 0,
+    state: { sorting, pagination, columnVisibility },
+    onSortingChange: (updater) => setOrdering(sortingToOrdering(functionalUpdate(updater, sorting))),
+    onPaginationChange: (updater) =>
+      routePaginationChange(updater, pagination, { goToPage, setPageSize }),
+  });
+
   // A page past the end is a 404 — a stale link, or the last row of the last
   // page deleted. Page 1 never 404s, so this cannot loop (D54).
   const pageOutOfRange = error instanceof ApiError && error.status === 404 && page > 1;
@@ -139,30 +161,19 @@ export function TaskListPage() {
             aria-busy={isPlaceholderData}
             className={clsx("transition-opacity", isPlaceholderData && "opacity-60")}
           >
-            {/* Cards below lg, not md (D69): at md the table's six columns and two
-                action buttons do not fit, so badges and actions wrapped. */}
-            <div className="hidden overflow-x-auto lg:block">
-              <TaskTable
-                tasks={data.results}
-                showAssignee={showAssignee}
-                ordering={filters.ordering}
-                onOrderingChange={setOrdering}
-                listSearch={search}
-              />
-            </div>
-            <div className="lg:hidden">
-              {data.results.map((task) => (
-                <TaskCard key={task.id} task={task} showAssignee={showAssignee} listSearch={search} />
-              ))}
-            </div>
-
-            <Pagination
-              count={data.count}
-              page={page}
-              pageSize={pageSize}
-              onPageChange={goToPage}
-              onPageSizeChange={setPageSize}
-            />
+            <table.AppTable>
+              {/* Cards below lg, not md (D69): at md the table's six columns and two
+                  action buttons do not fit, so badges and actions wrapped. */}
+              <div className="hidden overflow-x-auto lg:block">
+                <table.TableView />
+              </div>
+              <div className="lg:hidden">
+                {table.getRowModel().rows.map((row) => (
+                  <TaskCard key={row.id} task={row.original} showAssignee={showAssignee} />
+                ))}
+              </div>
+              <table.Pagination />
+            </table.AppTable>
           </div>
         )}
 
