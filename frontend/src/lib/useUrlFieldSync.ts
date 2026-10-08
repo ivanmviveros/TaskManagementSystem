@@ -39,7 +39,7 @@ export interface UrlFieldSyncOptions<TValue> {
  * A superseded navigation that returns the URL to where it started (a status
  * box checked and unchecked quickly) can leave an earlier entry queued; a later
  * external change to exactly that value is then taken for an echo. This is the
- * same limit the single last-written value of useSearchParamDraft had.
+ * same limit a single last-written value has.
  */
 export function useUrlFieldSync<TValue>({
   committed,
@@ -84,7 +84,9 @@ export function useUrlFieldSync<TValue>({
   const send = useCallback((value: TValue) => {
     const { committed: current, commit: toUrl, equals: same } = latest.current;
     // Where the URL is heading: the newest write in flight, else where it is.
-    // Writing there leaves it as it is, so no echo would ever remove the entry.
+    // Writing there leaves it as it is: an entry for it would never be matched
+    // before the next URL change removes it, so skipping it just keeps the queue
+    // to the writes really in flight.
     const queue = unechoed.current;
     const heading = queue.length > 0 ? queue[queue.length - 1] : current;
     if (!same(value, heading)) queue.push(value);
@@ -107,9 +109,9 @@ export function useUrlFieldSync<TValue>({
     [clearTimer, send],
   );
 
-  // The queue is kept, as useSearchParamDraft kept its last-written value: a
-  // write already in flight still echoes, and Clear (cancel, then reset the
-  // URL) must not see that echo as news and bring the cleared value back.
+  // The queue is kept: a write already in flight still echoes, and Clear
+  // (cancel, then reset the URL) must not see that echo as news and bring the
+  // cleared value back.
   const cancel = useCallback(() => {
     clearTimer();
     latest.current.write(latest.current.committed);

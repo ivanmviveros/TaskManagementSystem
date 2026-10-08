@@ -109,6 +109,20 @@ describe("useUrlFieldSync: typed text, 300 ms", () => {
     hook.rerender({ committed: "", onCommit: commit });
     expect(write.mock.calls).toEqual([[""], [""]]);
   });
+
+  it("recognises the echo of a write back to the URL value while another is in flight", () => {
+    const { commit, write, hook } = setup("");
+    act(() => hook.result.current.onChange("om"));
+    act(() => vi.advanceTimersByTime(300));
+    act(() => hook.result.current.onChange(""));
+    act(() => vi.advanceTimersByTime(300));
+    act(() => hook.result.current.onChange("x"));
+    hook.rerender({ committed: "om", onCommit: commit });
+    hook.rerender({ committed: "", onCommit: commit });
+    expect(write).not.toHaveBeenCalled();
+    act(() => vi.advanceTimersByTime(300));
+    expect(commit).toHaveBeenLastCalledWith("x");
+  });
 });
 
 describe("useUrlFieldSync: immediate fields", () => {
@@ -139,27 +153,15 @@ describe("useUrlFieldSync: immediate fields", () => {
     // Writing where the URL already is changes nothing, so no echo follows. This
     // pins the outcome, not the guard: with the heading baseline an entry
     // queued for such a write is always cleared by the next URL change, so no
-    // observable behaviour depends on the guard (checked by simulation).
+    // observable behaviour depends on the guard: a duplicate of the heading
+    // value is dropped at the next URL change, either as news or by the later
+    // echo's slice.
     const { commit, write, hook } = setup("a", { delayMs: 0 });
     act(() => hook.result.current.onChange("a"));
     expect(commit).toHaveBeenCalledWith("a");
     hook.rerender({ committed: "b", onCommit: commit });
     hook.rerender({ committed: "a", onCommit: commit });
     expect(write.mock.calls).toEqual([["b"], ["a"]]);
-  });
-
-  it("recognises the echo of a write back to the URL value while another is in flight", () => {
-    const { commit, write, hook } = setup("");
-    act(() => hook.result.current.onChange("om"));
-    act(() => vi.advanceTimersByTime(300));
-    act(() => hook.result.current.onChange(""));
-    act(() => vi.advanceTimersByTime(300));
-    act(() => hook.result.current.onChange("x"));
-    hook.rerender({ committed: "om", onCommit: commit });
-    hook.rerender({ committed: "", onCommit: commit });
-    expect(write).not.toHaveBeenCalled();
-    act(() => vi.advanceTimersByTime(300));
-    expect(commit).toHaveBeenLastCalledWith("x");
   });
 
   it("recognises that echo for immediate fields too", () => {
