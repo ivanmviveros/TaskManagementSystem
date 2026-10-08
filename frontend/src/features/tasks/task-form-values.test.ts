@@ -37,7 +37,7 @@ describe("taskSnapshot", () => {
   });
 
   it("takes an existing task's values, with the due date as its UTC day (D76)", () => {
-    const snapshot = taskSnapshot({ ...DETAIL, due_date: "2026-09-28T12:00:00Z" });
+    const snapshot = taskSnapshot({ ...DETAIL, due_date: "2026-09-28T03:00:00Z" });
     expect(snapshot.defaults).toEqual({
       title: "Review the brief",
       description: "Read it closely.",
@@ -54,6 +54,22 @@ describe("toTaskInput", () => {
   const draft = taskSnapshot(DETAIL).defaults;
   const create = { canChooseAssignee: true, isEdit: false, initialStatus: undefined };
   const edit = { canChooseAssignee: true, isEdit: true, initialStatus: "PENDING" as const };
+
+  it("passes the text fields through and adds nothing else", () => {
+    expect(toTaskInput(draft, create)).toEqual({
+      title: "Review the brief",
+      description: "Read it closely.",
+      due_date: null,
+      assignee: OPERATOR.id,
+    });
+    expect(toTaskInput({ ...draft, status: "IN_PROGRESS" }, edit)).toEqual({
+      title: "Review the brief",
+      description: "Read it closely.",
+      due_date: null,
+      assignee: OPERATOR.id,
+      status: "IN_PROGRESS",
+    });
+  });
 
   it("sends no deadline as null, and a day as noon UTC (D76)", () => {
     expect(toTaskInput({ ...draft, due_date: "" }, create).due_date).toBeNull();

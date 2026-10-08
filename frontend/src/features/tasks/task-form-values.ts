@@ -41,6 +41,10 @@ export interface TaskSnapshot {
   initialTransitions: TaskStatus[];
 }
 
+/**
+ * The form's one snapshot (D81): the draft's defaults plus the status baseline
+ * (D40). A due date is seeded as the ISO string's UTC day (D76).
+ */
 export function taskSnapshot(task: TaskDetail | undefined): TaskSnapshot {
   return {
     defaults: {
@@ -55,6 +59,11 @@ export function taskSnapshot(task: TaskDetail | undefined): TaskSnapshot {
   };
 }
 
+/**
+ * The draft as the page passes it on (toward TaskCreateInput / TaskUpdateInput):
+ * a day goes out as noon UTC (D76), the assignee only when the actor may choose
+ * one (D32), the status only on an edit that changed it (D40).
+ */
 export function toTaskInput(
   draft: TaskFormDraft,
   {
