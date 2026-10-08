@@ -16,7 +16,7 @@
 - **`onDeleted` is an option of `useTaskActions(store, { onDeleted })`**, not an argument of `confirmDelete` (spec §4.2), so the dialog's `onConfirm` stays a zero-argument callback.
 - **Row actions arrive through context, not by calling `useTaskActions()` in each row** (spec §4.2). The page calls `useTaskActions(store)` once and puts `{ store, actions }` in context; rows read their busy flag from the store and call `actions`. One mutation observer per page instead of one per row.
 - **The delete-flow actions are named `beginDelete`, `cancelDelete`, `failDelete`, plus `clearDeleteError`** (spec §4.2 says `begin`, `cancel`, `fail`): the prefixes keep them distinct when spread beside `startAction`/`failAction`, and `clearDeleteError` is today's "reset the error before each attempt".
-- **`setServerErrors`/`clearServerErrors` take `ServerErrorTarget = Pick<AnyFormApi, "setErrorMap">`** (spec §5.2 says `AnyFormApi`): a concrete `FormApi` is not assignable to `AnyFormApi` (its `TSubmitMeta` is `never`), and the helpers only call `setErrorMap`.
+- **`setServerErrors`/`clearServerErrors` take `ServerErrorTarget = Pick<AnyFormApi, "setErrorMap" | "store">`** (spec §5.2 says `AnyFormApi`): a concrete `FormApi` is not assignable to `AnyFormApi` (its `TSubmitMeta` is `never`), and the helpers only call `setErrorMap` and key the form-message store on `store`.
 - **`SortHeader` is a plain component taking `column`**, not a registered `headerComponent` (spec §6.1). A registered header component needs `table.AppHeader` around each `<th>` to read its context; passing the column needs nothing. Markup, `aria-sort` and behaviour are as specified.
 
 ---
