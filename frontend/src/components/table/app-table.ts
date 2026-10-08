@@ -8,7 +8,7 @@ import { appTableFeatures } from "./table-features";
 /**
  * Every table's shared setup (D83, D84). The server sorts and pages; one sort at
  * a time, and a click on the active column flips it rather than removing it;
- * rows are keyed by id. A table owns no state: each page passes `state` from the
+ * rows are keyed by id, so every table's rows must carry a string `id`. A table owns no state: each page passes `state` from the
  * URL and writes changes back with `navigate`.
  */
 export const { useAppTable, createAppColumnHelper } = createTableHook({

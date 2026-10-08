@@ -22,6 +22,8 @@ export function Pagination() {
   // working Prev; the table's own getCanPreviousPage reads the raw index.
   const atStart = current === 1;
   const atEnd = current === totalPages;
+  /** Pages are 1-based here, the table's index 0-based; Table clamps below 0. */
+  const goToPage = (page: number) => table.setPageIndex(page - 1);
 
   return (
     <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2">
@@ -30,7 +32,7 @@ export function Pagination() {
           variant="secondary"
           size="sm"
           disabled={atStart}
-          onClick={() => table.setPageIndex(0)}
+          onClick={() => goToPage(1)}
           aria-label="First page"
         >
           « <span className="hidden sm:inline">First</span>
@@ -39,7 +41,7 @@ export function Pagination() {
           variant="secondary"
           size="sm"
           disabled={atStart}
-          onClick={() => table.setPageIndex(current - 2)}
+          onClick={() => goToPage(current - 1)}
           aria-label="Previous page"
         >
           ‹ <span className="hidden sm:inline">Prev</span>
@@ -62,7 +64,7 @@ export function Pagination() {
                   aria-label={`Page ${item}`}
                   aria-current={item === current ? "page" : undefined}
                   onClick={() => {
-                    if (item !== current) table.setPageIndex(item - 1);
+                    if (item !== current) goToPage(item);
                   }}
                 >
                   {item}
@@ -79,7 +81,7 @@ export function Pagination() {
           variant="secondary"
           size="sm"
           disabled={atEnd}
-          onClick={() => table.setPageIndex(current)}
+          onClick={() => goToPage(current + 1)}
           aria-label="Next page"
         >
           <span className="hidden sm:inline">Next</span> ›
@@ -88,7 +90,7 @@ export function Pagination() {
           variant="secondary"
           size="sm"
           disabled={atEnd}
-          onClick={() => table.setPageIndex(totalPages - 1)}
+          onClick={() => goToPage(totalPages)}
           aria-label="Last page"
         >
           <span className="hidden sm:inline">Last</span> »

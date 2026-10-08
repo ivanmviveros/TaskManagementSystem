@@ -1,5 +1,6 @@
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 
 import { routePaginationChange, type PageSize } from "../../lib/pagination";
@@ -119,7 +120,7 @@ describe("Pagination (through the table)", () => {
     expect(onPageChange).not.toHaveBeenCalled();
   });
 
-  it("offers exactly the page sizes the API allows, and a change goes back to page 1", async () => {
+  it("offers exactly the page sizes the API allows, and a size change routes only the size", async () => {
     const { onPageChange, onPageSizeChange } = renderPager();
     const select = screen.getByLabelText(/rows per page/i);
     expect(within(select).getAllByRole("option").map((option) => option.textContent)).toEqual([
@@ -138,5 +139,53 @@ describe("Pagination (through the table)", () => {
     renderPager();
     expect(screen.getByText("81–100 of 187")).toBeInTheDocument();
     expect(screen.getByText("Page 5 of 10")).toBeInTheDocument();
+  });
+
+  it("counts from the last page when the URL's page is out of range", async () => {
+    // ?page=99 of ten: the pager shows page 10, so Prev goes to 9, not 98.
+    const { onPageChange } = renderPager({ page: 99 });
+    expect(screen.getByRole("button", { name: "First page" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Previous page" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Next page" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Last page" })).toBeDisabled();
+    await userEvent.setup().click(screen.getByRole("button", { name: "Previous page" }));
+    expect(onPageChange).toHaveBeenCalledWith(9);
+  });
+});
+
+/** Like Harness, but the page and size live in state, so the table really re-renders. */
+function StatefulHarness() {
+  const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: 20 });
+  const table = useAppTable({
+    columns: [],
+    data: NO_ROWS,
+    rowCount: 187,
+    state: { pagination },
+    onPaginationChange: (updater) =>
+      routePaginationChange(updater, pagination, {
+        goToPage: (page) => setPagination((old) => ({ ...old, pageIndex: page - 1 })),
+        setPageSize: (pageSize) => setPagination({ pageIndex: 0, pageSize }),
+      }),
+  });
+  return (
+    <table.AppTable>
+      <table.Pagination />
+    </table.AppTable>
+  );
+}
+
+describe("Pagination following controlled state", () => {
+  it("moves with the page and the size it is given across renders", async () => {
+    render(<StatefulHarness />);
+    const user = userEvent.setup();
+    expect(screen.getByText("1–20 of 187")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Next page" }));
+    expect(screen.getByText("21–40 of 187")).toBeInTheDocument();
+    expect(screen.getByRole("button", { current: "page" })).toHaveAccessibleName("Page 2");
+
+    await user.selectOptions(screen.getByLabelText(/rows per page/i), "50");
+    expect(screen.getByText("Page 1 of 4")).toBeInTheDocument();
+    expect(screen.getByText("1–50 of 187")).toBeInTheDocument();
   });
 });

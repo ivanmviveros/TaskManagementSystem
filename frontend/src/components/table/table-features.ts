@@ -13,7 +13,11 @@ export const appTableFeatures = tableFeatures({
   rowSortingFeature,
   rowPaginationFeature,
   columnVisibilityFeature,
-  /** Type-only: what a column may carry in `meta`. */
+  /**
+   * Type-only: what a column may carry in `meta`. `cellClassName` replaces
+   * TableView's default `p-3` rather than adding to it, so it must include its
+   * own padding.
+   */
   columnMeta: {} as { cellClassName?: string },
 });
 
