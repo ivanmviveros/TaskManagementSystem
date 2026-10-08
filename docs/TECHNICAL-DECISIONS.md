@@ -307,9 +307,9 @@ through the table, and the form components in the filter panels.
 | # | Decision | Why | Origin |
 |---|---|---|---|
 | D79 | Every form draft is a TanStack Form; validation stays server-only | The engineer asked for TanStack Form in place of the hand-written forms. Three forms repeated one submit-and-error lifecycle, and frontend checks stay UX only (frontend §8). | Engineer + AI |
-| D80 | Field server errors live in Form's `onServer` slot, routed only to fields that show one; the form-level message lives in a small store beside the form; both are cleared before every submit | One mapper replaces three. A standing field-level `onServer` error makes Form refuse to submit, and Form writes the error map to every registered field. Form clears a form-level `onServer` error on the next change or blur, so the message, which today's forms keep until the next submit, lives outside the error map. | AI |
+| D80 | Field server errors live in Form's `onServer` slot, routed only to fields that show one; the form-level message lives in a small store beside the form; both are cleared before every submit | One mapper serves the task and user forms, and all three forms write and clear errors the same way. A standing field-level `onServer` error makes Form refuse to submit, and Form writes the error map to every registered field. Form clears a form-level `onServer` error on the next change or blur, so the message, which the hand-written forms kept until the next submit, lives outside the error map. | AI |
 | D81 | Every form's defaults are a mount-time snapshot | `useForm` re-applies changed defaults to an untouched form, and the detail queries refetch on focus. D40 depends on the snapshot. | AI |
-| D82 | The filter panels are Forms, kept in step with the URL by `useUrlFieldSync` | The engineer asked for the form components in the filters, for one visual identity. Form's own debounce cannot be cancelled, and D50's echo rules had to stay. Its echo queue compares a new write with where the URL is heading, not with the rendered value, and Clear puts every field to its cleared value as well as cancelling pending writes. | Engineer + AI |
+| D82 | The filter panels are Forms, kept in step with the URL by `useUrlFieldSync` | The engineer asked for the form components in the filters, for one visual identity. Form's own debounce cannot be cancelled, and D50's echo rules had to stay. `useUrlFieldSync`'s echo queue compares a new write with where the URL is heading, not with the rendered value, and the task panel's Clear puts every field to its cleared value as well as cancelling pending writes. | Engineer + AI |
 | D83 | Tables are built with `createTableHook` and own no state; the URL drives them | The engineer asked for TanStack Table in place of the hand-built tables. The URL stays the only copy of list state (D45). | Engineer + AI |
 | D84 | Table drives the sort cycle; two mappers replace `nextOrdering` | With removal off and ascending first, Table's cycle is exactly D67's. Columns that do not sort opt out, or they would announce `aria-sort`. | AI |
 | D85 | Pagination goes through the table; one handler chooses push or replace | The engineer chose one pagination model over the old props. Table's `setPageSize` keeps the top row in view, which is not D47's page-1 reset. | Engineer + AI |
@@ -335,7 +335,7 @@ recorded here.
 | **MailHog service** | root § Local Development (A4): add no services beyond those listed, "only what's actually needed" | Adds a `mailhog` SMTP sink, with its inbox on `:8025` | D37. Notification email is a core feature, and a local inbox lets it be read and checked the way a recipient sees it, with no real mail server. Recorded as an override on 2026-10-07; it was not listed when D37 was made. | AI |
 | **API docs tool** | `backend §35` (A34) names `drf-yasg` first | Uses `drf-spectacular` | D4. `§35` explicitly permits either. | Engineer + AI |
 | **Dockerfile dependency install** | root § Local Development example (A4) uses `requirements.txt` + `pip` | Uses `uv sync` from `pyproject.toml`/`uv.lock`, and installs `git` | D5 (required by the brief) and D3. `backend §44a` already mandates `pyproject.toml` over `requirements*.txt`, so the root example is the outdated part. | Engineer + AI |
-| **State ownership** | frontend §4 (A43): three kinds of state — server state in TanStack Query, shared client state in Context, local UI state in `useState` | Server state in TanStack Query. List view state (filters, sort, page, page size) in the URL, owned by the router. Form drafts in TanStack Form. The session, and each page's UI state, in TanStack Store, one store per page mount. `useState` only inside DOM and timing primitives | A list's view must survive refresh, Back and a shared link, and the dashboard's cards must be able to open it; only the URL does all four (D45). Form and Store replaced three copies of one submit-and-error lifecycle and the per-component flags (D79–D88), and per-mount stores keep `useState`'s lifetime while letting a row select only what it renders. Typed text keeps a short-lived draft in its form field (D82). | Engineer + AI |
+| **State ownership** | frontend §4 (A43): three kinds of state — server state in TanStack Query, shared client state in Context, local UI state in `useState` | Server state in TanStack Query. List view state (filters, sort, page, page size) in the URL, owned by the router. Form drafts in TanStack Form. The session, and each page's UI state, in TanStack Store, one store per page or component mount. `useState` only inside DOM and timing primitives and as a once-only snapshot of a form's defaults (D81) | A list's view must survive refresh, Back and a shared link, and the dashboard's cards must be able to open it; only the URL does all four (D45). Form and Store replaced three copies of one submit-and-error lifecycle and the per-component flags (D79–D88), and per-mount stores keep `useState`'s lifetime while letting a row select only what it renders. Typed text keeps a short-lived draft in its form field (D82). | Engineer + AI |
 
 ## Sources
 
@@ -948,21 +948,25 @@ docker compose logs backend worker | grep 01a117fc-4264-7521-9ae3-f93b790ec5c5
 
 The hand-written forms, tables and component state moved to TanStack Form 1.33, TanStack
 Table 9.2 and TanStack Store 0.11, with no change in behaviour: the existing tests pass
-unchanged apart from the three that tested replaced code directly (the URL draft hook, the
-pager, `nextOrdering`). Form and Table both run on Store, so all three share one
+with their assertions unchanged, apart from the three test files that tested replaced code
+directly (the URL draft hook, the pager, `nextOrdering`); the render harness now mounts
+`SessionProvider`, and the D40 focus-refetch test triggers its refetch through a shared helper
+that waits for the refetched data. Form and Table both run on Store, so all three share one
 `@tanstack/store` copy.
 
 - **Every form draft is a TanStack Form (D79).** The sign-in, task and user forms and both
   filter panels use one set of bound field components (`src/components/form/`), so they share
   one look and one error display. Validation stays on the server.
 - **Server errors live in Form's `onServer` slot (D80).** One mapper, `toServerErrors`,
-  replaces three copies of the same branching. It routes only the keys a form renders an
+  serves the task and user forms; sign-in keeps a small mapper of its own (its message always
+  shows, and a 429 has fixed copy), and all three write through `setServerErrors` /
+  `clearServerErrors`. `toServerErrors` routes only the keys a form renders an
   error for: Form writes the error map to every registered field, so an error keyed on
   `description` would otherwise appear under a textarea that never showed one. Field errors
   are cleared before every submit: while one stands, Form refuses to submit, so a second
   attempt would silently do nothing. The form-level message lives in a small store beside the
   form (`formMessageStore`), because Form clears a form-level `onServer` error on the next
-  change or blur, and today's forms keep it until the next submit.
+  change or blur, and the hand-written forms kept it until the next submit.
 - **Form defaults are a snapshot (D81).** `useForm` re-applies changed `defaultValues` to an
   untouched form on every render, and the detail queries refetch on window focus. The task
   and user edit forms therefore take their defaults once, as the `useState` initialisers they
@@ -973,25 +977,26 @@ pager, `nextOrdering`). Form and Table both run on Store, so all three share one
   not revert the second. A write is queued unless it equals where the URL is already heading
   (the last queued write, or the URL itself): comparing with the rendered URL let a write back
   to it go unqueued, and its echo then erased newer typing. `cancel()` keeps the queue, so a
-  write already in flight is still recognised as an echo; Clear also puts every field to its
-  cleared value, because an in-flight checkbox write could otherwise leave the box showing a
-  filter the URL no longer has. The hook owns its timer because Form's debounce cannot be
-  cancelled, and Clear must cancel a pending date.
+  write already in flight is still recognised as an echo; the task panel's Clear also puts every
+  field to its cleared value, because an in-flight checkbox write could otherwise leave the box
+  showing a filter the URL no longer has. The hook owns its timer because Form's debounce cannot
+  be cancelled, and Clear must cancel a pending date.
 - **Tables own no state (D83–D85).** `createTableHook` sets up server-side sorting and paging
-  once; each list passes `sorting`, `pagination` and column visibility from the URL and
-  writes every change back through `navigate`. Table's own click cycle replaced
+  once; the task list passes `sorting` and `pagination` from the URL and the Assignee column's
+  visibility from the role, the user list passes `pagination` only, with sorting off, and both
+  write every change back through `navigate`. Table's own click cycle replaced
   `nextOrdering`. The pager is a registered table component reading the table's pagination
   model; one handler turns a proposed change into a push (a page move) or a replace back to
   page 1 (a size change, D47), ignoring the page index Table computes to keep the top row in
   view. The pager counts from the current page clamped to the page count, as the old pager
-  did, so Prev from a stale out-of-range page goes to the last page rather than to the page
-  before the stale one.
+  did: on a stale out-of-range page it shows the last page as current, so Prev goes to the
+  page before it (9 of 10, not 98).
 - **The session and each page's UI state live in stores (D86–D88).** `SessionProvider`
-  creates the one session store, and `useAuth()` keeps its shape. Each list or detail page
-  creates its own store on mount, so its dialog and busy state start clean on every visit, as
-  `useState` did, and a row selects only its own busy flag. DOM and timing primitives
-  (`useFocusFirstError`, `useModalDialog`, `useDebouncedValue`, `useUrlFieldSync`) keep their
-  internal React state.
+  creates the one session store, and `useAuth()` keeps its shape. Each list or detail page,
+  and the assignee picker, creates its own store on mount, so its dialog and busy state start
+  clean on every visit, as `useState` did, and a row selects only its own busy flag. DOM and
+  timing primitives (`useFocusFirstError`, `useModalDialog`, `useDebouncedValue`,
+  `useUrlFieldSync`) keep their internal React state.
 - **Bundle size:** the production JS went from 120.46 kB to 149.15 kB gzip.
 
 ## Known limitations and exit criteria

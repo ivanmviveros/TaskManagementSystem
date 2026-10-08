@@ -25,12 +25,12 @@ The API base URL comes from `VITE_API_BASE_URL` and defaults to `http://localhos
 ```text
 src/
 ├── app/          router (routes, role guards, search-param validation), providers, layout shell
-├── components/   shared primitives (Button, ButtonLink, form error, focus helpers); form/ — the app form and its fields; table/ — the app table, TableView, Pagination
+├── components/   shared primitives (Button, ButtonLink, form error, focus helpers); form/ — the app form and its fields; table/ — the app table, TableView, SortHeader, Pagination
 ├── features/
 │   ├── auth/       sign-in page, session store and SessionProvider, auth service
 │   ├── dashboard/  statistics page and tiles
 │   ├── tasks/      list, detail, create/edit form, filters, sorting, assignee picker
-│   └── users/      list, create/edit form, delete dialog
+│   └── users/      list, create/edit form, filters, delete dialog
 ├── lib/          API client (token in memory, single-flight refresh), API errors, dates, pagination, URL field sync, store helpers
 └── test/         MSW server and handlers, render harness, console guard
 ```

@@ -72,7 +72,7 @@ produces a spec, then a plan; the engineer reviews both; then execution runs.
 | 4. Browser-check fixes | Five issues from the agent's Playwright pass, assignee search, the unassign bug, the app title | Direct fixes | D59–D65 |
 | 5. QA | A Playwright QA report; the engineer added the missing sort indicator; then fixes for all 14 findings | QA report, spec, then a 15-task plan | D66–D78 |
 | 6. Structured logging | Structured logs with a request id held in context variables, so one request's lines can be found together. This closed the A30 gap found while documenting | Built test-first in an isolated git worktree, then checked against a live dev server and a real Celery worker | D89–D93 |
-| 7. TanStack refactor | TanStack Form, Table and Store in place of the hand-written forms, tables and component state. The engineer chose a mergeable migration, stores for component state, pagination through the table, the form components in the filters, and a full browser QA re-test | A spec and a 23-task plan, both checked against the installed libraries with a typechecked prototype run under Node and jsdom; then execution in a git worktree and a Playwright re-test | D79–D88 |
+| 7. TanStack refactor | TanStack Form, Table and Store in place of the hand-written forms, tables and component state. The engineer chose a mergeable migration, stores for component state, pagination through the table, the form components in the filters, and a full browser QA re-test | A spec and a 23-task plan, both checked against the installed libraries with a typechecked prototype run under Node and jsdom; then execution in a git worktree, followed by a Playwright re-test | D79–D88 |
 
 ## The output
 
@@ -304,8 +304,8 @@ red — the existing D40 test passes even without the snapshot, because both sid
 comparison follow the refetch — and that `main` had moved on under the branch with a docs
 reorganisation.
 
-Execution, with a spec and a code-quality review after every task, found eight more, each fixed
-with a test that failed first:
+Execution, with a spec and a code-quality review after every task, found eight more, each now
+covered by a test shown to fail without its fix:
 - Form clears a form-level `onServer` error on the next change or blur, so the sign-in form's
   message would have vanished as the user typed (D80).
 - Only a field-level server error blocks the next submit, so the planned re-submit test, which
@@ -320,5 +320,5 @@ with a test that failed first:
   reproduced in jsdom (D82).
 - No existing test noticed if a filter field stopped following a URL change made elsewhere
   (Back, Clear, a link); new tests break if any field's sync is removed (D82).
-- The table's own page moves read the raw page index, so the pager kept its own clamped count
-  for parity on stale pages (D85).
+- The table's own page moves read the raw page index, so the pager keeps its own count,
+  clamped to the page count as the old pager's was (D85).

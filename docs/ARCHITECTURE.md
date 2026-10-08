@@ -486,7 +486,7 @@ Each kind of state has exactly one home:
 | List view state | the URL, owned by the router (D45) | filters, sort, page, page size |
 | Form drafts | TanStack Form (D79, D81) | the sign-in, task and user forms; the filter panels' fields, kept in step with the URL (D82) |
 | Table model | TanStack Table, controlled from the URL (D83–D85) | rows, sort display, page count |
-| Page UI state | TanStack Store, one store per page mount (D87) | the delete dialog's target and error, the busy row, the combobox's open state |
+| Page UI state | TanStack Store, one store per page or component mount (D87) | the delete dialog's target and error, the busy row, the combobox's open state |
 | Access token | `lib/api-client.ts` module memory | never `localStorage` or `sessionStorage` |
 
 | Route | Roles | Screen |
@@ -515,7 +515,7 @@ Operators go to `/dashboard`.
 │   ├── app/                    router, providers, layout shell, URL search validation
 │   ├── components/             shared primitives (Button, dialogs' focus trap); form/ (app form and fields); table/ (app table, pager)
 │   ├── features/               auth, dashboard, tasks, users
-│   ├── lib/                    API client, errors, dates, pagination helpers
+│   ├── lib/                    API client, errors, dates, pagination helpers, URL field sync, store helpers
 │   └── test/                   MSW server, render harness, console guard
 └── docs/                       architecture, decisions, GenAI workflow, QA report, specs, plans
 ```

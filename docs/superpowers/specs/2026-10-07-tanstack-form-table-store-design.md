@@ -403,7 +403,7 @@ with no `<form>` element, so Enter submits nothing.
 |---|---|
 | `table-features.ts` | `tableFeatures({ rowSortingFeature, rowPaginationFeature, columnVisibilityFeature, columnMeta: {} as { cellClassName?: string } })`. No row-model slots: the server sorts and pages. `columnMeta` is v9's type-only slot for per-table column meta, used instead of augmenting the global `ColumnMeta` interface |
 | `table-contexts.ts` | `createTableHookContexts<typeof features>()`. A module of its own, which keeps the factory → components → factory imports acyclic; Table's docs warn that a cycle breaks Vite HMR. **`TableView` and `Pagination` import their context hooks from this module, never from `app-table.ts`** |
-| `app-table.ts` | `createTableHook({ features, getRowId: (row: { id: string }) => row.id, manualSorting: true, manualPagination: true, autoResetPageIndex: false, enableMultiSort: false, enableSortingRemoval: false, sortDescFirst: false, tableComponents: { TableView, Pagination }, …contexts })` (`SortHeader` is not registered as a `headerComponent`: a registered header component needs `table.AppHeader` around each `<th>`, so it is a plain component taking `column`) → `useAppTable`, `createAppColumnHelper`, `useTableContext` |
+| `app-table.ts` | `createTableHook({ features, getRowId: (row: { id: string }) => row.id, manualSorting: true, manualPagination: true, autoResetPageIndex: false, enableMultiSort: false, enableSortingRemoval: false, sortDescFirst: false, tableComponents: { TableView, Pagination }, …contexts })` (`SortHeader` is not registered as a `headerComponent`: a registered header component needs `table.AppHeader` around each `<th>`, so it is a plain component taking `column`) → `useAppTable`, `createAppColumnHelper` (`useTableContext` comes from `table-contexts.ts`) |
 | `TableView.tsx` | Today's `<table>` markup through `FlexRender` (§6.2) |
 | `SortHeader.tsx` | Today's sort button and glyph, taking `column` as a prop (§6.2) |
 | `Pagination.tsx` | Moved from `components/Pagination.tsx`, now reading the table (§6.3) |
@@ -451,13 +451,18 @@ export function routePaginationChange(
 | `count` | `table.getRowCount()` |
 | page count | `max(1, table.getPageCount())` |
 | current page | `state.pagination.pageIndex + 1`, clamped |
-| First / Prev / page *n* / Next / Last | `firstPage()`, `previousPage()`, `setPageIndex(n - 1)`, `nextPage()`, `lastPage()` |
-| disabled states | `!getCanPreviousPage()`, `!getCanNextPage()` |
+| First / Prev / page *n* / Next / Last | `setPageIndex` to page 1 / current − 1 / *n* / current + 1 / last, from the clamped current page |
+| disabled states | from the clamped current page (first page, last page), not `getCanPreviousPage()` / `getCanNextPage()` |
 | Rows per page | `setPageSize(n)` over `PAGE_SIZES` |
 
 The markup, labels, `aria-current="page"`, the numbered window (`pageWindow()`, D49), the
 per-page keys (D55), "first–last of count", and the "Page n of m" text below `sm` are all
 unchanged. The page number is never written by Table itself (`autoResetPageIndex: false`).
+
+Moves and disabled states come from the clamped current page rather than Table's `firstPage()`,
+`previousPage()` and `getCanPreviousPage()`, which read the raw page index: this keeps parity with
+the old pager on a stale out-of-range page, where the last page shows as current and Prev goes
+to the page before it.
 
 ### 6.4 Task table (D84)
 
