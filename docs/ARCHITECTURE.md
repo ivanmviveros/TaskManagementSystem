@@ -7,7 +7,7 @@ They began as copies of the [design spec](superpowers/specs/2026-10-05-task-mana
 diagrams. Since then, the data model was redrawn from the live schema, and the layering and frontend
 diagrams are new. Where this document and the spec differ, this document is current. The *why*
 behind each element is in [TECHNICAL-DECISIONS.md](TECHNICAL-DECISIONS.md), referenced by number
-(D1–D78 and D89–D93).
+(D1–D94).
 
 ## Containers
 
@@ -20,7 +20,7 @@ service list:
 ```mermaid
 graph TB
     subgraph browser["Browser"]
-        UI["React SPA<br/>TanStack Router + Query"]
+        UI["React SPA<br/>TanStack Router, Query, Form, Table and Store"]
     end
 
     subgraph compose["Docker Compose"]
@@ -458,12 +458,12 @@ flowchart TB
 
     subgraph features["features/ (auth, dashboard, tasks, users)"]
         PAGE["Pages<br/>TaskListPage, TaskFormPage, ..."]
-        COMP["components/<br/>TaskTable, TaskForm, ..."]
+        COMP["components/<br/>TaskForm, TaskFilters, TaskCard, ..."]
         HOOKS["hooks/<br/>TanStack Query: useTasks, useTaskMutations, ..."]
         SVC["services/<br/>task-service.ts, ..."]
     end
 
-    AUTH["features/auth/AuthContext<br/>current user"]
+    AUTH["features/auth/SessionProvider<br/>session store: current user"]
     CLIENT["lib/api-client.ts<br/>access token in memory, Bearer header,<br/>single-flight refresh, typed ApiError"]
     API[("Django API<br/>/api/v1")]
 
@@ -482,9 +482,11 @@ Each kind of state has exactly one home:
 | Kind | Home | Examples |
 |---|---|---|
 | Server state | TanStack Query | task list, task detail, user list, stats |
-| Shared client state | React Context | the signed-in user |
+| Session | TanStack Store, one session store from `SessionProvider` (D86) | the signed-in user |
 | List view state | the URL, owned by the router (D45) | filters, sort, page, page size |
-| Local UI state | `useState` | form drafts, dialog open or closed |
+| Form drafts | TanStack Form (D79, D81) | the sign-in, task and user forms; the filter panels' fields, kept in step with the URL (D82) |
+| Table model | TanStack Table, controlled from the URL (D83–D85) | rows, sort display, page count |
+| Page UI state | TanStack Store, one store per page mount (D87) | the delete dialog's target and error, the busy row, the combobox's open state |
 | Access token | `lib/api-client.ts` module memory | never `localStorage` or `sessionStorage` |
 
 | Route | Roles | Screen |
@@ -511,7 +513,7 @@ Operators go to `/dashboard`.
 │       └── notifications/      Celery email tasks, dedupe, overdue sweep
 ├── frontend/src/
 │   ├── app/                    router, providers, layout shell, URL search validation
-│   ├── components/             shared primitives: Button, Pagination, dialogs' focus trap
+│   ├── components/             shared primitives (Button, dialogs' focus trap); form/ (app form and fields); table/ (app table, pager)
 │   ├── features/               auth, dashboard, tasks, users
 │   ├── lib/                    API client, errors, dates, pagination helpers
 │   └── test/                   MSW server, render harness, console guard

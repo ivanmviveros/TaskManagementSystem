@@ -21,7 +21,7 @@ message, focus move and ARIA attribute stays as it is today. The backend is not 
 |---|---|---|
 | Forms | `LoginPage` (5 `useState`), `TaskForm` (10), `UserForm` (9). Each repeats `fieldErrors` / `formError` / `isSubmitting` and its own `ApiError` → field mapping | `useAppForm` with bound field components and one server-error mapper (§5) |
 | Filter panels | `TaskFilters`, and the filter `<section>` inline in `UserListPage`. Checkboxes and selects write the URL directly; typed text goes through `useSearchParamDraft` | `useAppForm` with the same field components in a compact density, and `useUrlFieldSync` (§5.6) |
-| Tables | `TaskTable` (sort buttons through `sorting.ts`) and `UserTable`, hand-built. Cards render separately. `Pagination` takes `count` / `page` / `pageSize` and two callbacks | `useAppTable`, controlled from the URL. `TableView`, `SortHeader` and `Pagination` are registered table components. Cards render from the same row model (§6) |
+| Tables | `TaskTable` (sort buttons through `sorting.ts`) and `UserTable`, hand-built. Cards render separately. `Pagination` takes `count` / `page` / `pageSize` and two callbacks | `useAppTable`, controlled from the URL. `TableView` and `Pagination` are registered table components; `SortHeader` is a plain component taking `column`. Cards render from the same row model (§6) |
 | Component state | `TaskListPage` (4 `useState`), `TaskDetailPage` (3), `UserListPage` (2), `AssigneeCombobox` (3), `AuthContext` (2) | One session store. Per-mount feature stores (§4) |
 | Dead code | `src/App.tsx`, the Vite template's counter, imported nowhere, and the files only it uses: `src/App.css`, `src/assets/hero.png`, `react.svg`, `vite.svg` | Deleted |
 
@@ -402,10 +402,10 @@ with no `<form>` element, so Enter submits nothing.
 | Module | Contents |
 |---|---|
 | `table-features.ts` | `tableFeatures({ rowSortingFeature, rowPaginationFeature, columnVisibilityFeature, columnMeta: {} as { cellClassName?: string } })`. No row-model slots: the server sorts and pages. `columnMeta` is v9's type-only slot for per-table column meta, used instead of augmenting the global `ColumnMeta` interface |
-| `table-contexts.ts` | `createTableHookContexts<typeof features>()`. A module of its own, which keeps the factory → components → factory imports acyclic; Table's docs warn that a cycle breaks Vite HMR. **`TableView`, `SortHeader` and `Pagination` import their context hooks from this module, never from `app-table.ts`** |
-| `app-table.ts` | `createTableHook({ features, getRowId: (row: { id: string }) => row.id, manualSorting: true, manualPagination: true, autoResetPageIndex: false, enableMultiSort: false, enableSortingRemoval: false, sortDescFirst: false, tableComponents: { TableView, Pagination }, headerComponents: { SortHeader }, …contexts })` → `useAppTable`, `createAppColumnHelper`, `useTableContext` |
+| `table-contexts.ts` | `createTableHookContexts<typeof features>()`. A module of its own, which keeps the factory → components → factory imports acyclic; Table's docs warn that a cycle breaks Vite HMR. **`TableView` and `Pagination` import their context hooks from this module, never from `app-table.ts`** |
+| `app-table.ts` | `createTableHook({ features, getRowId: (row: { id: string }) => row.id, manualSorting: true, manualPagination: true, autoResetPageIndex: false, enableMultiSort: false, enableSortingRemoval: false, sortDescFirst: false, tableComponents: { TableView, Pagination }, …contexts })` (`SortHeader` is not registered as a `headerComponent`: a registered header component needs `table.AppHeader` around each `<th>`, so it is a plain component taking `column`) → `useAppTable`, `createAppColumnHelper`, `useTableContext` |
 | `TableView.tsx` | Today's `<table>` markup through `FlexRender` (§6.2) |
-| `SortHeader.tsx` | Today's sort button and glyph (§6.2) |
+| `SortHeader.tsx` | Today's sort button and glyph, taking `column` as a prop (§6.2) |
 | `Pagination.tsx` | Moved from `components/Pagination.tsx`, now reading the table (§6.3) |
 
 ### 6.2 `TableView` and `SortHeader`

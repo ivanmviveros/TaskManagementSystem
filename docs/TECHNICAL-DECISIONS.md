@@ -1,7 +1,6 @@
 # Technical decisions
 
-Every implementation decision in this project (D1–D78 and D89–D93), why it was made, and who
-made it. D79–D88 are reserved by the TanStack refactor design on its own branch. The
+Every implementation decision in this project (D1–D94), why it was made, and who made it. The
 [README](../README.md) lists only the headline ones. Each decision's full design context lives in the
 spec of the iteration that introduced it ([Sources](#sources)).
 
@@ -32,8 +31,8 @@ substance. Examples are backend §49's ban on `utils.py` (D10) and frontend §8'
 backend business rules" (D39). The general engineering principles in root §2, such as "prefer
 framework mechanisms", do not count, or every decision would.
 
-Of the 84 numbered decisions (D1–D78, D89–D93 and D8a), 10 are **Engineer**, 24
-**Engineer + AI** and 50 **AI**. The numbered log is mostly design detail. The choices that define the system are the
+Of the 95 numbered decisions (D1–D94 and D8a), 10 are **Engineer**, 31
+**Engineer + AI** and 54 **AI**. The numbered log is mostly design detail. The choices that define the system are the
 engineer's, and they come from the two sources below, which predate every numbered decision:
 - the **conventions in `AGENTS.md`**: the layering, the security posture, the testing bar and the
   frontend's state model;
@@ -147,7 +146,7 @@ numbered decisions built on it.
 |---|---|---|---|
 | A41 | Data flows UI → feature hook → feature service → one central API client | §1, §5 | `features/*/hooks`, `features/*/services`, `lib/api-client.ts` |
 | A42 | Code organised by feature; shared primitives in `components/`; layers only when earned | §3 | `src/features/{auth,dashboard,tasks,users}` |
-| A43 | Three kinds of state, each with one tool (TanStack Query, Context, `useState`); never copy server state | §4 | As written, plus the URL for list state, which is an override |
+| A43 | Three kinds of state, each with one tool (TanStack Query, Context, `useState`); never copy server state | §4 | Query for server state; the URL for list state; Form for drafts; Store for the session and each page's UI state — an override |
 | A44 | Access token in memory; never touch the refresh cookie; a 401 means the session has expired | §5 | Single-flight refresh in `api-client.ts`; a session-expired handler |
 | A45 | Hiding a control is UX, not authorization; never duplicate a business rule the backend enforces | §5, §8 | The API reports `can_delete`, `allowed_transitions` and the assignable users (D39, D61) |
 | A46 | Tailwind utilities, mobile-first, design tokens over arbitrary values, `clsx`; repeated styles become components, not classes | §6 | Tokens in `tailwind.config.js`; `Button` and `ButtonLink` components; responsive cards |
@@ -298,6 +297,26 @@ From the [QA report](qa/2026-10-07-frontend-qa-report.md); the engineer chose th
 | D92 | One access line per request, from `RequestIdMiddleware`; Django's 4xx lines and runserver's line are dropped | Both duplicate the access line without a request id, and runserver's logs the full query string. Unhandled errors are still logged by Django, inside the request, with a traceback. | AI |
 | D93 | Events are logged as a name plus fields, and paths without their query string | Applies backend §28 (A30): fields can be filtered and aggregated, while values packed into a message cannot. A query string can hold search terms and email addresses. | Engineer + AI |
 
+### TanStack Form, Table and Store (iteration 7)
+
+From the [TanStack refactor design](superpowers/specs/2026-10-07-tanstack-form-table-store-design.md).
+The engineer chose the scope (forms, tables and component state), a mergeable migration with no
+change in behaviour, stores for component state rather than for shared state only, pagination
+through the table, and the form components in the filter panels.
+
+| # | Decision | Why | Origin |
+|---|---|---|---|
+| D79 | Every form draft is a TanStack Form; validation stays server-only | The engineer asked for TanStack Form in place of the hand-written forms. Three forms repeated one submit-and-error lifecycle, and frontend checks stay UX only (frontend §8). | Engineer + AI |
+| D80 | Field server errors live in Form's `onServer` slot, routed only to fields that show one; the form-level message lives in a small store beside the form; both are cleared before every submit | One mapper replaces three. A standing field-level `onServer` error makes Form refuse to submit, and Form writes the error map to every registered field. Form clears a form-level `onServer` error on the next change or blur, so the message, which today's forms keep until the next submit, lives outside the error map. | AI |
+| D81 | Every form's defaults are a mount-time snapshot | `useForm` re-applies changed defaults to an untouched form, and the detail queries refetch on focus. D40 depends on the snapshot. | AI |
+| D82 | The filter panels are Forms, kept in step with the URL by `useUrlFieldSync` | The engineer asked for the form components in the filters, for one visual identity. Form's own debounce cannot be cancelled, and D50's echo rules had to stay. Its echo queue compares a new write with where the URL is heading, not with the rendered value, and Clear puts every field to its cleared value as well as cancelling pending writes. | Engineer + AI |
+| D83 | Tables are built with `createTableHook` and own no state; the URL drives them | The engineer asked for TanStack Table in place of the hand-built tables. The URL stays the only copy of list state (D45). | Engineer + AI |
+| D84 | Table drives the sort cycle; two mappers replace `nextOrdering` | With removal off and ascending first, Table's cycle is exactly D67's. Columns that do not sort opt out, or they would announce `aria-sort`. | AI |
+| D85 | Pagination goes through the table; one handler chooses push or replace | The engineer chose one pagination model over the old props. Table's `setPageSize` keeps the top row in view, which is not D47's page-1 reset. | Engineer + AI |
+| D86 | One session store per app replaces `AuthContext`; `useAuth()` keeps its shape | Shared client state with selector reads. One store per mount keeps tests isolated, and no caller of `useAuth()` changes. | Engineer + AI |
+| D87 | Each page's UI state lives in a per-mount store; a row selects its own busy flag | The engineer chose stores for component state over `useState`, a broader override of frontend §4. One store per mount keeps `useState`'s lifetime. | Engineer + AI |
+| D88 | DOM and timing primitives keep their internal React state | A store would add indirection with no second reader. | AI |
+
 ### Fixes found in use
 
 | # | Decision | Why | Origin |
@@ -316,7 +335,7 @@ recorded here.
 | **MailHog service** | root § Local Development (A4): add no services beyond those listed, "only what's actually needed" | Adds a `mailhog` SMTP sink, with its inbox on `:8025` | D37. Notification email is a core feature, and a local inbox lets it be read and checked the way a recipient sees it, with no real mail server. Recorded as an override on 2026-10-07; it was not listed when D37 was made. | AI |
 | **API docs tool** | `backend §35` (A34) names `drf-yasg` first | Uses `drf-spectacular` | D4. `§35` explicitly permits either. | Engineer + AI |
 | **Dockerfile dependency install** | root § Local Development example (A4) uses `requirements.txt` + `pip` | Uses `uv sync` from `pyproject.toml`/`uv.lock`, and installs `git` | D5 (required by the brief) and D3. `backend §44a` already mandates `pyproject.toml` over `requirements*.txt`, so the root example is the outdated part. | Engineer + AI |
-| **A fourth kind of state** | frontend §4 (A43): three kinds of state — server state in TanStack Query, shared client state in Context, local UI state in `useState` | List view state (filters, sort, page, page size) lives in the URL, owned by the router | A list's view must survive refresh, Back and a shared link, and the dashboard's cards must be able to open it. Only the URL does all four. Typed text keeps a short-lived local draft (D50), which is §4's local UI state. | Engineer + AI |
+| **State ownership** | frontend §4 (A43): three kinds of state — server state in TanStack Query, shared client state in Context, local UI state in `useState` | Server state in TanStack Query. List view state (filters, sort, page, page size) in the URL, owned by the router. Form drafts in TanStack Form. The session, and each page's UI state, in TanStack Store, one store per page mount. `useState` only inside DOM and timing primitives | A list's view must survive refresh, Back and a shared link, and the dashboard's cards must be able to open it; only the URL does all four (D45). Form and Store replaced three copies of one submit-and-error lifecycle and the per-component flags (D79–D88), and per-mount stores keep `useState`'s lifetime while letting a row select only what it renders. Typed text keeps a short-lived draft in its form field (D82). | Engineer + AI |
 
 ## Sources
 
@@ -329,8 +348,8 @@ recorded here.
 | 4. List navigation | D45–D58 | [list-navigation-design](superpowers/specs/2026-10-06-list-navigation-design.md) | [plan](superpowers/plans/2026-10-06-list-navigation.md) |
 | 4. Browser-check fixes | D59–D65 | None: small fixes, recorded only here | — |
 | 5. QA fixes | D66–D78 | [qa-fixes-iteration-5-design](superpowers/specs/2026-10-07-qa-fixes-iteration-5-design.md) | [plan](superpowers/plans/2026-10-07-qa-fixes-iteration-5.md) |
-| — | D79–D88 | Reserved by the TanStack Form, Table and Store refactor design, on branch `refactor/tanstack-form-table-store`; not yet merged | — |
 | 6. Structured logging | D89–D93 | None: built test-first from one prompt, and recorded here | — |
+| 7. TanStack Form, Table and Store | D79–D88 | [tanstack-form-table-store-design](superpowers/specs/2026-10-07-tanstack-form-table-store-design.md) | [plan](superpowers/plans/2026-10-07-tanstack-form-table-store.md) |
 
 ## Rationale in depth
 
@@ -925,6 +944,56 @@ processes' logs for it:
 docker compose logs backend worker | grep 01a117fc-4264-7521-9ae3-f93b790ec5c5
 ```
 
+### TanStack Form, Table and Store (D79–D88)
+
+The hand-written forms, tables and component state moved to TanStack Form 1.33, TanStack
+Table 9.2 and TanStack Store 0.11, with no change in behaviour: the existing tests pass
+unchanged apart from the three that tested replaced code directly (the URL draft hook, the
+pager, `nextOrdering`). Form and Table both run on Store, so all three share one
+`@tanstack/store` copy.
+
+- **Every form draft is a TanStack Form (D79).** The sign-in, task and user forms and both
+  filter panels use one set of bound field components (`src/components/form/`), so they share
+  one look and one error display. Validation stays on the server.
+- **Server errors live in Form's `onServer` slot (D80).** One mapper, `toServerErrors`,
+  replaces three copies of the same branching. It routes only the keys a form renders an
+  error for: Form writes the error map to every registered field, so an error keyed on
+  `description` would otherwise appear under a textarea that never showed one. Field errors
+  are cleared before every submit: while one stands, Form refuses to submit, so a second
+  attempt would silently do nothing. The form-level message lives in a small store beside the
+  form (`formMessageStore`), because Form clears a form-level `onServer` error on the next
+  change or blur, and today's forms keep it until the next submit.
+- **Form defaults are a snapshot (D81).** `useForm` re-applies changed `defaultValues` to an
+  untouched form on every render, and the detail queries refetch on window focus. The task
+  and user edit forms therefore take their defaults once, as the `useState` initialisers they
+  replaced did, so D40 still holds; the filter panels take theirs from the URL once.
+- **The filter panels are Forms, kept in step with the URL by `useUrlFieldSync` (D82).** It
+  replaces `useSearchParamDraft` with the same rules (D46, D50) plus a queue of writes not
+  yet echoed: two quick checkbox clicks put two navigations in flight, and the first echo must
+  not revert the second. A write is queued unless it equals where the URL is already heading
+  (the last queued write, or the URL itself): comparing with the rendered URL let a write back
+  to it go unqueued, and its echo then erased newer typing. `cancel()` keeps the queue, so a
+  write already in flight is still recognised as an echo; Clear also puts every field to its
+  cleared value, because an in-flight checkbox write could otherwise leave the box showing a
+  filter the URL no longer has. The hook owns its timer because Form's debounce cannot be
+  cancelled, and Clear must cancel a pending date.
+- **Tables own no state (D83–D85).** `createTableHook` sets up server-side sorting and paging
+  once; each list passes `sorting`, `pagination` and column visibility from the URL and
+  writes every change back through `navigate`. Table's own click cycle replaced
+  `nextOrdering`. The pager is a registered table component reading the table's pagination
+  model; one handler turns a proposed change into a push (a page move) or a replace back to
+  page 1 (a size change, D47), ignoring the page index Table computes to keep the top row in
+  view. The pager counts from the current page clamped to the page count, as the old pager
+  did, so Prev from a stale out-of-range page goes to the last page rather than to the page
+  before the stale one.
+- **The session and each page's UI state live in stores (D86–D88).** `SessionProvider`
+  creates the one session store, and `useAuth()` keeps its shape. Each list or detail page
+  creates its own store on mount, so its dialog and busy state start clean on every visit, as
+  `useState` did, and a row selects only its own busy flag. DOM and timing primitives
+  (`useFocusFirstError`, `useModalDialog`, `useDebouncedValue`, `useUrlFieldSync`) keep their
+  internal React state.
+- **Bundle size:** the production JS went from 120.46 kB to 149.15 kB gzip.
+
 ## Known limitations and exit criteria
 
 ### Accepted risks
@@ -942,6 +1011,7 @@ about it, so the next person decides rather than rediscovers.
 | **A git-pinned dependency sits outside advisory tooling** | `pip-audit` and Dependabot cannot track a git SHA, and this is the **authentication** library. | The D3 exit criterion below; `compat` signals when a PyPI release can replace it. |
 | **Django 6.0 is a security-fix-only branch** | 6.0 left mainstream support when 6.1 shipped (Aug 2026). | The same exit criterion. |
 | **Two Admins can remove each other** | D66 stops an Admin acting on their own account, but a "last active Admin" rule was declined: one Admin can deactivate another, who could have done the same. With no restore endpoint (D20), recovering from zero Admins needs shell access (`createsuperuser`). | A service check that refuses to deactivate, delete or demote the last active Admin, under a row lock so two concurrent requests cannot both pass it. |
+| **TanStack Store is pre-1.0** | The session and page stores use `createStore`, `useCreateStore`, `createStoreContext` and `useSelector` from `@tanstack/react-store` 0.11, and Form and Table depend on the same package. A 0.x minor release may change those APIs. | The `^0.11.2` range admits patch releases only, and Form and Table resolve to the same copy. See the exit criterion. |
 
 ### Exit criteria
 
@@ -952,6 +1022,7 @@ about it, so the next person decides rather than rediscovers.
 | `ruff format` rewrites Python code blocks embedded in Markdown, which would edit the read-only `AGENTS.md` briefs | `AGENTS.md` is in `extend-exclude` in `backend/pyproject.toml`. Remove it only if ruff gains a narrower setting for embedded code. |
 | **`auth.E003` is silenced** in `SILENCED_SYSTEM_CHECKS` — see below | Django's `Options.total_unique_constraints` learns to count partial constraints. Until then the check cannot be satisfied, only silenced. |
 | **The SPA and the API must be deployed same-site** — see below | Serve both from one registrable domain (the recommendation), or move to `SameSite=Lax`/`None` and add explicit CSRF token validation on `/api/v1/auth/refresh/` and `/logout/`. |
+| TanStack Store is pre-1.0 (D86–D88) | Store 1.0 ships: re-check `createStore`, `useCreateStore`, `createStoreContext` and `useSelector`, widen the range, and remove the accepted risk. |
 | ~~drf-spectacular generator warnings~~ — **resolved.** `get_serializer_class()` and `get_queryset()` now tolerate the request-less schema pass, and the hand-written actions carry `@extend_schema`. `spectacular --validate` reports 0 warnings and 0 errors. | — |
 
 ### Why the SPA and the API must be same-site

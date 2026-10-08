@@ -72,6 +72,7 @@ produces a spec, then a plan; the engineer reviews both; then execution runs.
 | 4. Browser-check fixes | Five issues from the agent's Playwright pass, assignee search, the unassign bug, the app title | Direct fixes | D59–D65 |
 | 5. QA | A Playwright QA report; the engineer added the missing sort indicator; then fixes for all 14 findings | QA report, spec, then a 15-task plan | D66–D78 |
 | 6. Structured logging | Structured logs with a request id held in context variables, so one request's lines can be found together. This closed the A30 gap found while documenting | Built test-first in an isolated git worktree, then checked against a live dev server and a real Celery worker | D89–D93 |
+| 7. TanStack refactor | TanStack Form, Table and Store in place of the hand-written forms, tables and component state. The engineer chose a mergeable migration, stores for component state, pagination through the table, the form components in the filters, and a full browser QA re-test | A spec and a 23-task plan, both checked against the installed libraries with a typechecked prototype run under Node and jsdom; then execution in a git worktree and a Playwright re-test | D79–D88 |
 
 ## The output
 
@@ -125,8 +126,8 @@ No agent output was accepted on its own say-so. Each layer below caught real def
    - the frontend runs `tsc`, oxlint and Vitest, with a console guard that fails any test that
      logs an unexpected error or warning.
 
-Current results: backend **438 tests, 100% coverage** (gate 80%); frontend **303 tests**,
-94.75% statement coverage; typecheck clean; lint at its 5-warning baseline.
+Current results: backend **438 tests, 100% coverage** (gate 80%); frontend **396 tests**,
+97.22% statement coverage; typecheck clean; lint at its 4-warning baseline.
 
 ## How edge cases, authentication and validation were handled
 
@@ -284,3 +285,40 @@ rather than assumed.
 Code review during execution then changed three more decisions: D68's button names, D71's
 not-found owner, and D75's dialog focus. The last was found by a real-browser check, because
 jsdom cannot reproduce the focus drop.
+
+**TanStack refactor (iteration 7).** The design was checked against the installed packages
+before the plan was written: a prototype was typechecked and run under Node and jsdom. That
+caught four things the library documentation does not say plainly, each now a decision with a
+test that fails without it:
+- Form refuses to submit while a field's server error stands in its `onServer` slot, and
+  clearing that slot with `{ onServer: undefined }` leaves every field's error in place (D80).
+- `useForm` re-applies changed `defaultValues` to an untouched form on every render (D81).
+- Form writes a server error map to every registered field, so a generic mapper would have
+  shown errors under fields that never displayed one (D80).
+- A Table accessor column is sortable unless it opts out, which would have given Title and
+  Assignee `aria-sort="none"` (D84).
+
+The spec review then found the user form's missing snapshot and a store-creation pattern that
+`useCreateStore` cannot express. The plan review found a "prove it red" step that could not go
+red — the existing D40 test passes even without the snapshot, because both sides of its
+comparison follow the refetch — and that `main` had moved on under the branch with a docs
+reorganisation.
+
+Execution, with a spec and a code-quality review after every task, found eight more, each fixed
+with a test that failed first:
+- Form clears a form-level `onServer` error on the next change or blur, so the sign-in form's
+  message would have vanished as the user typed (D80).
+- Only a field-level server error blocks the next submit, so the planned re-submit test, which
+  started from a form-level error, could not fail (D80).
+- The form a field component reads from context is a wrapper of the form that `onSubmit`
+  receives; the message store is keyed on the store they share (D80).
+- The planned URL sync compared a new write with the rendered URL value, so deleting back to
+  the URL's value and typing again could be erased by a late echo (D82).
+- The planned `cancel()` emptied the echo queue, which would have let Clear briefly bring back a
+  date already on its way to the URL (D82).
+- A checkbox unchecked just before Clear could stay checked while the URL had no filter; it
+  reproduced in jsdom (D82).
+- No existing test noticed if a filter field stopped following a URL change made elsewhere
+  (Back, Clear, a link); new tests break if any field's sync is removed (D82).
+- The table's own page moves read the raw page index, so the pager kept its own clamped count
+  for parity on stale pages (D85).
