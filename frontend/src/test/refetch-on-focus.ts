@@ -1,6 +1,6 @@
 import { focusManager, type QueryClient } from "@tanstack/react-query";
 import { act, waitFor } from "@testing-library/react";
-import { expect } from "vitest";
+import { expect, onTestFinished } from "vitest";
 
 /**
  * Fires a window-focus event and resolves once the refetch it caused has
@@ -13,13 +13,18 @@ import { expect } from "vitest";
  * for the batched notification to render.
  *
  * The test client's staleTime of 0 makes the focus event refetch every active
- * query. Restores the shared focusManager singleton before returning, so no
+ * query. The shared focusManager singleton is restored after the test, so no
  * `finally` is needed at the call site.
  */
 export async function refetchOnFocus(queryClient: QueryClient): Promise<void> {
   // The client starts the fetch a microtask after the focus event, so watch for it
   // rather than reading isFetching() straight away; idle-before-start would pass
   // without proving a refetch happened.
+  // Restoring the singleton (true -> undefined) fires onFocus again, which refetches every
+  // mounted query. Defer it to onTestFinished, which runs after the afterEach hooks, RTL's
+  // unmount included: no observers are left to refetch, and the test's own assertions
+  // never race a third GET.
+  onTestFinished(() => focusManager.setFocused(undefined));
   let started = false;
   const unsubscribe = queryClient.getQueryCache().subscribe((event) => {
     if (event.type === "updated" && event.action.type === "fetch") started = true;
@@ -35,8 +40,5 @@ export async function refetchOnFocus(queryClient: QueryClient): Promise<void> {
     await act(() => new Promise<void>((resolve) => setTimeout(resolve, 0)));
   } finally {
     unsubscribe();
-    // isFocused() then resolves to true again, which fires one more focus refetch that
-    // may still be in flight when afterEach resets the MSW handlers.
-    focusManager.setFocused(undefined);
   }
 }
