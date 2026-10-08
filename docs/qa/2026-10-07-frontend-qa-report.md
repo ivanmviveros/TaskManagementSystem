@@ -555,13 +555,16 @@ The refactor moved forms, tables and component state onto TanStack Form, Table a
 no intended change in behaviour. This pass re-ran every check in §3, the §7.1 evidence for
 F1–F14, and eight refactor-specific checks (Q1–Q8) in a real browser.
 
+Q1–Q6 are spec §8's. Q7 (the sort header's cycle and history, D84) and Q8 (the Assignee list's
+load-more on scroll) were added during the run, because the refactor rewrote both.
+
 | | |
 |---|---|
 | **Commit** | `77e4aac` (`refactor/tanstack-form-table-store`, clean tree) |
-| **Environment** | Compose stack for the API, worker, beat, db, redis and mailhog. The backend code is the main checkout's `wip` branch at `2386386`, i.e. `main`'s backend **without D94** (`465a8fc`). The SPA was served by native Vite (`npm run dev`) from the refactor worktree, with the Compose `frontend` stopped. Baseline screenshots came from `main` at `3e110ce`, served the same way from a temporary worktree |
+| **Environment** | Compose stack for the API, worker, beat, db, redis and mailhog. The backend code is the main checkout's `wip` branch at `2386386`, an earlier commit of this branch. Its backend is identical to `main`'s backend (`git diff main 2386386 -- backend` is empty), which does not have this branch's D94 fix (`465a8fc`). The SPA was served by native Vite (`npm run dev`) from the refactor worktree, with the Compose `frontend` stopped. Baseline screenshots came from `main` at `3e110ce` (its `frontend/src` is identical to `59ce235`, the spec's baseline), served the same way from a temporary worktree |
 | **Browser** | Chromium via Playwright MCP, 1280 px unless stated |
 | **Roles exercised** | Admin, Supervisor, Operator, anonymous |
-| **Dataset** | 20 001 tasks (Supervisor view), 503 visible users |
+| **Dataset** | 20 001 tasks (Supervisor view), 503 visible users (two fewer than §3: users soft-deleted since, `user100@demo.local` and `user300@demo.local`, see §8.7) |
 
 **Result: no regression from the refactor.** Every §3 check passes, including the eight rows of
 §3.1–§3.6 that were ⚠️ or ❌ before iteration 5. All of F1–F14 are still fixed, and Q1–Q8 pass.
@@ -581,8 +584,8 @@ It is not fixed on this branch.
 | §3.3 Dashboard | 5 | 5 | D3 7/7: All 20001, Pending 4998, In progress 4991, Completed 5012, Cancelled 5000, Overdue 3859, Due in 7 days 2950, each equal to its drilled-through list's "of N" |
 | §3.4 Task list | 21 | 21 | L1–L20 plus L6b. L6b (F6), L15 (F10), L17 (F5) and L20 (F9) now pass |
 | §3.5 Task create / edit / detail / delete | 20 | 20 | T19 (F2) and T20 (F12) now pass |
-| §3.6 Users | 16 | 16 | 503 users. U2: Supervisor filter, 124 |
-| §3.7 Responsive | 38 | 38 | 9 pages at 360 / 768 / 1024 / 1280, plus the Delete dialog at 360 (measured) and 1280 (T16). No overflow, no element past the right edge |
+| §3.6 Users | 16 | 16 | 503 users (two fewer than §3: users soft-deleted since, `user100@demo.local` and `user300@demo.local`, see §8.7). U2: Supervisor filter, 124 |
+| §3.7 Responsive | 38 | 38 | 9 pages × 4 widths plus the Delete dialog at 360 and 1280; this adds Login at 1024, which §3.7 skipped (37 cells there). The dialog was measured at 360 and seen at 1280 in T16. No overflow, no element past the right edge |
 | §3.8 Console hygiene | 1 | 1 | No JavaScript errors, no React warnings (Q6) |
 
 Evidence for the rows that changed state, or that the refactor touched most:
@@ -593,7 +596,9 @@ Evidence for the rows that changed state, or that the refactor touched most:
   focus on that alert. Tab from Email lands on `#password`, and Enter submits.
 - **L2 / L4:** Page 2 → `?page=2`, "21–40 of 20001", focus stays on **Page 2**. Last → `?page=1001`,
   "20001–20001 of 20001", Next and Last disabled, window `1 … 999 1000 1001`. Back → `?page=2`,
-  Back → `/tasks`, Forward → `?page=2`.
+  Back → `/tasks`, Forward → `?page=2`. (§3.4 L3 recorded `1 … 998 999 1000 1001`;
+  `pageWindow` is unchanged since 60ef0e1 and shows current ±2, so the original wording was
+  wrong, not the pager.)
 - **L7–L11:** starting from `?page_size=50&ordering=due_date&page=2`:
   - Pending → `…&status=["PENDING"]`: page dropped, size and sort kept, "1–50 of 4998".
   - Overdue only → `&overdue=true`, "of 2045".
@@ -646,7 +651,7 @@ Evidence for the rows that changed state, or that the refactor touched most:
 | F3 / F8 | ✅ | 768: "Sort by" with Newest first, Oldest first, Due date earliest/latest first, Status A–Z/Z–A. "Due date, earliest first" → `?ordering=due_date` (page dropped), back to "Newest first" → `/tasks`. 1024: 20 rows, 0 wrapped status pills, 0 stacked Complete/Delete pairs |
 | F4 | ✅ | Deleted task (detail and `/edit`) and `/tasks/not-a-uuid` → "Task not found …" plus **Back to tasks**. `/does-not-exist` and `/tasks/a/b` → "Page not found" plus **Go to your home page** (→ `/dashboard`). Every case: 1 `header`, 1 `nav[aria-label=Main]` |
 | F5 | ✅ | `/tasks?status=["PENDING"]&page=3&ordering=-due_date` ("41–60 of 4998") → "Demo task 19117" → **Back to tasks** → same three parameters (key order differs), "41–60 of 4998", Pending checked |
-| F6 | ✅ | Default: `Created▼` `aria-sort="descending"`, Due date↕ and Status↕ `none`, Title/Assignee/Actions without `aria-sort` (D84) |
+| F6 | ✅ | Default: `Created▼` `aria-sort="descending"`, Due date↕ and Status↕ `none`, Title/Assignee/Actions without `aria-sort` (D84). Click cycle: see Q7 |
 | F7 | ✅ | `/dashboard`: Dashboard `aria-current="page"`, bottom border `rgb(37, 99, 235)`; Tasks `rgba(0, 0, 0, 0)`. `/tasks`: the reverse |
 | F9 | ✅ | After `2026-09-01`, before `2026-08-01` → "“Due after” is later than “Due before”, so no task can match." Due before `aria-invalid="true"`, both inputs `aria-describedby` that message, `max`/`min` set to the other date, URL keeps both, empty state shown |
 | F10 | ✅ | `/tasks?status=["BOGUS"]` → `/tasks`, "1–20 of 20001", no alert |
@@ -659,12 +664,12 @@ Evidence for the rows that changed state, or that the refactor touched most:
 
 | ID | Result | Evidence |
 |---|---|---|
-| Q1 | ✅ | **Sign-in:** a wrong password, then the right one (typed after Tab, submitted with Enter) → `/dashboard`. **Task:** on "Demo task 19993", clearing Title and saving gives a 400 and "This field may not be blank." under Title, with focus on `#title`. Typing "Demo" keeps the error and `aria-invalid` until the next submit, as `main` does (checked on the baseline). Retyping and saving → 200 and the detail page. The two PATCH bodies differ only in `title`. **User:** "Omar Operator", First name, same sequence: 400, then 200 with `{"first_name":"Omar","last_name":"Operator","role":"OPERATOR","is_active":true}`. The Step 2 task could not be used; see §8.7 |
+| Q1 | ✅ | **Sign-in:** a wrong password, then the right one (typed after Tab, submitted with Enter) → `/dashboard`. **Task:** on "Demo task 19993", clearing Title and saving gives a 400 and "This field may not be blank." under Title, with focus on `#title`. Typing "Demo" keeps the error and `aria-invalid` until the next submit, as `main` does (checked on the baseline). Retyping and saving → 200 and the detail page. The two PATCH bodies differ only in `title`. **User:** "Omar Operator", First name, same sequence: 400, then 200 with `{"first_name":"Omar","last_name":"Operator","role":"OPERATOR","is_active":true}`. The task used for the baseline screenshots, "Demo task 19997", could not be saved; see §8.7 |
 | Q2 | ✅ | 21 page/width pairs compared with the baseline: 18 are pixel-identical. The other three are sub-pixel anti-aliasing only; see §8.6. Due after `2026-09-15` then Clear filters 76 ms later → after 800 ms the URL is `/tasks` and both dates are empty. `?status=["PENDING","IN_PROGRESS"]`, uncheck Pending and click Clear in the same task → `/tasks`, no box checked. Check Completed and click Clear in the same task → the same. Uncheck/check/Clear as three separate clicks → the same |
 | Q3 | ✅ | **Tasks:** Page 2 → `?page=2`, focus on Page 2, Back → `/tasks`. From `?page=2`, Rows per page 50 → `?page_size=50` (no `page`), "1–50 of 20001", 50 rows. Back → `/tasks`, then `/dashboard`: the size change replaced the page-2 entry. **Users** (503): Page 2 → `?page=2`, "21–40 of 503", focus on Page 2, Back → `/users`. Rows per page 50 → `?page_size=50`, 50 rows. Back → `/users` |
 | Q4 | ✅ | A row's Delete dialog open on `/tasks`. The modal overlay blocks a pointer click on the header, so the Dashboard link was clicked from script. → `/dashboard` with no dialog; Tasks → `/tasks` with no dialog. Same from a task's detail page, coming back with browser Back. Also: dialog open, browser Back → `/dashboard`, Forward → `/tasks`, no dialog |
 | Q5 | ✅ | Tab 1: "Demo task 19993" edit page, untouched. Tab 2 saved the title "Demo task 19993 (QA tab 2)". After the 30 s `staleTime`, tab 1's focus refetch ran (1 GET), and its Title still read "Demo task 19993". Cancel → the detail page shows the new title. **Status changed first:** tab 1 chose In progress, and tab 2 saved another title. After the refetch, tab 1 still had In progress, its own title and the options Pending / In progress / Cancelled. **User:** Omar's First name untouched in tab 1, "Omar (QA tab 2)" saved in tab 2. After the refetch, tab 1 still read "Omar". Every value was restored (§8.7) |
-| Q6 | ✅ | Every console `ERROR` across Steps 4–5 is Chromium's network line for a deliberate 4xx: login 400/401/429, refresh 401, validation 400, the routed 403, not-found 404, out-of-range page 404. No other errors and no warnings. The only other entries are React's DevTools notice and Chromium's verbose `[DOM]` autocomplete hint on the user forms, which the baseline logs too |
+| Q6 | ✅ | Every console `ERROR` across the §3 matrix and Q1–Q8 is Chromium's network line for a deliberate 4xx: login 400/401/429, refresh 401, validation 400, the routed 403, not-found 404, out-of-range page 404. No other errors and no warnings. The only other entries are React's DevTools notice and Chromium's verbose `[DOM]` autocomplete hint on the user forms, which the baseline logs too |
 | Q7 | ✅ | At 1280 from `?page=2`: Created `aria-sort="descending"` by default. Due date → `?ordering=due_date` (`ascending` ▲, page dropped). Again → `-due_date` (`descending` ▼). Created → `ordering=created_at` (`ascending`). Created again → `/tasks` (no `ordering`, Created `descending`). Status → `?ordering=status`. Back → `/tasks` (the entry before page 2), then `/dashboard`: none of the five sort changes added a history entry. Below lg the select works (F3 row) |
 | Q8 | ✅ | `/tasks/new` as Supervisor, Assignee open, wheel-scrolled 200 px at a time. `scrollTop`/options: 200/21, 400/21, 508/41, 708/41 … 1227/61 … 1947/81, 2147/81. Each load-more appended 20 options (`assignable/?page=2`, `3`, `4`, one request each) and the list never jumped back to the top. Keyboard and type-ahead: see T5 |
 
@@ -689,14 +694,17 @@ outside this branch's scope.
     of 727".
 - **Pre-existing:** reproduced on `main` (`3e110ce`) with the same steps: the Operator saw "1–20
   of 20001". Neither the old `AuthContext.signOut` nor the new session store's `signOut`/`expire`
-  touches the QueryClient. Nothing in `frontend/src` on either branch calls `clear()` or
-  `resetQueries()`.
+  touches the QueryClient. Nothing in `frontend/src` on either branch clears or removes queries
+  when the session ends (`queryClient.clear()`, `resetQueries` or `removeQueries`).
 - **Impact:** on a shared browser, the next user briefly sees the previous user's lists and
-  figures, including task titles outside an Operator's scope. Opening such a task correctly 404s:
-  the API never leaks, only the client cache does.
+  figures, including task titles outside an Operator's scope. Opening such a task correctly 404s
+  (unless the previous user opened the same task within the 30 s `staleTime`, when its cached
+  detail would show too — inferred from the query keys, not tested): the API never leaks, only
+  the client cache does.
 - **Recommended fix:** clear the cache when the session ends. Call `queryClient.clear()` after
   `signOut` and on `expire` (for example, `SessionProvider` passing a callback that the store
-  actions call). The alternative is to key every query by the user id. Add a test that signs out
+  actions call). Clearing it in `signIn` instead, before setting the new user, covers both
+  sign-out and expiry in one place. The alternative is to key every query by the user id. Add a test that signs out
   user A and signs in user B, and asserts that B's first `/tasks` render makes a request and
   never shows A's rows.
 
@@ -709,10 +717,12 @@ outside this branch's scope.
 | `npm run test` (Vitest) | **396 passed**, 0 failed, 25 files, 26.7 s |
 | `npm run build` | ✅ `dist/assets/index-DV2HtNDl.js` 500.85 kB, **gzip 149.15 kB**; CSS 12.38 kB (gzip 3.43 kB). Vite prints its chunk-over-500 kB advisory |
 | Backend pytest | **438 passed**, 0 failed, 13.3 s, coverage **100.00 %** (1191 / 1191). Run from the worktree's backend, so it includes D94: `uv run --directory <worktree>/backend pytest -q` with `POSTGRES_PORT=5442` against the Compose db (its own test database). The Compose `backend` container runs the main checkout and was not used or restarted |
+| Backend static checks | Not re-run here (`ruff check`, `ruff format --check`, `mypy`). SUMMARY.md §6 records them clean alongside the 438-test count, which includes D94 |
 
 ### 8.6 Screenshots
 
-Full-page screenshots. The baseline is `main` at `3e110ce`; the branch is `77e4aac`. Supervisor
+Stored in [`screenshots/`](screenshots/). Full-page screenshots. The baseline is `main` at
+`3e110ce`; the branch is `77e4aac`. Supervisor
 pages use the edit page of "Demo task 19997" (`01a116ca-39dc-…`). Admin pages use the edit page
 of "Omar Operator" (`01a1135c-0cab-…`).
 
@@ -727,7 +737,8 @@ of "Omar Operator" (`01a1135c-0cab-…`).
 | User edit | `tanstack-baseline-user-edit-<w>.png` | `tanstack-user-edit-<w>.png` | identical / identical / anti-aliasing (35 px) |
 | Delete dialog | | `tanstack-delete-dialog-360.png` | 360 only, no baseline |
 
-`<w>` is 360, 768 or 1280. Each pair has the same image size.
+`<w>` is 360, 768 or 1280. Each pair has the same image size. The 18 "identical" pairs are
+byte-identical files: each baseline and branch file is the same git blob.
 
 - **Users table, 768 and 1280:** the differing pixels sit inside the glyphs of every row's text,
   in every column. Shifting the branch image by ±1 or ±2 px in either axis only increases the
@@ -759,13 +770,17 @@ git-ignored `.playwright-mcp/`.
 Observations, not findings:
 
 - **D94 was not exercised in the browser.** The running backend is `main`'s, without D94. The
-  Step 2 task, "Demo task 19997", turned out to be one of the 37 live tasks held by a deleted
+  task chosen for the baseline screenshots, "Demo task 19997", turned out to be one of the 37 live tasks held by a deleted
   user (`user300@demo.local`, `deleted_at` 2026-10-08 02:09 UTC; read-only `psql`). Both saves of
   it returned 400 with DRF's raw `Invalid pk "01a11439-…" - object does not exist.`, shown under
   the Assignee picker with `aria-invalid` on `#assignee`. That is the pre-D94 behaviour D94 fixes;
-  `main`'s SPA re-sends the assignee the same way. The frontend half of D94 did show: an assignee
-  validation error lands under the picker, not in the alert. Q1 and Q5 used "Demo task 19993"
-  (assignee `user10@demo.local`, active) instead. The backend suite (§8.5) covers D94.
+  `main`'s SPA re-sends the assignee the same way. The behaviour D94's frontend test pins did
+  show: an assignee validation error lands under the picker, not in the alert. Q1 and Q5 used
+  "Demo task 19993" (assignee `user10@demo.local`, active) instead. The backend suite (§8.5)
+  covers D94.
+- **Two fewer users than §3.** `user100@demo.local` (`deleted_at` 02:08 UTC) and
+  `user300@demo.local` (02:09 UTC) were soft-deleted before this run began, so the list shows 503
+  rather than 505. The QA user created here was deactivated again, so it changes nothing.
 - **Q5 needed help to trigger the refetch.** Playwright's tabs stay `visible`, so switching tabs
   never fires `visibilitychange`. Each Q5 case waited past the 30 s `staleTime` and then
   dispatched `visibilitychange` on `window`, which is what TanStack Query's focus manager listens
