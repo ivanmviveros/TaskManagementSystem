@@ -21,9 +21,9 @@
     { "id": 18, "subject": "Task 18: The app table: features, contexts, TableView, SortHeader, Pagination (D83, D85)", "status": "completed", "blockedBy": [17] },
     { "id": 19, "subject": "Task 19: The user list on the app table (D83)", "status": "completed", "blockedBy": [18] },
     { "id": 20, "subject": "Task 20: The task list on the app table, and the old pieces removed (D83, D84)", "status": "completed", "blockedBy": [19] },
-    { "id": 21, "subject": "Task 21: Decisions, architecture and the other docs", "status": "pending", "blockedBy": [20] },
+    { "id": 21, "subject": "Task 21: Decisions, architecture and the other docs", "status": "completed", "blockedBy": [20] },
     { "id": 22, "subject": "Task 22: Re-run the QA report matrix in the browser", "status": "pending", "blockedBy": [21] },
     { "id": 23, "subject": "Task 23: Persist insights to claude-insights", "status": "pending", "blockedBy": [22] }
   ],
-  "lastUpdated": "2026-10-08T02:15:42+00:00"
+  "lastUpdated": "2026-10-08T03:06:04+00:00"
 }

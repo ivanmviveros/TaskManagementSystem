@@ -459,8 +459,8 @@ The markup, labels, `aria-current="page"`, the numbered window (`pageWindow()`, 
 per-page keys (D55), "first–last of count", and the "Page n of m" text below `sm` are all
 unchanged. The page number is never written by Table itself (`autoResetPageIndex: false`).
 
-Moves and disabled states come from the clamped current page rather than Table's `firstPage()`,
-`previousPage()` and `getCanPreviousPage()`, which read the raw page index: this keeps parity with
+Moves and disabled states come from the clamped current page rather than Table's `previousPage()`,
+`nextPage()`, `getCanPreviousPage()` and `getCanNextPage()`, which read the raw page index: this keeps parity with
 the old pager on a stale out-of-range page, where the last page shows as current and Prev goes
 to the page before it.
 

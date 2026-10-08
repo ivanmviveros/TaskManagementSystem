@@ -983,20 +983,20 @@ that waits for the refetched data. Form and Table both run on Store, so all thre
   be cancelled, and Clear must cancel a pending date.
 - **Tables own no state (D83–D85).** `createTableHook` sets up server-side sorting and paging
   once; the task list passes `sorting` and `pagination` from the URL and the Assignee column's
-  visibility from the role, the user list passes `pagination` only, with sorting off, and both
+  visibility from the role; the user list passes `pagination` only, with sorting off; both
   write every change back through `navigate`. Table's own click cycle replaced
   `nextOrdering`. The pager is a registered table component reading the table's pagination
   model; one handler turns a proposed change into a push (a page move) or a replace back to
   page 1 (a size change, D47), ignoring the page index Table computes to keep the top row in
   view. The pager counts from the current page clamped to the page count, as the old pager
   did: on a stale out-of-range page it shows the last page as current, so Prev goes to the
-  page before it (9 of 10, not 98).
+  page before it (on `?page=99` with 10 pages, Prev goes to page 9, not 98).
 - **The session and each page's UI state live in stores (D86–D88).** `SessionProvider`
   creates the one session store, and `useAuth()` keeps its shape. Each list or detail page,
-  and the assignee picker, creates its own store on mount, so its dialog and busy state start
-  clean on every visit, as `useState` did, and a row selects only its own busy flag. DOM and
-  timing primitives (`useFocusFirstError`, `useModalDialog`, `useDebouncedValue`,
-  `useUrlFieldSync`) keep their internal React state.
+  and the assignee picker, creates its own store on mount, so its state (a dialog, a busy row,
+  the picker's open list) starts clean on every visit, as `useState`'s did, and a row selects
+  only its own busy flag. DOM and timing primitives (`useFocusFirstError`, `useModalDialog`,
+  `useDebouncedValue`, `useUrlFieldSync`) keep their internal React state.
 - **Bundle size:** the production JS went from 120.46 kB to 149.15 kB gzip.
 
 ## Known limitations and exit criteria
