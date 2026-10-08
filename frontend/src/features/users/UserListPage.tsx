@@ -62,9 +62,11 @@ export function UserListPage() {
     void navigate({ search: (prev: UserListSearch) => ({ ...prev, page: next }) });
   }
 
-  const pagination = useMemo(() => ({ pageIndex: page - 1, pageSize }), [page, pageSize]);
   // The table owns no state: the URL's page and size go in, changes go back out
-  // as navigations (D83, D85).
+  // as navigations (D83, D85). The table compares controlled state shallowly, so
+  // a flat { pageIndex, pageSize } needs no memo to avoid a render loop; it is
+  // memoised only for uniformity with the task list.
+  const pagination = useMemo(() => ({ pageIndex: page - 1, pageSize }), [page, pageSize]);
   const table = useAppTable({
     columns: userColumns,
     data: data?.results ?? NO_USERS,

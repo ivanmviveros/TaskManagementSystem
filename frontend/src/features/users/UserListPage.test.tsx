@@ -411,13 +411,19 @@ describe("UserListPage URL state", () => {
     await screen.findByRole("table");
     const user = userEvent.setup();
 
+    // A page move is a push, so Back returns to the previous page.
+    const beforePageMove = router.history.length;
     await user.click(screen.getByRole("button", { name: "Next page" }));
     await waitFor(() => expect(router.state.location.search).toEqual({ page: 2 }));
+    expect(router.history.length).toBe(beforePageMove + 1);
     await waitFor(() => expect(lastQuery().get("page")).toBe("2"));
 
-    // A new size goes back to page 1, so the page leaves the URL.
+    // A new size goes back to page 1, so the page leaves the URL; it replaces
+    // the entry rather than adding one.
+    const beforeResize = router.history.length;
     await user.selectOptions(screen.getByLabelText(/rows per page/i), "50");
     await waitFor(() => expect(router.state.location.search).toEqual({ page_size: 50 }));
+    expect(router.history.length).toBe(beforeResize);
     await waitFor(() => expect(lastQuery().get("page_size")).toBe("50"));
     expect(lastQuery().get("page")).toBe("1");
   });
