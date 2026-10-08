@@ -3210,8 +3210,10 @@ export function useUrlFieldSync<TValue>({
 
   const send = useCallback((value: TValue) => {
     const { committed: current, commit: toUrl, equals: same } = latest.current;
-    // An equal write leaves the URL as it is, so no echo would ever remove it.
-    if (!same(value, current)) unechoed.current.push(value);
+    const queue = unechoed.current;
+    const heading = queue.length > 0 ? queue[queue.length - 1] : current;
+    // Writing where the URL is already heading leaves it as it is, so no echo would remove it.
+    if (!same(value, heading)) queue.push(value);
     toUrl(value);
   }, []);
 
@@ -3233,7 +3235,7 @@ export function useUrlFieldSync<TValue>({
 
   const cancel = useCallback(() => {
     clearTimer();
-    unechoed.current = [];
+    // The queue stays: a commit already in flight must still read as an echo.
     latest.current.write(latest.current.committed);
   }, [clearTimer]);
 

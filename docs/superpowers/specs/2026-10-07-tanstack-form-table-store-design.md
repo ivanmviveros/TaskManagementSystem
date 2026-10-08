@@ -347,15 +347,20 @@ export function useUrlFieldSync<TValue>(options: {
   clicks put two writes in flight, and the first echo must not briefly revert the second click.
   Typed text usually has one write in flight; the queue also covers a navigation slower than
   the 300 ms quiet period.
-- A write equal to the current `committed` value is committed but **not queued**: the URL does
-  not change, so no echo will ever arrive to remove it.
+- A write equal to where the URL is heading (the last queued write, or `committed` when none
+  is queued) is committed but **not queued**: the URL does not change, so no echo will ever
+  arrive to remove it. Comparing with `committed` alone was wrong while a write is in flight:
+  a write back to the rendered value then does move the URL, and its unqueued echo would erase
+  newer typing (found in Task 13's review).
 - When `committed` equals no queued write, the change came from elsewhere (Back, a nav link,
   Clear, a dashboard card). The hook clears the queue, drops any pending commit, and writes the
   value into the field with `form.setFieldValue(name, committed, { dontRunListeners: true })`.
-- Unmounting drops a pending commit. `cancel()` drops a pending commit, clears the queue and
-  returns the field to `committed`, **also with `{ dontRunListeners: true }`**; otherwise the
-  field's own listener would schedule a commit of the old value and bring back the date Clear
-  just removed.
+- Unmounting drops a pending commit. `cancel()` drops a pending commit and returns the field to
+  `committed`, **also with `{ dontRunListeners: true }`**; otherwise the field's own listener
+  would schedule a commit of the old value and bring back the date Clear just removed. It
+  **keeps the queue**, as `useSearchParamDraft` kept its last write: a commit already in flight
+  must still be recognised as an echo, or Clear would briefly put that date back (found in
+  Task 13; the next non-echo URL value empties the queue anyway).
 - The seven `useSearchParamDraft` test cases move over unchanged in meaning, plus cases for
   immediate mode, two writes in flight, and array equality (§7.2).
 - The panels' `defaultValues` are a mount-time snapshot of the URL (D81). After mount the URL
