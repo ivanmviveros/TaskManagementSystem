@@ -169,6 +169,68 @@ describe("TaskForm", () => {
     await waitFor(() => expect(title).toHaveFocus());
   });
 
+  it("saves on a second attempt after a server error (D80)", async () => {
+    signedInAs(SUPERVISOR);
+    taskDetail();
+    let posts = 0;
+    server.use(
+      http.post(`${BASE}/tasks/`, () => {
+        posts += 1;
+        return posts === 1
+          ? HttpResponse.json(
+              {
+                detail: "Invalid input.",
+                code: "validation_error",
+                errors: { title: ["This field may not be blank."] },
+              },
+              { status: 400 },
+            )
+          : HttpResponse.json(DETAIL, { status: 201 });
+      }),
+    );
+    await renderApp("/tasks/new");
+    const user = userEvent.setup();
+    const submit = await screen.findByRole("button", { name: /create task/i });
+    await user.click(submit);
+    expect(await screen.findByText(/may not be blank/i)).toBeInTheDocument();
+    await user.type(screen.getByLabelText(/title/i), "A task");
+    await user.click(submit);
+    await waitFor(() => expect(posts).toBe(2));
+  });
+
+  it("keeps the values it loaded when a focus refetch brings newer ones (D81)", async () => {
+    signedInAs(SUPERVISOR);
+    assignableUsers();
+    let gets = 0;
+    server.use(
+      http.get(`${BASE}/tasks/${TASK_ID}/`, () => {
+        gets += 1;
+        return HttpResponse.json(gets === 1 ? DETAIL : { ...DETAIL, title: "Renamed elsewhere" });
+      }),
+    );
+    const patches = capturePatches();
+    await renderApp(`/tasks/${TASK_ID}/edit`);
+    await screen.findByRole("button", { name: /save changes/i });
+    try {
+      // The test client's staleTime of 0 makes a focus event refetch the task.
+      act(() => {
+        focusManager.setFocused(false);
+        focusManager.setFocused(true);
+      });
+      await waitFor(() => expect(gets).toBe(2));
+      expect(screen.getByLabelText(/title/i)).toHaveValue("Review the brief");
+      const user = userEvent.setup();
+      await user.click(screen.getByRole("button", { name: /save changes/i }));
+      await waitFor(() => expect(patches.bodies).toHaveLength(1));
+      // The assertion that bites: `gets` counts started requests, so the title
+      // check above can run before the refetch lands.
+      expect(patches.bodies[0]).toMatchObject({ title: "Review the brief" });
+    } finally {
+      // Restores the shared singleton (see the D40 test below).
+      focusManager.setFocused(undefined);
+    }
+  });
+
   it("creates a task and invalidates the list", async () => {
     signedInAs(SUPERVISOR);
     assignableUsers();

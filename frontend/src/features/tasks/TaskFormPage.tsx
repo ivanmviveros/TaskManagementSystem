@@ -2,11 +2,12 @@ import { useNavigate, useParams } from "@tanstack/react-router";
 
 import { ButtonLink } from "../../components/ButtonLink";
 import { ApiError } from "../../lib/api-error";
-import { TaskForm, type TaskFormValues } from "./components/TaskForm";
+import { TaskForm } from "./components/TaskForm";
 import { TaskNotFound } from "./components/TaskNotFound";
 import { useCreateTask, useUpdateTask } from "./hooks/useTaskMutations";
 import { useTask } from "./hooks/useTasks";
 import { useTasksBackSearch } from "./hooks/useTasksBackSearch";
+import type { TaskFormValues } from "./task-form-values";
 
 /**
  * Creation is a ROUTE, not a modal: it is deep-linkable, guarded by exactly the
