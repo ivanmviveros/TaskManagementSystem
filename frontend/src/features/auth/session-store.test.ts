@@ -55,6 +55,19 @@ describe("session store", () => {
     expect(authorization()).toBe("Bearer token");
   });
 
+  it("signIn empties the server cache once, before the new user is set (D95)", async () => {
+    server.use(
+      http.post(`${BASE}/auth/login/`, () => HttpResponse.json({ access: "token", user: ME })),
+    );
+    const userWhenCleared: (CurrentUser | null)[] = [];
+    const store = createSessionStore({
+      clearServerState: () => userWhenCleared.push(store.state.user),
+    });
+    await store.actions.signIn("supervisor@demo.local", "pw");
+    expect(userWhenCleared).toEqual([null]);
+    expect(store.state.user).toEqual(ME);
+  });
+
   it("signOut never rejects, and clears the user even when the server fails", async () => {
     server.use(
       http.post(`${BASE}/auth/logout/`, () =>

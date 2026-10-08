@@ -1,3 +1,4 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { useCreateStore } from "@tanstack/react-store";
 import { useEffect, useMemo } from "react";
 import type { ReactNode } from "react";
@@ -10,9 +11,15 @@ import { initialSessionState, sessionActions } from "./session-store";
 /**
  * Creates the app's session store — once per mount, so every test render gets
  * a fresh one — and restores the session from the refresh cookie (D35, D86).
+ * Must sit inside QueryClientProvider: a sign-in empties that client's cache (D95).
  */
 export function SessionProvider({ children }: { children: ReactNode }) {
-  const session = useCreateStore(initialSessionState, sessionActions);
+  const queryClient = useQueryClient();
+  // useCreateStore reads the actions factory once, on mount.
+  const session = useCreateStore(
+    initialSessionState,
+    sessionActions({ clearServerState: () => queryClient.clear() }),
+  );
 
   useEffect(() => {
     let cancelled = false;

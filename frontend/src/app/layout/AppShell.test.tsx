@@ -140,6 +140,93 @@ describe("signing out", () => {
     signedInAs = null;
     expect(await screen.findByLabelText(/email/i)).toBeInTheDocument();
   });
+
+  it("never shows the next user in the same tab the previous user's cached tasks (D95)", async () => {
+    // QA §8.4: the cache outlived the session, so an Operator signing in after a
+    // Supervisor was first shown the Supervisor's list. The Operator's own list is
+    // held back, so whatever renders first can only have come from the cache.
+    let releaseOperatorList = () => {};
+    const operatorListHeld = new Promise<void>((resolve) => {
+      releaseOperatorList = resolve;
+    });
+    const row = (title: string) => ({
+      id: "0199a0f0-0000-7000-8000-0000000000a1",
+      title,
+      status: "PENDING",
+      due_date: null,
+      assignee: USERS.OPERATOR,
+      is_overdue: false,
+      can_delete: false,
+      created_at: "2026-10-01T09:00:00Z",
+    });
+    const page = (title: string) => ({ count: 1, next: null, previous: null, results: [row(title)] });
+    signedInAs = "SUPERVISOR";
+    server.use(
+      http.get(`${BASE}/tasks/`, async () => {
+        if (signedInAs !== "OPERATOR") return HttpResponse.json(page("Supervisor's task"));
+        await operatorListHeld;
+        return HttpResponse.json(page("Operator's task"));
+      }),
+      http.post(`${BASE}/auth/logout/`, () => {
+        signedInAs = null;
+        return new HttpResponse(null, { status: 204 });
+      }),
+      http.post(`${BASE}/auth/login/`, () => {
+        signedInAs = "OPERATOR";
+        return HttpResponse.json({ access: "operator-access-token", user: USERS.OPERATOR });
+      }),
+    );
+    try {
+      await renderApp("/tasks");
+      expect((await screen.findAllByText("Supervisor's task")).length).toBeGreaterThan(0);
+
+      const user = userEvent.setup();
+      await user.click(screen.getByRole("button", { name: /sign out/i }));
+      await user.type(await screen.findByLabelText(/email/i), "operator@demo.local");
+      await user.type(screen.getByLabelText(/password/i), "DemoPass!2026");
+      await user.click(screen.getByRole("button", { name: /sign in/i }));
+      await user.click(
+        within(await screen.findByRole("navigation", { name: /main/i })).getByRole("link", {
+          name: /tasks/i,
+        }),
+      );
+      await screen.findByRole("heading", { level: 1, name: /tasks/i });
+
+      // jsdom renders both the table and the phone cards, hence queryAll.
+      expect(screen.queryAllByText("Supervisor's task")).toHaveLength(0);
+    } finally {
+      releaseOperatorList();
+    }
+    expect((await screen.findAllByText("Operator's task")).length).toBeGreaterThan(0);
+  });
+
+  it("sends no page request after Sign out, so none leaves without a token (D95)", async () => {
+    // Why the cache is emptied at sign-in and not at sign-out: the list is still
+    // mounted until the guards redirect, and an emptied cache made it refetch
+    // with no Authorization header — a 401, then a failed refresh, in a browser.
+    signedInAs = "SUPERVISOR";
+    let signedOut = false;
+    const sentAfterSignOut: string[] = [];
+    server.use(
+      http.get(`${BASE}/tasks/`, ({ request }) => {
+        if (signedOut) sentAfterSignOut.push(request.headers.get("Authorization") ?? "none");
+        return HttpResponse.json({ count: 0, next: null, previous: null, results: [] });
+      }),
+      http.post(`${BASE}/auth/logout/`, () => {
+        signedInAs = null;
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+    await renderApp("/tasks");
+    await screen.findByRole("heading", { level: 1, name: /tasks/i });
+
+    signedOut = true;
+    await userEvent.setup().click(screen.getByRole("button", { name: /sign out/i }));
+    await screen.findByLabelText(/email/i);
+    // Long enough for a refetch triggered by the sign-out render to be sent.
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(sentAfterSignOut).toEqual([]);
+  });
 });
 
 describe("session expiry", () => {
