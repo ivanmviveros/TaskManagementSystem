@@ -15,7 +15,7 @@
     { "id": 12, "subject": "Task 12: TaskForm on the app form (D79, D81)", "status": "completed", "blockedBy": [11] },
     { "id": 13, "subject": "Task 13: useUrlFieldSync (D82)", "status": "completed", "blockedBy": [12] },
     { "id": 14, "subject": "Task 14: TaskFilters on the app form (D82)", "status": "completed", "blockedBy": [13] },
-    { "id": 15, "subject": "Task 15: UserFilters on the app form, and useSearchParamDraft retired (D82)", "status": "pending", "blockedBy": [14] },
+    { "id": 15, "subject": "Task 15: UserFilters on the app form, and useSearchParamDraft retired (D82)", "status": "completed", "blockedBy": [14] },
     { "id": 16, "subject": "Task 16: Ordering <-> sorting mappers (D84)", "status": "pending", "blockedBy": [15] },
     { "id": 17, "subject": "Task 17: routePaginationChange (D85)", "status": "pending", "blockedBy": [16] },
     { "id": 18, "subject": "Task 18: The app table: features, contexts, TableView, SortHeader, Pagination (D83, D85)", "status": "pending", "blockedBy": [17] },
@@ -25,5 +25,5 @@
     { "id": 22, "subject": "Task 22: Re-run the QA report matrix in the browser", "status": "pending", "blockedBy": [21] },
     { "id": 23, "subject": "Task 23: Persist insights to claude-insights", "status": "pending", "blockedBy": [22] }
   ],
-  "lastUpdated": "2026-10-08T01:02:48+00:00"
+  "lastUpdated": "2026-10-08T01:16:30+00:00"
 }
