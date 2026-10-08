@@ -49,7 +49,7 @@ an hourly sweep emails about overdue work.
 | API docs | drf-spectacular: OpenAPI 3, Swagger UI and ReDoc |
 | Background work | Celery with a Redis broker, Celery beat for the hourly sweep |
 | Database | PostgreSQL 16 |
-| Frontend | React 19, TypeScript, Vite, TanStack Router and TanStack Query, Tailwind CSS |
+| Frontend | React 19, TypeScript, Vite, TanStack Router, Query, Form, Table and Store, Tailwind CSS |
 | Tests | pytest + pytest-django; Vitest + React Testing Library + MSW |
 | Tooling | uv, ruff, mypy, oxlint, pre-commit, GitHub Actions, Docker Compose |
 
@@ -149,7 +149,7 @@ bash scripts/run-backend-tests.sh
 ```
 
 Every full run applies a coverage gate of 80%, through `--cov-fail-under=80` in `addopts`. The
-suite currently sits at **100%** of `apps/` with 432 tests. The tests use PostgreSQL, not SQLite,
+suite currently sits at **100%** of `apps/` with 438 tests. The tests use PostgreSQL, not SQLite,
 because the schema relies on partial indexes and a check constraint. To run against the Compose
 database from the host, use `POSTGRES_PORT=5442 uv run --directory backend pytest -q`.
 
@@ -185,7 +185,7 @@ npm run lint
 npm run test
 ```
 
-303 tests pass. The test setup turns any unexpected `console.error` or `console.warn` into a test
+396 tests pass. The test setup turns any unexpected `console.error` or `console.warn` into a test
 failure, so "no console warnings" is enforced, not just reviewed.
 
 **Git hooks.** Install them once:
@@ -280,7 +280,7 @@ for reads. The layout is explained in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.m
 The headline decisions, with their numbers in [docs/TECHNICAL-DECISIONS.md](docs/TECHNICAL-DECISIONS.md).
 That document also gives:
 - the 48 conventions the engineer set in the `AGENTS.md` files before any code (A1–A48);
-- all 84 numbered decisions, with the reasoning behind each and whether it was the engineer's call
+- all 95 numbered decisions, with the reasoning behind each and whether it was the engineer's call
   or the AI agent's.
 
 - **Strict role separation (D13).** An Admin has no task access at all. An Operator sees only the
@@ -304,6 +304,9 @@ That document also gives:
   session by refreshing first (D35).
 - **The URL holds list state (D45).** Refresh, Back, shared links and dashboard cards all open the
   same view.
+- **TanStack Form, Table and Store (D79–D88).** Every form and filter panel is a TanStack Form
+  built from shared field components; the tables are TanStack Tables that own no state and
+  are driven from the URL; the session and each page's UI state live in TanStack Stores.
 - **Structured logs with a request id (D89–D93).** Every line is JSON and carries the id of the
   request that caused it, including lines written by the Celery worker for that request.
 - **drf-spectacular instead of drf-yasg (D4).** drf-yasg's support stops at Django 5.2, and it
@@ -322,7 +325,7 @@ API.
 |---|---|
 | [SUMMARY.md](SUMMARY.md) | Project review guide: the brief's requirements mapped to code and docs |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Diagrams: containers, layers, data model with the history tables, flows, capability matrix, frontend |
-| [docs/TECHNICAL-DECISIONS.md](docs/TECHNICAL-DECISIONS.md) | The engineer's `AGENTS.md` conventions (A1–A48); every decision (D1–D78 and D89–D93) with its reason and origin (engineer or AI); known limitations |
+| [docs/TECHNICAL-DECISIONS.md](docs/TECHNICAL-DECISIONS.md) | The engineer's `AGENTS.md` conventions (A1–A48); every decision (D1–D94) with its reason and origin (engineer or AI); known limitations |
 | [docs/GENAI-WORKFLOW.md](docs/GENAI-WORKFLOW.md) | How the project was built with an AI agent, and how its output was validated and corrected |
 | [docs/qa/2026-10-07-frontend-qa-report.md](docs/qa/2026-10-07-frontend-qa-report.md) | Browser QA of responsiveness, forms and navigation; test and coverage results; re-test after fixes |
 | [docs/superpowers/specs/](docs/superpowers/specs/) and [plans/](docs/superpowers/plans/) | The design spec and implementation plan of each iteration |

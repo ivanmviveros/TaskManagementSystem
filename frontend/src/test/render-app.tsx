@@ -5,7 +5,7 @@ import { useState } from "react";
 
 import { createAppRouter, type AppRouter } from "../app/router";
 import { useRouterAuthSync } from "../app/useRouterAuthSync";
-import { AuthProvider } from "../features/auth/AuthContext";
+import { SessionProvider } from "../features/auth/SessionProvider";
 import { useAuth } from "../features/auth/hooks/useAuth";
 import { clearAccessToken } from "../lib/api-client";
 
@@ -48,9 +48,9 @@ export async function renderApp(initialPath = "/") {
   const holder: RouterHolder = { current: null };
   const result = render(
     <QueryClientProvider client={queryClient}>
-      <AuthProvider>
+      <SessionProvider>
         <AppAtPath initialPath={initialPath} holder={holder} />
-      </AuthProvider>
+      </SessionProvider>
     </QueryClientProvider>,
   );
   // AppAtPath creates the router on its first render, which render() has
@@ -58,5 +58,5 @@ export async function renderApp(initialPath = "/") {
   const router = holder.current;
   if (router === null) throw new Error("renderApp: AppAtPath did not create a router");
   // Spread, not wrapped: StatsPage.test.tsx calls unmount() on the result.
-  return { ...result, router };
+  return { ...result, router, queryClient };
 }

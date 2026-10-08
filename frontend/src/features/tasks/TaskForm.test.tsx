@@ -1,11 +1,11 @@
-import { focusManager } from "@tanstack/react-query";
-import { act, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { formatDueDate } from "../../lib/dates";
 import { server } from "../../test/msw-server";
+import { refetchOnFocus } from "../../test/refetch-on-focus";
 import { renderApp } from "../../test/render-app";
 import type { TaskDetail } from "./types";
 
@@ -169,6 +169,57 @@ describe("TaskForm", () => {
     await waitFor(() => expect(title).toHaveFocus());
   });
 
+  it("saves on a second attempt after a server error (D80)", async () => {
+    signedInAs(SUPERVISOR);
+    taskDetail();
+    let posts = 0;
+    server.use(
+      http.post(`${BASE}/tasks/`, () => {
+        posts += 1;
+        return posts === 1
+          ? HttpResponse.json(
+              {
+                detail: "Invalid input.",
+                code: "validation_error",
+                errors: { title: ["This field may not be blank."] },
+              },
+              { status: 400 },
+            )
+          : HttpResponse.json(DETAIL, { status: 201 });
+      }),
+    );
+    await renderApp("/tasks/new");
+    const user = userEvent.setup();
+    const submit = await screen.findByRole("button", { name: /create task/i });
+    await user.click(submit);
+    expect(await screen.findByText(/may not be blank/i)).toBeInTheDocument();
+    await user.type(screen.getByLabelText(/title/i), "A task");
+    await user.click(submit);
+    await waitFor(() => expect(posts).toBe(2));
+  });
+
+  it("keeps the values it loaded when a focus refetch brings newer ones (D81)", async () => {
+    signedInAs(SUPERVISOR);
+    assignableUsers();
+    let gets = 0;
+    server.use(
+      http.get(`${BASE}/tasks/${TASK_ID}/`, () => {
+        gets += 1;
+        return HttpResponse.json(gets === 1 ? DETAIL : { ...DETAIL, title: "Renamed elsewhere" });
+      }),
+    );
+    const patches = capturePatches();
+    const { queryClient } = await renderApp(`/tasks/${TASK_ID}/edit`);
+    await screen.findByRole("button", { name: /save changes/i });
+    await refetchOnFocus(queryClient);
+    expect(gets).toBe(2);
+    expect(screen.getByLabelText(/title/i)).toHaveValue("Review the brief");
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: /save changes/i }));
+    await waitFor(() => expect(patches.bodies).toHaveLength(1));
+    expect(patches.bodies[0]).toMatchObject({ title: "Review the brief" });
+  });
+
   it("creates a task and invalidates the list", async () => {
     signedInAs(SUPERVISOR);
     assignableUsers();
@@ -261,6 +312,32 @@ describe("TaskForm", () => {
     expect(screen.getByRole("combobox", { name: /assignee/i })).toHaveFocus();
   });
 
+  it("loads the next page when the list is scrolled to its end, without jumping back to the top", async () => {
+    // jsdom implements no scrolling: record what the picker asks to scroll into view.
+    const scrolledIntoView = vi.fn();
+    Element.prototype.scrollIntoView = scrolledIntoView;
+    try {
+      signedInAs(SUPERVISOR);
+      const requests = assignableUsers(Array.from({ length: 45 }, (_, i) => operatorNo(i)));
+      await renderApp("/tasks/new");
+      const user = userEvent.setup();
+      await user.click(await screen.findByRole("combobox", { name: /assignee/i }));
+      const listbox = await screen.findByRole("listbox", { name: /assignee/i });
+      await waitFor(() => expect(within(listbox).getAllByRole("option")).toHaveLength(21));
+      scrolledIntoView.mockClear();
+
+      // jsdom lays nothing out, so every scroll position counts as the end.
+      fireEvent.scroll(listbox);
+      await waitFor(() => expect(within(listbox).getAllByRole("option")).toHaveLength(41));
+      expect(requests.map((url) => url.searchParams.get("page"))).toEqual(["1", "2"]);
+      // The active option ("Unassigned") did not change, so nothing may pull the
+      // list back to it: the new page appears below where the user scrolled to.
+      expect(scrolledIntoView).not.toHaveBeenCalled();
+    } finally {
+      delete (Element.prototype as Partial<Element>).scrollIntoView;
+    }
+  });
+
   it("loads the next page when the keyboard reaches the last loaded user", async () => {
     signedInAs(SUPERVISOR);
     const requests = assignableUsers(Array.from({ length: 25 }, (_, i) => operatorNo(i)));
@@ -300,6 +377,30 @@ describe("TaskForm", () => {
     await user.click(screen.getByRole("button", { name: /create task/i }));
     await waitFor(() => expect(creates.bodies).toHaveLength(1));
     expect(creates.bodies[0]).toMatchObject({ assignee: SUPERVISOR.id });
+  });
+
+  it("chooses nothing on Enter right after typing, until an arrow key picks an option (D64)", async () => {
+    signedInAs(SUPERVISOR);
+    assignableUsers();
+    await renderApp("/tasks/new");
+    const user = userEvent.setup();
+    const picker = await screen.findByRole("combobox", { name: /assignee/i });
+    await user.type(picker, "sam");
+    const listbox = await screen.findByRole("listbox", { name: /assignee/i });
+    await waitFor(() =>
+      expect(within(listbox).queryByRole("option", { name: /omar operator/i })).not.toBeInTheDocument(),
+    );
+    await within(listbox).findByRole("option", { name: /sam supervisor/i });
+    expect(picker).not.toHaveAttribute("aria-activedescendant");
+
+    await user.keyboard("{Enter}");
+    expect(picker).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByRole("listbox", { name: /assignee/i })).toBeInTheDocument();
+    expect(picker).toHaveValue("sam");
+
+    await user.keyboard("{ArrowDown}{Enter}");
+    expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+    expect(picker).toHaveValue("Sam Supervisor (supervisor@demo.local)");
   });
 
   it("chooses an assignee with the mouse", async () => {
@@ -483,6 +584,31 @@ describe("TaskForm", () => {
     expect(await screen.findByText(/an admin cannot be assigned tasks/i)).toBeInTheDocument();
   });
 
+  it("shows a validation error keyed on assignee under the picker, not in the alert (D94)", async () => {
+    signedInAs(SUPERVISOR);
+    assignableUsers();
+    server.use(
+      http.post(`${BASE}/tasks/`, () =>
+        HttpResponse.json(
+          {
+            detail: "Invalid input.",
+            code: "validation_error",
+            errors: { assignee: ["That user does not exist. Choose another assignee."] },
+          },
+          { status: 400 },
+        ),
+      ),
+    );
+    await renderApp("/tasks/new");
+    const user = userEvent.setup();
+    await user.type(await screen.findByLabelText(/title/i), "Doomed");
+    await user.click(screen.getByRole("button", { name: /create task/i }));
+    const picker = await screen.findByRole("combobox", { name: /assignee/i });
+    await waitFor(() => expect(picker).toHaveAttribute("aria-invalid", "true"));
+    expect(screen.getByText(/that user does not exist/i)).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
   it("surfaces a 409 invalid_status_transition as a form-level message", async () => {
     signedInAs(SUPERVISOR);
     assignableUsers();
@@ -602,29 +728,16 @@ describe("TaskForm", () => {
       }),
     );
     const patches = capturePatches();
-    await renderApp(`/tasks/${TASK_ID}/edit`);
+    const { queryClient } = await renderApp(`/tasks/${TASK_ID}/edit`);
     await screen.findByRole("combobox", { name: /status/i });
-    try {
-      // renderApp does not expose its QueryClient; the test client's default
-      // staleTime of 0 makes a focus event refetch the active detail query.
-      act(() => {
-        focusManager.setFocused(false);
-        focusManager.setFocused(true);
-      });
-      // The UI deliberately does not change on refetch, so count the GETs —
-      // otherwise this could pass without the refetch ever happening.
-      await waitFor(() => expect(gets).toBe(2));
-      const user = userEvent.setup();
-      await user.click(screen.getByRole("button", { name: /save changes/i }));
-      await waitFor(() => expect(patches.bodies).toHaveLength(1));
-      expect(patches.bodies[0]).not.toHaveProperty("status");
-    } finally {
-      // Restores the shared singleton. isFocused() then resolves to true, which
-      // fires one more focus refetch that may still be in flight when afterEach
-      // resets the MSW handlers. Other tests also end with refetches in flight;
-      // if this one ever flakes on onUnhandledRequest, look here first.
-      focusManager.setFocused(undefined);
-    }
+    // The UI deliberately does not change on refetch, so also count the GETs:
+    // otherwise this could pass without the refetch ever happening.
+    await refetchOnFocus(queryClient);
+    expect(gets).toBe(2);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: /save changes/i }));
+    await waitFor(() => expect(patches.bodies).toHaveLength(1));
+    expect(patches.bodies[0]).not.toHaveProperty("status");
   });
 });
 

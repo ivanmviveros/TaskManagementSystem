@@ -1,8 +1,11 @@
-import { useId } from "react";
+import { useSelector } from "@tanstack/react-form";
+import { useId, useState } from "react";
+
 import { Button } from "../../../components/Button";
-import { useSearchParamDraft } from "../../../lib/useSearchParamDraft";
-import { STATUS_LABEL } from "./StatusBadge";
+import { useAppForm } from "../../../components/form/app-form";
+import { useUrlFieldSync } from "../../../lib/useUrlFieldSync";
 import { TASK_STATUSES, type TaskFilters as Filters, type TaskStatus } from "../types";
+import { STATUS_LABEL } from "./StatusBadge";
 
 /** What this panel edits. Paging and ordering belong to the list. */
 export type FilterPatch = Partial<
@@ -11,102 +14,139 @@ export type FilterPatch = Partial<
 
 interface TaskFiltersProps {
   filters: Filters;
-  /** A patch, not a snapshot: a draft commits up to 300 ms later (D46). */
+  /** A patch, not a snapshot: a date commits up to 300 ms later (D46). */
   onChange: (patch: FilterPatch) => void;
   onClear: () => void;
 }
+
+/** The panel's fields, shaped for its inputs. Dates are "yyyy-mm-dd" or "". */
+type FilterDraft = {
+  status: TaskStatus[];
+  due_date_after: string;
+  due_date_before: string;
+  overdue: boolean;
+};
+
+const STATUS_OPTIONS = TASK_STATUSES.map((status) => ({
+  value: status,
+  label: STATUS_LABEL[status],
+}));
+const NO_STATUSES: TaskStatus[] = [];
 
 /** "" clears the bound; otherwise the day at `time`, in UTC, as before. */
 function toBound(day: string, time: string): string | undefined {
   return day === "" ? undefined : new Date(`${day}T${time}Z`).toISOString();
 }
 
+function sameStatuses(a: TaskStatus[], b: TaskStatus[]): boolean {
+  return a.length === b.length && a.every((status, index) => status === b[index]);
+}
+
 export function TaskFilters({ filters, onChange, onClear }: TaskFiltersProps) {
-  const selected = filters.status ?? [];
-  // Drafts, not the URL directly: a date typed digit by digit would be
-  // reverted mid-entry by the router's transition (D50).
-  const after = useSearchParamDraft(filters.due_date_after?.slice(0, 10) ?? "", (day) =>
-    onChange({ due_date_after: toBound(day, "00:00:00") }),
-  );
-  const before = useSearchParamDraft(filters.due_date_before?.slice(0, 10) ?? "", (day) =>
-    onChange({ due_date_before: toBound(day, "23:59:59") }),
-  );
+  const committed: FilterDraft = {
+    status: filters.status ?? NO_STATUSES,
+    due_date_after: filters.due_date_after?.slice(0, 10) ?? "",
+    due_date_before: filters.due_date_before?.slice(0, 10) ?? "",
+    overdue: filters.overdue === true,
+  };
+  // D81: the URL as it was on mount. After that, useUrlFieldSync carries every
+  // URL change into the fields — one path, not two.
+  const [defaults] = useState(() => committed);
+  const form = useAppForm({ defaultValues: defaults });
+
+  const status = useUrlFieldSync({
+    committed: committed.status,
+    commit: (next: TaskStatus[]) => onChange({ status: next.length === 0 ? undefined : next }),
+    write: (value) => form.setFieldValue("status", value, { dontRunListeners: true }),
+    delayMs: 0,
+    equals: sameStatuses,
+  });
+  // Dates go through a 300 ms quiet period: a date typed digit by digit would
+  // otherwise be reverted mid-entry by the router's transition (D50).
+  const after = useUrlFieldSync({
+    committed: committed.due_date_after,
+    commit: (day: string) => onChange({ due_date_after: toBound(day, "00:00:00") }),
+    write: (value) => form.setFieldValue("due_date_after", value, { dontRunListeners: true }),
+  });
+  const before = useUrlFieldSync({
+    committed: committed.due_date_before,
+    commit: (day: string) => onChange({ due_date_before: toBound(day, "23:59:59") }),
+    write: (value) => form.setFieldValue("due_date_before", value, { dontRunListeners: true }),
+  });
+  const overdue = useUrlFieldSync({
+    committed: committed.overdue,
+    commit: (on: boolean) => onChange({ overdue: on ? true : undefined }),
+    write: (value) => form.setFieldValue("overdue", value, { dontRunListeners: true }),
+    delayMs: 0,
+  });
+
+  const afterDay = useSelector(form.store, (state) => state.values.due_date_after);
+  const beforeDay = useSelector(form.store, (state) => state.values.due_date_before);
   // D78: explained, not prevented — the URL keeps what was entered (D45). ISO
   // days compare correctly as strings.
-  const inverted = after.draft !== "" && before.draft !== "" && after.draft > before.draft;
+  const inverted = afterDay !== "" && beforeDay !== "" && afterDay > beforeDay;
   const rangeErrorId = useId();
 
-  function toggleStatus(status: TaskStatus) {
-    const next = selected.includes(status)
-      ? selected.filter((value) => value !== status)
-      : [...selected, status];
-    onChange({ status: next.length === 0 ? undefined : next });
-  }
-
   function clear() {
-    // A pending date commit would otherwise land after the clear and bring
-    // the date back.
+    // A pending date commit would otherwise land after the clear and bring the
+    // date back.
+    status.cancel();
     after.cancel();
     before.cancel();
+    overdue.cancel();
+    // cancel() puts back the URL's value from before any write still in
+    // flight. Clear empties every filter, so put the cleared values straight
+    // in: otherwise a box unchecked just before Clear would be put back to
+    // checked, and the cleared URL would then match the queued uncheck as its
+    // own echo and leave it that way.
+    form.setFieldValue("status", NO_STATUSES, { dontRunListeners: true });
+    form.setFieldValue("due_date_after", "", { dontRunListeners: true });
+    form.setFieldValue("due_date_before", "", { dontRunListeners: true });
+    form.setFieldValue("overdue", false, { dontRunListeners: true });
     onClear();
   }
 
   return (
     <section aria-label="Filters" className="mb-4 rounded-lg bg-white p-4 shadow-sm">
-      <fieldset className="mb-3">
-        <legend className="mb-2 text-sm font-medium text-slate-700">Status</legend>
-        <div className="flex flex-wrap gap-3">
-          {TASK_STATUSES.map((status) => (
-            <label key={status} className="flex items-center gap-1.5 text-sm text-slate-700">
-              <input
-                type="checkbox"
-                checked={selected.includes(status)}
-                onChange={() => toggleStatus(status)}
-              />
-              {STATUS_LABEL[status]}
-            </label>
-          ))}
-        </div>
-      </fieldset>
+      <form.AppField name="status" listeners={{ onChange: ({ value }) => status.onChange(value) }}>
+        {(field) => <field.CheckboxGroupField legend="Status" options={STATUS_OPTIONS} />}
+      </form.AppField>
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
-        <div>
-          <label htmlFor="due-after" className="mb-1 block text-sm font-medium text-slate-700">
-            Due after
-          </label>
-          <input
-            id="due-after"
-            type="date"
-            value={after.draft}
-            max={before.draft || undefined}
-            aria-describedby={inverted ? rangeErrorId : undefined}
-            onChange={(event) => after.setDraft(event.target.value)}
-            className="rounded border border-slate-300 px-3 py-2 text-sm"
-          />
-        </div>
-        <div>
-          <label htmlFor="due-before" className="mb-1 block text-sm font-medium text-slate-700">
-            Due before
-          </label>
-          <input
-            id="due-before"
-            type="date"
-            value={before.draft}
-            min={after.draft || undefined}
-            aria-invalid={inverted || undefined}
-            aria-describedby={inverted ? rangeErrorId : undefined}
-            onChange={(event) => before.setDraft(event.target.value)}
-            className="rounded border border-slate-300 px-3 py-2 text-sm"
-          />
-        </div>
-        <label className="flex items-center gap-1.5 text-sm text-slate-700">
-          <input
-            type="checkbox"
-            checked={filters.overdue === true}
-            onChange={(event) => onChange({ overdue: event.target.checked ? true : undefined })}
-          />
-          Overdue only
-        </label>
+        <form.AppField
+          name="due_date_after"
+          listeners={{ onChange: ({ value }) => after.onChange(value) }}
+        >
+          {(field) => (
+            <field.TextField
+              id="due-after"
+              label="Due after"
+              type="date"
+              density="compact"
+              max={beforeDay || undefined}
+              aria-describedby={inverted ? rangeErrorId : undefined}
+            />
+          )}
+        </form.AppField>
+        <form.AppField
+          name="due_date_before"
+          listeners={{ onChange: ({ value }) => before.onChange(value) }}
+        >
+          {(field) => (
+            <field.TextField
+              id="due-before"
+              label="Due before"
+              type="date"
+              density="compact"
+              min={afterDay || undefined}
+              aria-invalid={inverted || undefined}
+              aria-describedby={inverted ? rangeErrorId : undefined}
+            />
+          )}
+        </form.AppField>
+        <form.AppField name="overdue" listeners={{ onChange: ({ value }) => overdue.onChange(value) }}>
+          {(field) => <field.CheckboxField label="Overdue only" density="compact" />}
+        </form.AppField>
         <Button variant="secondary" onClick={clear} className="sm:ml-auto">
           Clear filters
         </Button>

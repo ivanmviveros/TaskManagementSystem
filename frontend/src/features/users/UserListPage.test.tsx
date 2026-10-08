@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { beforeEach, describe, expect, it } from "vitest";
@@ -225,6 +225,33 @@ describe("UserListPage", () => {
     await waitFor(() => expect(within(dialog).getByRole("alert")).toHaveFocus());
   });
 
+  it("refocuses the alert when the same deactivation failure repeats (D75)", async () => {
+    usersRespondWith([operator()]);
+    server.use(
+      http.delete(`${BASE}/users/:id/`, () =>
+        HttpResponse.json(
+          { detail: "You cannot deactivate that user.", code: "permission_denied" },
+          { status: 403 },
+        ),
+      ),
+    );
+    await renderApp("/users");
+    const user = userEvent.setup();
+    const table = await screen.findByRole("table");
+    await user.click(
+      await within(table).findByRole("button", { name: /deactivate operator@demo.local/i }),
+    );
+    const dialog = await screen.findByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: /^deactivate$/i }));
+    await waitFor(() => expect(within(dialog).getByRole("alert")).toHaveFocus());
+
+    within(dialog).getByRole("button", { name: /cancel/i }).focus();
+    expect(within(dialog).getByRole("alert")).not.toHaveFocus();
+
+    await user.click(within(dialog).getByRole("button", { name: /^deactivate$/i }));
+    await waitFor(() => expect(within(dialog).getByRole("alert")).toHaveFocus());
+  });
+
   it("renders a card per user for narrow viewports", async () => {
     // jsdom applies no CSS, so BOTH presentations are in the DOM. That is why
     // the table assertions above are scoped, and why the card gets its own test
@@ -238,6 +265,15 @@ describe("UserListPage", () => {
     expect(
       within(cards[0]).getByRole("button", { name: /deactivate operator@demo.local/i }),
     ).toBeInTheDocument();
+  });
+
+  it("opens the deactivate dialog from a card's Deactivate button", async () => {
+    usersRespondWith([operator()]);
+    await renderApp("/users");
+    const user = userEvent.setup();
+    const [card] = await screen.findAllByRole("article");
+    await user.click(within(card).getByRole("button", { name: /deactivate operator@demo.local/i }));
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
   });
 
   it("never offers the signed-in Admin a Deactivate for their own account (D66)", async () => {
@@ -323,6 +359,31 @@ describe("UserListPage URL state", () => {
     await waitFor(() => expect(lastQuery().has("search")).toBe(false));
   });
 
+  it("follows a URL change made elsewhere while the filters stay mounted", async () => {
+    usersRespondWith([operator()], 40); // two pages at 20
+    const { router } = await renderApp("/users?role=OPERATOR&is_active=false&search=omar");
+    await screen.findByRole("table");
+    expect(screen.getByLabelText(/^role$/i)).toHaveValue("OPERATOR");
+    expect(screen.getByRole("checkbox", { name: /inactive only/i })).toBeChecked();
+    expect(screen.getByLabelText(/search/i)).toHaveValue("omar");
+
+    await act(() =>
+      router.navigate({ to: "/users", search: { role: "ADMIN", search: "ada", page: 2 } }),
+    );
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/^role$/i)).toHaveValue("ADMIN");
+      expect(screen.getByRole("checkbox", { name: /inactive only/i })).not.toBeChecked();
+      expect(screen.getByLabelText(/search/i)).toHaveValue("ada");
+    });
+
+    // Putting the URL's values into the fields must not read as the user's
+    // edit: a write that ran the listeners would send them back to the URL,
+    // which returns the list to page 1. Outlive the 300 ms search debounce.
+    await act(() => new Promise((resolve) => setTimeout(resolve, 400)));
+    expect(router.state.location.search).toMatchObject({ role: "ADMIN", search: "ada", page: 2 });
+  });
+
   it("lands on page 1, without an error, when the URL's page no longer exists", async () => {
     server.use(
       http.get(`${BASE}/users/`, ({ request }) => {
@@ -342,5 +403,28 @@ describe("UserListPage URL state", () => {
     expect(router.state.location.search).toEqual({});
     expect(requested.map((url) => url.searchParams.get("page"))).toEqual(["4", "1"]);
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("pages and resizes through the table, writing both back to the URL (D85)", async () => {
+    usersRespondWith([operator()], 40); // two pages at 20
+    const { router } = await renderApp("/users");
+    await screen.findByRole("table");
+    const user = userEvent.setup();
+
+    // A page move is a push, so Back returns to the previous page.
+    const beforePageMove = router.history.length;
+    await user.click(screen.getByRole("button", { name: "Next page" }));
+    await waitFor(() => expect(router.state.location.search).toEqual({ page: 2 }));
+    expect(router.history.length).toBe(beforePageMove + 1);
+    await waitFor(() => expect(lastQuery().get("page")).toBe("2"));
+
+    // A new size goes back to page 1, so the page leaves the URL; it replaces
+    // the entry rather than adding one.
+    const beforeResize = router.history.length;
+    await user.selectOptions(screen.getByLabelText(/rows per page/i), "50");
+    await waitFor(() => expect(router.state.location.search).toEqual({ page_size: 50 }));
+    expect(router.history.length).toBe(beforeResize);
+    await waitFor(() => expect(lastQuery().get("page_size")).toBe("50"));
+    expect(lastQuery().get("page")).toBe("1");
   });
 });

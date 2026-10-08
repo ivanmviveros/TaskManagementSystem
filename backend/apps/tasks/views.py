@@ -111,8 +111,10 @@ class TaskViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.Gen
     )
     def partial_update(self, request, *args, **kwargs):
         task = self.get_object()
+        # The task rides in the context for D94: re-sending its current, deleted
+        # assignee is no change.
         serializer = TaskUpdateSerializer(
-            data=request.data, partial=True, context={"request": request}
+            data=request.data, partial=True, context={"request": request, "task": task}
         )
         serializer.is_valid(raise_exception=True)
         updated = self.get_service().update(

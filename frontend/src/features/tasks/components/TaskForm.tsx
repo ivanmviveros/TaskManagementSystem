@@ -1,13 +1,16 @@
 import { useState } from "react";
-import type { FormEvent } from "react";
 
 import { Button } from "../../../components/Button";
-import { FormError } from "../../../components/FormError";
-import { TextField } from "../../../components/TextField";
+import { useAppForm } from "../../../components/form/app-form";
+import {
+  clearServerErrors,
+  serverMessage,
+  setServerErrors,
+  toServerErrors,
+} from "../../../components/form/server-errors";
 import { useFocusFirstError } from "../../../components/useFocusFirstError";
-import { ApiError } from "../../../lib/api-error";
 import { useAuth } from "../../auth/hooks/useAuth";
-import type { UserMinimal } from "../../users/types";
+import { taskSnapshot, toTaskInput, type TaskFormValues } from "../task-form-values";
 import type { TaskDetail, TaskStatus } from "../types";
 import { AssigneeCombobox } from "./AssigneeCombobox";
 import { STATUS_LABEL, StatusBadge } from "./StatusBadge";
@@ -18,19 +21,6 @@ import { STATUS_LABEL, StatusBadge } from "./StatusBadge";
  * call (allowed_transitions, D39), never this list's.
  */
 const STATUS_ORDER = Object.keys(STATUS_LABEL) as TaskStatus[];
-
-export interface TaskFormValues {
-  title: string;
-  description: string;
-  due_date: string | null;
-  /**
-   * Absent when the actor may not choose an assignee (an Operator, D15/D16);
-   * null means "unassigned". The two must stay distinct: the API reads an
-   * omitted assignee as "leave it / default it" and null as "unassign" (D32).
-   */
-  assignee?: string | null;
-  status?: TaskStatus;
-}
 
 interface TaskFormProps {
   /** Present in edit mode, absent when creating. */
@@ -47,136 +37,81 @@ export function TaskForm({ task, onSubmit, onCancel }: TaskFormProps) {
   // self, on update it is immutable. Rendering the field would offer a choice
   // that cannot work, so it is omitted rather than disabled.
   const canChooseAssignee = user?.role === "SUPERVISOR";
-
-  const [title, setTitle] = useState(task?.title ?? "");
-  const [description, setDescription] = useState(task?.description ?? "");
-  const [dueDate, setDueDate] = useState(task?.due_date?.slice(0, 10) ?? "");
-  // The whole user, not an id: the picker loads a page at a time, so the
-  // current assignee may not be among its loaded options (D64).
-  const [assignee, setAssignee] = useState<UserMinimal | null>(task?.assignee ?? null);
-  // D40: ONE snapshot, taken when the form opens, drives the status field: the
-  // options, the read-only switch and the "did the user change it?" check. The
-  // detail query refetches (30 s staleTime, refetch on focus), and none of those
-  // three may follow it — options from the select's own state would drop the
-  // original status after a change; read-only from the live task could strand
-  // a changed value after a refetch; comparing with the live status would
-  // silently undo a change someone else made meanwhile.
-  const [initialStatus] = useState(task?.status);
-  const [initialTransitions] = useState<TaskStatus[]>(task?.allowed_transitions ?? []);
-  const [status, setStatus] = useState<TaskStatus>(task?.status ?? "PENDING");
-  // Kept after `status` on purpose: the filter runs during render, so if it is
-  // ever changed to read `status`, a declaration above it would throw a
-  // temporal-dead-zone ReferenceError instead of failing the test that guards it.
+  // D40/D81: taken once, when the form opens. useForm re-applies changed
+  // defaults to an untouched form on every render, so the live task must never
+  // reach it — see taskSnapshot.
+  const [snapshot] = useState(() => taskSnapshot(task));
+  const { initialStatus, initialTransitions } = snapshot;
   const statusOptions = STATUS_ORDER.filter(
     (option) => option === initialStatus || initialTransitions.includes(option),
-  );
-  const [formError, setFormError] = useState<string | null>(null);
-  const [fieldErrors, setFieldErrors] = useState<Record<string, string[]> | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  ).map((option) => ({ value: option, label: STATUS_LABEL[option] }));
 
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setFormError(null);
-    setFieldErrors(null);
-    setIsSubmitting(true);
-    try {
-      await onSubmit({
-        title,
-        description,
-        due_date: dueDate === "" ? null : new Date(`${dueDate}T12:00:00Z`).toISOString(),
-        ...(canChooseAssignee ? { assignee: assignee?.id ?? null } : {}),
-        // Sent only when the user changed it (D40). TaskEditPage omits an
-        // undefined status from the PATCH.
-        ...(isEdit && status !== initialStatus ? { status } : {}),
-      });
-    } catch (caught) {
-      if (caught instanceof ApiError) {
-        // Distinguished by `code` alone, never by parsing `detail` — which is
-        // exactly why spec §8.7 keeps the two assignee codes separate.
-        if (caught.code === "validation_error") {
-          setFieldErrors(caught.errors);
-          // An error keyed on a field this form does not render (description,
-          // status, non_field_errors) would otherwise vanish; show the message.
-          const rendered = canChooseAssignee ? ["title", "due_date", "assignee"] : ["title", "due_date"];
-          const hasRenderedError = rendered.some((key) => caught.errors?.[key] !== undefined);
-          setFormError(hasRenderedError ? null : caught.message);
-        } else if (caught.code === "assignee_not_assignable") {
-          setFieldErrors({ assignee: [caught.message] });
-        } else {
-          setFormError(caught.message);
-        }
-      } else {
-        setFormError("Could not save. Try again.");
+  const form = useAppForm({
+    defaultValues: snapshot.defaults,
+    onSubmit: async ({ value, formApi }) => {
+      try {
+        await onSubmit(toTaskInput(value, { canChooseAssignee, isEdit, initialStatus }));
+      } catch (caught) {
+        setServerErrors(
+          formApi,
+          toServerErrors(caught, {
+            renderedFields: canChooseAssignee
+              ? ["title", "due_date", "assignee"]
+              : ["title", "due_date"],
+            // Distinguished by `code` alone, never by parsing `detail` — which is
+            // exactly why spec §8.7 keeps the two assignee codes separate.
+            codeToField: { assignee_not_assignable: "assignee" },
+            fallback: "Could not save. Try again.",
+          }),
+        );
+        signalFailure();
       }
-      signalFailure();
-    } finally {
-      setIsSubmitting(false);
-    }
-  }
+    },
+  });
 
   return (
-    <form ref={formRef} onSubmit={handleSubmit} noValidate aria-label={isEdit ? "Edit task" : "New task"}>
-      <TextField
-        id="title"
-        label="Title"
-        required
-        maxLength={200}
-        value={title}
-        error={fieldErrors?.title?.[0]}
-        onChange={(event) => setTitle(event.target.value)}
-      />
+    <form
+      ref={formRef}
+      onSubmit={(event) => {
+        event.preventDefault();
+        // D80: a standing field error would make the form refuse this submit.
+        clearServerErrors(form);
+        void form.handleSubmit();
+      }}
+      noValidate
+      aria-label={isEdit ? "Edit task" : "New task"}
+    >
+      <form.AppField name="title">
+        {(field) => <field.TextField id="title" label="Title" required maxLength={200} />}
+      </form.AppField>
 
-      <div className="mb-4">
-        <label htmlFor="description" className="mb-1 block text-sm font-medium text-slate-700">
-          Description
-        </label>
-        <textarea
-          id="description"
-          rows={4}
-          value={description}
-          onChange={(event) => setDescription(event.target.value)}
-          className="w-full rounded border border-slate-300 px-3 py-2"
-        />
-      </div>
+      <form.AppField name="description">
+        {(field) => <field.TextareaField id="description" label="Description" />}
+      </form.AppField>
 
-      <TextField
-        id="due_date"
-        label="Due date"
-        type="date"
-        value={dueDate}
-        error={fieldErrors?.due_date?.[0]}
-        onChange={(event) => setDueDate(event.target.value)}
-      />
+      <form.AppField name="due_date">
+        {(field) => <field.TextField id="due_date" label="Due date" type="date" />}
+      </form.AppField>
 
       {canChooseAssignee && (
-        <AssigneeCombobox
-          id="assignee"
-          label="Assignee"
-          value={assignee}
-          onChange={setAssignee}
-          error={fieldErrors?.assignee?.[0]}
-        />
+        <form.AppField name="assignee">
+          {(field) => (
+            <AssigneeCombobox
+              id="assignee"
+              label="Assignee"
+              value={field.state.value}
+              onChange={field.handleChange}
+              error={serverMessage(field.state.meta.errorMap)}
+            />
+          )}
+        </form.AppField>
       )}
 
       {/* Edit mode only: TaskCreateSerializer accepts no status field. */}
       {isEdit && initialTransitions.length > 0 && (
-        <div className="mb-4">
-          <label htmlFor="status" className="mb-1 block text-sm font-medium text-slate-700">
-            Status
-          </label>
-          <select
-            id="status"
-            value={status}
-            onChange={(event) => setStatus(event.target.value as TaskStatus)}
-            className="w-full rounded border border-slate-300 px-3 py-2"
-          >
-            {statusOptions.map((option) => (
-              <option key={option} value={option}>
-                {STATUS_LABEL[option]}
-              </option>
-            ))}
-          </select>
-        </div>
+        <form.AppField name="status">
+          {(field) => <field.SelectField id="status" label="Status" options={statusOptions} />}
+        </form.AppField>
       )}
 
       {/* A terminal task has nothing to choose, so nothing to get wrong. Plain
@@ -191,16 +126,15 @@ export function TaskForm({ task, onSubmit, onCancel }: TaskFormProps) {
         </div>
       )}
 
-      <FormError message={formError} />
-
-      <div className="flex gap-2">
-        <Button type="submit" disabled={isSubmitting}>
-          {isSubmitting ? "Saving…" : isEdit ? "Save changes" : "Create task"}
-        </Button>
-        <Button variant="secondary" onClick={onCancel}>
-          Cancel
-        </Button>
-      </div>
+      <form.AppForm>
+        <form.ServerFormError />
+        <div className="flex gap-2">
+          <form.SubmitButton label={isEdit ? "Save changes" : "Create task"} pendingLabel="Saving…" />
+          <Button variant="secondary" onClick={onCancel}>
+            Cancel
+          </Button>
+        </div>
+      </form.AppForm>
     </form>
   );
 }

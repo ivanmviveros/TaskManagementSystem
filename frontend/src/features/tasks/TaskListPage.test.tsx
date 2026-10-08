@@ -258,6 +258,64 @@ describe("TaskListPage", () => {
   });
 });
 
+describe("task actions from the list (D87)", () => {
+  const A = task({ id: "task-a", title: "Task A", can_delete: true });
+  const B = task({ id: "task-b", title: "Task B", can_delete: true });
+
+  it("disables only the busy row while its action is in flight", async () => {
+    signedInAs(SUPERVISOR);
+    tasksRespondWith([A, B]);
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    server.use(
+      http.post(`${BASE}/tasks/${A.id}/complete/`, async () => {
+        await gate;
+        return HttpResponse.json({ ...A, description: "" });
+      }),
+    );
+    await renderApp("/tasks");
+    const table = await screen.findByRole("table");
+    const user = userEvent.setup();
+    await user.click(within(table).getByRole("button", { name: "Complete Task A" }));
+
+    expect(within(table).getByRole("button", { name: "Complete Task A" })).toBeDisabled();
+    expect(within(table).getByRole("button", { name: "Delete Task A" })).toBeDisabled();
+    expect(within(table).getByRole("button", { name: "Complete Task B" })).toBeEnabled();
+
+    release();
+    await waitFor(() =>
+      expect(within(table).getByRole("button", { name: "Complete Task A" })).toBeEnabled(),
+    );
+    expect(within(table).getByRole("button", { name: "Delete Task A" })).toBeEnabled();
+  });
+
+  it("shows the message when completing fails", async () => {
+    signedInAs(SUPERVISOR);
+    tasksRespondWith([A]);
+    server.use(
+      http.post(`${BASE}/tasks/${A.id}/complete/`, () =>
+        HttpResponse.json(
+          {
+            detail: "This task can no longer be completed.",
+            code: "invalid_status_transition",
+            errors: null,
+          },
+          { status: 409 },
+        ),
+      ),
+    );
+    await renderApp("/tasks");
+    const table = await screen.findByRole("table");
+    const user = userEvent.setup();
+    await user.click(within(table).getByRole("button", { name: "Complete Task A" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "This task can no longer be completed.",
+    );
+  });
+});
+
 describe("task deletion from the list", () => {
   const TASK = task({ can_delete: true });
 
@@ -276,11 +334,11 @@ describe("task deletion from the list", () => {
   async function openDialog() {
     signedInAs(OPERATOR);
     tasksRespondWith([TASK]);
-    await renderApp("/tasks");
+    const { router } = await renderApp("/tasks");
     const user = userEvent.setup();
     const table = await screen.findByRole("table");
     await user.click(within(table).getByRole("button", { name: /^delete review the brief/i }));
-    return { user, dialog: screen.getByRole("dialog") };
+    return { user, router, dialog: screen.getByRole("dialog") };
   }
 
   it("asks for confirmation, naming the task, and Cancel deletes nothing", async () => {
@@ -312,6 +370,35 @@ describe("task deletion from the list", () => {
     await user.click(within(dialog).getByRole("button", { name: /^delete$/i }));
     expect(await within(dialog).findByRole("alert")).toHaveTextContent(/only delete tasks you created/i);
     expect(screen.getByRole("dialog")).toBeInTheDocument();
+  });
+
+  it("refocuses the alert when the same failure repeats (D75)", async () => {
+    deletesRespondWith(() =>
+      HttpResponse.json(
+        { detail: "You can only delete tasks you created.", code: "permission_denied" },
+        { status: 403 },
+      ),
+    );
+    const { user, dialog } = await openDialog();
+    await user.click(within(dialog).getByRole("button", { name: /^delete$/i }));
+    await waitFor(() => expect(within(dialog).getByRole("alert")).toHaveFocus());
+
+    // Focus leaves the alert; the same message arriving again must pull it back.
+    act(() => within(dialog).getByRole("button", { name: /cancel/i }).focus());
+    expect(within(dialog).getByRole("alert")).not.toHaveFocus();
+    await user.click(within(dialog).getByRole("button", { name: /^delete$/i }));
+    await waitFor(() => expect(within(dialog).getByRole("alert")).toHaveFocus());
+  });
+
+  it("starts with the dialog closed after leaving the list and coming back (D87)", async () => {
+    const { router } = await openDialog();
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+
+    await act(() => router.navigate({ to: "/dashboard" }));
+    expect(await screen.findByRole("heading", { name: /dashboard/i })).toBeInTheDocument();
+    await act(() => router.navigate({ to: "/tasks" }));
+    await screen.findByRole("table");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
   describe("keyboard (D60)", () => {
@@ -511,6 +598,89 @@ describe("TaskListPage URL state", () => {
     expect(requested.some((url) => url.searchParams.has("due_date_after"))).toBe(false);
   });
 
+  it("Clear filters empties every filter input", async () => {
+    signedInAs(SUPERVISOR);
+    tasksPaged(5);
+    const status = encodeURIComponent(JSON.stringify(["PENDING", "IN_PROGRESS"]));
+    await renderApp(
+      `/tasks?status=${status}&due_date_after=2026-10-01T00:00:00.000Z` +
+        "&due_date_before=2026-10-31T23:59:59.000Z&overdue=true",
+    );
+    await screen.findByRole("table");
+    expect(screen.getByRole("checkbox", { name: /pending/i })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: /in progress/i })).toBeChecked();
+    expect(screen.getByLabelText(/due after/i)).toHaveValue("2026-10-01");
+    expect(screen.getByLabelText(/due before/i)).toHaveValue("2026-10-31");
+    expect(screen.getByRole("checkbox", { name: /overdue only/i })).toBeChecked();
+
+    await userEvent.setup().click(screen.getByRole("button", { name: /clear filters/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("checkbox", { name: /pending/i })).not.toBeChecked();
+      expect(screen.getByRole("checkbox", { name: /in progress/i })).not.toBeChecked();
+      expect(screen.getByLabelText(/due after/i)).toHaveValue("");
+      expect(screen.getByLabelText(/due before/i)).toHaveValue("");
+      expect(screen.getByRole("checkbox", { name: /overdue only/i })).not.toBeChecked();
+    });
+  });
+
+  it("leaves a box unchecked when Clear filters follows its uncheck before the URL catches up", async () => {
+    signedInAs(SUPERVISOR);
+    tasksPaged(5);
+    const { router } = await renderApp("/tasks?overdue=true");
+    await screen.findByRole("table");
+    const overdue = screen.getByRole("checkbox", { name: /overdue only/i });
+    expect(overdue).toBeChecked();
+
+    // Both clicks land before the first navigation commits.
+    fireEvent.click(overdue);
+    fireEvent.click(screen.getByRole("button", { name: /clear filters/i }));
+
+    await waitFor(() => expect(router.state.location.search).toEqual({}));
+    await act(() => new Promise((resolve) => setTimeout(resolve, 50)));
+    expect(screen.getByRole("checkbox", { name: /overdue only/i })).not.toBeChecked();
+  });
+
+  it("follows a URL change made elsewhere while the panel stays mounted", async () => {
+    signedInAs(SUPERVISOR);
+    tasksPaged(60); // three pages at 20
+    const status = encodeURIComponent(JSON.stringify(["PENDING"]));
+    const { router } = await renderApp(
+      `/tasks?status=${status}&due_date_after=2026-10-01T00:00:00.000Z` +
+        "&due_date_before=2026-10-31T23:59:59.000Z",
+    );
+    await screen.findByRole("table");
+    expect(screen.getByRole("checkbox", { name: /pending/i })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: /overdue only/i })).not.toBeChecked();
+
+    await act(() =>
+      router.navigate({
+        to: "/tasks",
+        search: {
+          status: ["IN_PROGRESS"],
+          due_date_after: "2026-10-05T00:00:00.000Z",
+          due_date_before: "2026-10-20T23:59:59.000Z",
+          overdue: true,
+          page: 2,
+        },
+      }),
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole("checkbox", { name: /pending/i })).not.toBeChecked();
+      expect(screen.getByRole("checkbox", { name: /in progress/i })).toBeChecked();
+      expect(screen.getByLabelText(/due after/i)).toHaveValue("2026-10-05");
+      expect(screen.getByLabelText(/due before/i)).toHaveValue("2026-10-20");
+      expect(screen.getByRole("checkbox", { name: /overdue only/i })).toBeChecked();
+    });
+
+    // Putting the URL's values into the fields must not read as the user's
+    // edit: a write that ran the listeners would send them back to the URL,
+    // which returns the list to page 1. Outlive the 300 ms date debounce.
+    await act(() => new Promise((resolve) => setTimeout(resolve, 400)));
+    expect(router.state.location.search).toMatchObject({ page: 2 });
+  });
+
   it("lands on page 1, without an error, when the URL's page no longer exists", async () => {
     signedInAs(SUPERVISOR);
     tasksPaged(30); // two pages at 20
@@ -624,6 +794,86 @@ describe("sort state in the table header (F6)", () => {
     );
     await waitFor(() => expect(router.state.location.search.ordering).toBeUndefined());
     expect(router.state.location.href).not.toContain("ordering");
+  });
+});
+
+describe("the header click cycle (D84)", () => {
+  /** A header's sort button, found by its plain label (the glyph is aria-hidden). */
+  function headerButton(name: RegExp) {
+    return within(screen.getByRole("table")).getByRole("button", { name });
+  }
+
+  it("flips an ascending column to descending", async () => {
+    signedInAs(SUPERVISOR);
+    tasksRespondWith([task()]);
+    const { router } = await renderApp("/tasks?ordering=due_date");
+    await screen.findByRole("table");
+
+    await userEvent.setup().click(headerButton(/^due date$/i));
+
+    await waitFor(() => expect(router.state.location.search).toEqual({ ordering: "-due_date" }));
+  });
+
+  it("flips a descending column to ascending", async () => {
+    signedInAs(SUPERVISOR);
+    tasksRespondWith([task()]);
+    const { router } = await renderApp("/tasks?ordering=-due_date");
+    await screen.findByRole("table");
+
+    await userEvent.setup().click(headerButton(/^due date$/i));
+
+    await waitFor(() => expect(router.state.location.search).toEqual({ ordering: "due_date" }));
+  });
+
+  it.each(["status", "-status"])(
+    "starts a column that was not sorted ascending, whichever way the sorted one ran (from %s)",
+    async (ordering) => {
+      signedInAs(SUPERVISOR);
+      tasksRespondWith([task()]);
+      const { router } = await renderApp(`/tasks?ordering=${ordering}`);
+      await screen.findByRole("table");
+
+      await userEvent.setup().click(headerButton(/^due date$/i));
+
+      await waitFor(() => expect(router.state.location.search).toEqual({ ordering: "due_date" }));
+    },
+  );
+
+  it("treats a shift-click like a plain click: one sort at a time", async () => {
+    signedInAs(SUPERVISOR);
+    tasksRespondWith([task()]);
+    const { router } = await renderApp("/tasks");
+    await screen.findByRole("table");
+    const user = userEvent.setup();
+
+    await user.keyboard("{Shift>}");
+    await user.click(headerButton(/^due date$/i));
+    await user.keyboard("{/Shift}");
+
+    await waitFor(() => expect(router.state.location.search).toEqual({ ordering: "due_date" }));
+    const table = screen.getByRole("table");
+    expect(within(table).getByRole("columnheader", { name: /due date/i })).toHaveAttribute(
+      "aria-sort",
+      "ascending",
+    );
+    // Not added to the default sort: Created is no longer sorted.
+    expect(within(table).getByRole("columnheader", { name: /created/i })).toHaveAttribute(
+      "aria-sort",
+      "none",
+    );
+  });
+
+  it("replaces the history entry and returns to page 1", async () => {
+    signedInAs(SUPERVISOR);
+    tasksPaged(60);
+    const { router } = await renderApp("/tasks?page=2");
+    await screen.findByRole("table");
+    const entries = router.history.length;
+
+    await userEvent.setup().click(headerButton(/^status$/i));
+
+    await waitFor(() => expect(router.state.location.search).toEqual({ ordering: "status" }));
+    expect(router.history.length).toBe(entries);
   });
 });
 

@@ -144,7 +144,7 @@ describe("signing out", () => {
 
 describe("session expiry", () => {
   it("sends the user to the login page when a refresh fails mid-session", async () => {
-    // The api-client signals expiry, AuthContext drops the user, and the route
+    // The api-client signals expiry, the session store drops the user, and the route
     // guards re-run. Regression test: updating router context alone does NOT
     // re-run beforeLoad, so without the invalidate the user would sit on a page
     // they can no longer load.

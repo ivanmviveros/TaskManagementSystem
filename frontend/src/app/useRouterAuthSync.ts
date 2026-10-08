@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 
-import type { AuthState } from "../features/auth/AuthContext";
+import type { AuthState } from "../features/auth/session-store";
 import type { AppRouter } from "./router";
 
 /**

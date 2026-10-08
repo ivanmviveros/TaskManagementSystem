@@ -4,6 +4,7 @@ import { http, HttpResponse } from "msw";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { server } from "../../test/msw-server";
+import { refetchOnFocus } from "../../test/refetch-on-focus";
 import { renderApp } from "../../test/render-app";
 import type { UserDetail } from "./types";
 
@@ -247,5 +248,66 @@ describe("UserForm", () => {
     const user = userEvent.setup();
     await user.click(await screen.findByRole("button", { name: /save changes/i }));
     expect(await screen.findByRole("alert")).toHaveTextContent(/cannot change your own role/i);
+  });
+
+  it("submits again after a server error (D80)", async () => {
+    let posts = 0;
+    server.use(
+      http.post(`${BASE}/users/`, () => {
+        posts += 1;
+        return posts === 1
+          ? HttpResponse.json(
+              {
+                detail: "A user with this email address already exists.",
+                code: "email_already_in_use",
+                errors: null,
+              },
+              { status: 400 },
+            )
+          : HttpResponse.json(TARGET, { status: 201 });
+      }),
+      http.get(`${BASE}/users/`, () =>
+        HttpResponse.json({ count: 0, next: null, previous: null, results: [] }),
+      ),
+    );
+    await renderApp("/users/new");
+    const user = userEvent.setup();
+    await user.type(await screen.findByLabelText(/^email$/i), "dupe@demo.local");
+    await user.type(screen.getByLabelText(/first name/i), "D");
+    await user.type(screen.getByLabelText(/last name/i), "Upe");
+    await user.type(screen.getByLabelText(/^password$/i), "a-strong-password-1");
+    await user.click(screen.getByRole("button", { name: /create user/i }));
+    expect(await screen.findByText(/already exists/i)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /create user/i }));
+    await waitFor(() => expect(posts).toBe(2));
+  });
+
+  it("keeps the values it loaded when a focus refetch brings newer ones (D81)", async () => {
+    let gets = 0;
+    let body: Record<string, unknown> | null = null;
+    server.use(
+      http.get(`${BASE}/users/${TARGET.id}/`, () => {
+        gets += 1;
+        return HttpResponse.json(
+          gets === 1 ? TARGET : { ...TARGET, first_name: "Changed", role: "SUPERVISOR" },
+        );
+      }),
+      http.patch(`${BASE}/users/${TARGET.id}/`, async ({ request }) => {
+        body = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json(TARGET);
+      }),
+      http.get(`${BASE}/users/`, () =>
+        HttpResponse.json({ count: 0, next: null, previous: null, results: [] }),
+      ),
+    );
+    const { queryClient } = await renderApp(`/users/${TARGET.id}`);
+    await screen.findByRole("button", { name: /save changes/i });
+    await refetchOnFocus(queryClient);
+    expect(gets).toBe(2);
+    expect(screen.getByLabelText(/first name/i)).toHaveValue("Omar");
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: /save changes/i }));
+    await waitFor(() => expect(body).not.toBeNull());
+    expect(body).toMatchObject({ first_name: "Omar", role: "OPERATOR" });
   });
 });

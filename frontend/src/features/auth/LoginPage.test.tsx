@@ -149,6 +149,8 @@ describe("LoginPage", () => {
     const emailInput = await screen.findByLabelText(/email/i);
     await waitFor(() => expect(emailInput).toHaveAttribute("aria-invalid", "true"));
     expect(await screen.findByText(/enter a valid email/i)).toBeInTheDocument();
+    // Login's rule: the message shows beside the field errors.
+    expect(screen.getByRole("alert")).toHaveTextContent(/invalid input/i);
   });
 
   it("disables the submit button while the request is in flight", async () => {
@@ -156,6 +158,34 @@ describe("LoginPage", () => {
     await renderApp("/login");
     await fillAndSubmit();
     expect(screen.getByRole("button", { name: /signing in/i })).toBeDisabled();
+  });
+
+  it("lets a second attempt through after a failed one (D80)", async () => {
+    let attempts = 0;
+    server.use(
+      http.post(`${BASE}/auth/login/`, () => {
+        attempts += 1;
+        if (attempts === 1) {
+          return HttpResponse.json(
+            {
+              detail: "Invalid input.",
+              code: "validation_error",
+              errors: { email: ["Enter a valid email."] },
+            },
+            { status: 400 },
+          );
+        }
+        signedIn = true;
+        return HttpResponse.json({ access: "fresh-access-token", user: SUPERVISOR });
+      }),
+    );
+    await renderApp("/login");
+    const user = await fillAndSubmit();
+    // A standing FIELD error is what blocks a re-submit in form-core.
+    await waitFor(() => expect(screen.getByLabelText(/email/i)).toHaveAttribute("aria-invalid", "true"));
+    await user.click(screen.getByRole("button", { name: /sign in/i }));
+    expect(await screen.findByRole("heading", { name: /dashboard/i })).toBeInTheDocument();
+    expect(attempts).toBe(2);
   });
 
   it("never writes the access token to localStorage or sessionStorage", async () => {

@@ -9,7 +9,7 @@ import {
 } from "@tanstack/react-router";
 import type { RouterHistory } from "@tanstack/react-router";
 
-import type { AuthState } from "../features/auth/AuthContext";
+import type { AuthState } from "../features/auth/session-store";
 import { LoginPage } from "../features/auth/LoginPage";
 import type { Role } from "../features/auth/types";
 import { StatsPage } from "../features/dashboard/StatsPage";

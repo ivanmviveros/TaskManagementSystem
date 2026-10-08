@@ -1,5 +1,5 @@
+import { useCreateStore, useSelector } from "@tanstack/react-store";
 import { useNavigate, useParams } from "@tanstack/react-router";
-import { useState } from "react";
 
 import { Button } from "../../components/Button";
 import { ButtonLink } from "../../components/ButtonLink";
@@ -9,20 +9,25 @@ import { formatDueDate } from "../../lib/dates";
 import { DeleteTaskDialog } from "./components/DeleteTaskDialog";
 import { OverdueBadge, StatusBadge } from "./components/StatusBadge";
 import { TaskNotFound } from "./components/TaskNotFound";
-import { useCompleteTask, useDeleteTask } from "./hooks/useTaskMutations";
+import { useTaskActions } from "./hooks/useTaskActions";
 import { useTask } from "./hooks/useTasks";
 import { useTasksBackSearch } from "./hooks/useTasksBackSearch";
+import { initialTaskActionsState, taskActions } from "./task-actions-store";
 
 export function TaskDetailPage() {
   const { taskId } = useParams({ from: "/shell/tasks/$taskId" });
   const navigate = useNavigate();
   const back = useTasksBackSearch();
   const { data: task, isPending, isError, error } = useTask(taskId);
-  const complete = useCompleteTask();
-  const remove = useDeleteTask();
-  const [actionError, setActionError] = useState<string | null>(null);
-  const [confirmingDelete, setConfirmingDelete] = useState(false);
-  const [deleteError, setDeleteError] = useState<string | null>(null);
+  // The page's UI state (D87). After a delete the page returns to the list it
+  // came from (D70), with the dialog still open until it leaves.
+  const store = useCreateStore(initialTaskActionsState, taskActions);
+  const actions = useTaskActions(store, {
+    onDeleted: () => navigate({ to: "/tasks", search: back }),
+  });
+  const actionError = useSelector(store, (state) => state.actionError);
+  const confirmingDelete = useSelector(store, (state) => state.delete.pending !== null);
+  const deleteError = useSelector(store, (state) => state.delete.error);
 
   if (isPending) {
     return (
@@ -51,32 +56,6 @@ export function TaskDetailPage() {
   // Completion is offered only while the task is still open: COMPLETED and
   // CANCELLED are terminal (D19), and the API answers 409 for either.
   const isOpen = task.status === "PENDING" || task.status === "IN_PROGRESS";
-
-  async function run(action: () => Promise<unknown>) {
-    setActionError(null);
-    try {
-      await action();
-    } catch (caught) {
-      setActionError(
-        caught instanceof ApiError ? caught.message : "Something went wrong. Try again.",
-      );
-    }
-  }
-
-  async function confirmDelete() {
-    setDeleteError(null);
-    try {
-      // taskId, not task.id: a function DECLARATION is hoisted, so TypeScript
-      // does not carry the early return's narrowing into it — `task` would still
-      // be TaskDetail | undefined here (TS18048). The route param is a string.
-      await remove.mutateAsync(taskId);
-      await navigate({ to: "/tasks", search: back });
-    } catch (caught) {
-      setDeleteError(
-        caught instanceof ApiError ? caught.message : "Could not delete that task.",
-      );
-    }
-  }
 
   return (
     <section>
@@ -116,11 +95,7 @@ export function TaskDetailPage() {
       </dl>
 
       <div className="flex flex-wrap gap-2">
-        {isOpen && (
-          <Button onClick={() => void run(() => complete.mutateAsync(task.id))}>
-            Mark complete
-          </Button>
-        )}
+        {isOpen && <Button onClick={() => void actions.complete(task)}>Mark complete</Button>}
         <ButtonLink
           variant="secondary"
           to="/tasks/$taskId/edit"
@@ -130,13 +105,7 @@ export function TaskDetailPage() {
           Edit
         </ButtonLink>
         {task.can_delete && (
-          <Button
-            variant="danger"
-            onClick={() => {
-              setDeleteError(null);
-              setConfirmingDelete(true);
-            }}
-          >
+          <Button variant="danger" onClick={() => actions.beginDelete(task)}>
             Delete
           </Button>
         )}
@@ -149,9 +118,9 @@ export function TaskDetailPage() {
         <DeleteTaskDialog
           task={task}
           error={deleteError}
-          isDeleting={remove.isPending}
-          onConfirm={() => void confirmDelete()}
-          onCancel={() => setConfirmingDelete(false)}
+          isDeleting={actions.isDeleting}
+          onConfirm={() => void actions.confirmDelete()}
+          onCancel={actions.cancelDelete}
         />
       )}
     </section>

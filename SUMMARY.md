@@ -24,11 +24,11 @@ in the [README](README.md).
 |---|---|
 | [README.md](README.md) | Setup, demo credentials, how to run tests, API overview |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | All diagrams: containers, backend layers, data model (with history tables), flows, capability matrix, frontend |
-| [docs/TECHNICAL-DECISIONS.md](docs/TECHNICAL-DECISIONS.md) | The engineer's `AGENTS.md` conventions (A1–A48) and where each landed; decisions D1–D78 and D89–D93 with reason and **origin** (Engineer, Engineer + AI, AI); overrides; accepted risks |
+| [docs/TECHNICAL-DECISIONS.md](docs/TECHNICAL-DECISIONS.md) | The engineer's `AGENTS.md` conventions (A1–A48) and where each landed; decisions D1–D94 with reason and **origin** (Engineer, Engineer + AI, AI); overrides; accepted risks |
 | [docs/GENAI-WORKFLOW.md](docs/GENAI-WORKFLOW.md) | The brief's GenAI section: prompt, output, validation, corrections, edge cases, performance |
 | [docs-external/PROMPT-LOGS.md](docs-external/PROMPT-LOGS.md) | Verbatim prompts, and an example of the code a prompt produced |
 | [docs/qa/2026-10-07-frontend-qa-report.md](docs/qa/2026-10-07-frontend-qa-report.md) | Browser QA (responsive, forms, navigation), test and coverage results, re-test of all 14 findings |
-| [docs/superpowers/specs/](docs/superpowers/specs/), [plans/](docs/superpowers/plans/) | The spec and the test-first plan of each of the first five iterations (iteration 6 went straight to tests and is recorded in the decision log) |
+| [docs/superpowers/specs/](docs/superpowers/specs/), [plans/](docs/superpowers/plans/) | The spec and the test-first plan of each iteration except the sixth (iteration 6 went straight to tests and is recorded in the decision log) |
 | [AGENTS.md](AGENTS.md), [backend/AGENTS.md](backend/AGENTS.md), [frontend/AGENTS.md](frontend/AGENTS.md) | The engineer's rulebook for the agent, written before the first prompt and never modified since |
 
 ## 2. Suggested reading order
@@ -95,7 +95,7 @@ minute.
 | Pagination | ✅ | [`apps/core/pagination.py`](backend/apps/core/pagination.py): 20 per page by default, `page_size` up to 100 |
 | Filter by status and due date | ✅ | [`apps/tasks/filters.py`](backend/apps/tasks/filters.py): `status`, `due_date_after`, `due_date_before`, `overdue` |
 | PostgreSQL; schema design | ✅ | Postgres 16; [data model](docs/ARCHITECTURE.md#data-model) |
-| pytest unit tests for critical endpoints | ✅ | `backend/apps/*/tests/`: 432 tests (auth, permission matrix, tasks, notifications, logging) |
+| pytest unit tests for critical endpoints | ✅ | `backend/apps/*/tests/`: 438 tests (auth, permission matrix, tasks, notifications, logging) |
 | At least 80% coverage | ✅ | **100%**; the 80% gate is in `addopts` in [`backend/pyproject.toml`](backend/pyproject.toml) |
 | Dockerfile and docker-compose.yml | ✅ | [`backend/Dockerfile`](backend/Dockerfile), [`frontend/Dockerfile`](frontend/Dockerfile), [`docker-compose.yml`](docker-compose.yml) |
 | README with setup and key decisions | ✅ | [README.md](README.md); full log in [TECHNICAL-DECISIONS.md](docs/TECHNICAL-DECISIONS.md) |
@@ -108,7 +108,7 @@ minute.
 
 | Requirement | Status | Where |
 |---|---|---|
-| Integrated frontend (React) | ✅ | [`frontend/`](frontend/README.md): React 19, TanStack Router and Query |
+| Integrated frontend (React) | ✅ | [`frontend/`](frontend/README.md): React 19, TanStack Router, Query, Form, Table and Store |
 | Responsive and user-friendly | ✅ | [QA report](docs/qa/2026-10-07-frontend-qa-report.md) §3.7 and §7: checked at 360, 768 and 1024+ px |
 | CRUD for the use case | ✅ | [`features/tasks/`](frontend/src/features/tasks/), [`features/users/`](frontend/src/features/users/) |
 | Structured code and state | ✅ | One folder per feature; [state homes](docs/ARCHITECTURE.md#frontend) |
@@ -204,8 +204,9 @@ What to look for under each of the brief's evaluation criteria, with links to th
     lines share the id of the request that caused them.
 
 ### Frontend best practices
-- **State:** server state in TanStack Query, list state in the URL, the user in Context, and the
-  token in module memory ([table](docs/ARCHITECTURE.md#frontend)).
+- **State:** server state in TanStack Query, list state in the URL, form drafts in TanStack
+  Form, the session and each page's UI state in TanStack Store, and the token in module memory
+  ([table](docs/ARCHITECTURE.md#frontend)).
 - **Sessions:** a single-flight token refresh shared by concurrent requests
   ([`api-client.ts`](frontend/src/lib/api-client.ts)).
 - **Route guards are UX only.** They are in [`router.tsx`](frontend/src/app/router.tsx), and the
@@ -232,23 +233,22 @@ What to look for under each of the brief's evaluation criteria, with links to th
   - a plan comment claimed a bug that does not exist;
   - a jsdom-only focus test passed without testing anything, and a real browser exposed it;
   - a documented "no index on `created_by`" turned out to be false against the live schema.
-- **The scale of the loop:** 6 iterations. Before iteration 6, 107 planned tasks were each
+- **The scale of the loop:** 7 iterations. Before iteration 6, 107 planned tasks were each
   reviewed twice, and 162 of 178 commits were co-authored by the agent.
 
 ## 6. Key numbers
 
 These were measured on 2026-10-07. The backend figures include iteration 6 (structured
-logging); the frontend figures are from `main` at `59ce235`, and the frontend has not changed
-since.
+logging); the frontend figures are from the TanStack refactor (iteration 7).
 
 | Metric | Value |
 |---|---|
-| Backend tests | **432 passed**; coverage **100%** (1180 of 1180 statements); gate 80% |
-| Frontend tests | **303 passed** in 19 files; coverage 94.75% statements, 88.87% branches, 96.63% lines |
-| Static checks | ruff, ruff format and mypy clean; `tsc` clean; oxlint at its baseline of 5 warnings |
+| Backend tests | **438 passed**; coverage **100%** (1191 of 1191 statements); gate 80% |
+| Frontend tests | **396 passed** in 25 files; coverage 97.22% statements, 91.46% branches, 98.57% lines |
+| Static checks | ruff, ruff format and mypy clean; `tsc` clean; oxlint at its baseline of 4 warnings |
 | Engineer's conventions | 48 rules (A1–A48) in three `AGENTS.md` files, written before the first prompt |
-| Decisions | 84: 10 Engineer, 24 Engineer + AI, 50 AI |
-| Delivery | 6 iterations; 107 planned tasks in the first five; 178 commits before iteration 6 |
+| Decisions | 95: 10 Engineer, 31 Engineer + AI, 54 AI |
+| Delivery | 7 iterations; 107 planned tasks in the first five; 178 commits before iteration 6; 23 planned tasks in iteration 7 |
 
 ## 7. Common questions
 

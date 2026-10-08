@@ -86,14 +86,18 @@ class TaskDetailSerializer(serializers.ModelSerializer):
         ]
 
 
+ASSIGNEE_GONE = "That user does not exist. Choose another assignee."
+
+
 class _AssigneeRules:
-    """D15/D16/D17, shared by the two write serializers so the rules live once."""
+    """D15/D16/D17/D94, shared by the two write serializers so the rules live once."""
 
     # Declared for mypy: the mixin reads the serializer's context but has no
     # base class of its own, so without this it reports "has no attribute".
     context: dict[str, Any]
 
     def _apply_assignee_rules(self, attrs: dict, *, is_create: bool) -> dict:
+        attrs = self._apply_deleted_assignee_rule(attrs, is_create=is_create)
         actor = self.context["request"].user
         supplied = "assignee" in attrs
         assignee = attrs.get("assignee")
@@ -115,13 +119,39 @@ class _AssigneeRules:
             raise AssigneeNotAssignable  # D17
         return attrs
 
+    def _apply_deleted_assignee_rule(self, attrs: dict, *, is_create: bool) -> dict:
+        """D94: a soft-deleted user keeps the tasks they held, and the edit form
+        re-sends the current assignee with every save. Re-sending that same user
+        is therefore no change, and is dropped; choosing any deleted user is a
+        field error worded like an unknown id, since deleted rows are invisible
+        to the API (D20)."""
+        assignee = attrs.get("assignee")
+        if assignee is None or assignee.deleted_at is None:
+            return attrs
+        task = self.context.get("task")
+        if not is_create and task is not None and task.assignee_id == assignee.pk:
+            del attrs["assignee"]
+            return attrs
+        raise serializers.ValidationError({"assignee": [ASSIGNEE_GONE]})
+
 
 def _assignee_field() -> serializers.PrimaryKeyRelatedField:
-    """Resolved against ALL live users, not assignable_users(), deliberately: a
+    """Resolved against ALL users, not assignable_users(), deliberately: a
     narrowed queryset would report an Admin assignee as "does not exist" instead
-    of the specific assignee_not_assignable code the frontend branches on."""
+    of the specific assignee_not_assignable code the frontend branches on. That
+    includes soft-deleted users, so the D94 rule can tell a task's current,
+    deleted assignee from a new choice.
+
+    The messages replace DRF's defaults ('Invalid pk "…" - object does not
+    exist.'), which the SPA would show verbatim under the field. A malformed id
+    is checked by pk_field first, so it fails the same way instead of reaching
+    the database lookup."""
     return serializers.PrimaryKeyRelatedField(
-        queryset=User.objects.all(), required=False, allow_null=True
+        queryset=User.all_objects.all(),
+        pk_field=serializers.UUIDField(error_messages={"invalid": ASSIGNEE_GONE}),
+        required=False,
+        allow_null=True,
+        error_messages={"does_not_exist": ASSIGNEE_GONE, "incorrect_type": ASSIGNEE_GONE},
     )
 
 
