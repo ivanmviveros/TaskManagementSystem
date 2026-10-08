@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { beforeEach, describe, expect, it } from "vitest";
@@ -357,6 +357,37 @@ describe("UserListPage URL state", () => {
     await waitFor(() => expect(screen.getByLabelText(/search/i)).toHaveValue(""));
     expect(router.state.location.search).toEqual({});
     await waitFor(() => expect(lastQuery().has("search")).toBe(false));
+  });
+
+  it("follows a URL change made elsewhere while the filters stay mounted", async () => {
+    // Two pages at 20 a page, so page 2 exists.
+    server.use(
+      http.get(`${BASE}/users/`, ({ request }) => {
+        requested.push(new URL(request.url));
+        return HttpResponse.json({ count: 40, next: null, previous: null, results: [operator()] });
+      }),
+    );
+    const { router } = await renderApp("/users?role=OPERATOR&is_active=false&search=omar");
+    await screen.findByRole("table");
+    expect(screen.getByLabelText(/^role$/i)).toHaveValue("OPERATOR");
+    expect(screen.getByRole("checkbox", { name: /inactive only/i })).toBeChecked();
+    expect(screen.getByLabelText(/search/i)).toHaveValue("omar");
+
+    await act(() =>
+      router.navigate({ to: "/users", search: { role: "ADMIN", search: "ada", page: 2 } }),
+    );
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/^role$/i)).toHaveValue("ADMIN");
+      expect(screen.getByRole("checkbox", { name: /inactive only/i })).not.toBeChecked();
+      expect(screen.getByLabelText(/search/i)).toHaveValue("ada");
+    });
+
+    // Putting the URL's values into the fields must not read as the user's
+    // edit: a write that ran the listeners would send them back to the URL,
+    // which returns the list to page 1. Outlive the 300 ms search debounce.
+    await act(() => new Promise((resolve) => setTimeout(resolve, 400)));
+    expect(router.state.location.search).toMatchObject({ page: 2 });
   });
 
   it("lands on page 1, without an error, when the URL's page no longer exists", async () => {
