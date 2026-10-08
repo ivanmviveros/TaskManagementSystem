@@ -336,6 +336,7 @@ things the plan or the code got wrong:
 - Signing out never clears the TanStack Query cache, a pre-existing bug that the refactor kept
   when it moved the session into a store (D86). After a Supervisor signs out, an Operator in the
   same tab sees the Supervisor's cached "1–20 of 20001" task list and dashboard figures, with
-  other users' task titles, until a reload: the cache is inside its 30 s `staleTime`, so no
-  request is sent. It reproduces on `main` too. The recommended fix, clearing the cache on
-  `signOut`/`expire`, is in QA report §8.4.
+  other users' task titles, until a reload: the cache is inside its 30 s `staleTime`. It
+  reproduces on `main` too (there a background refetch does go out, but the cached list stays
+  on screen). The recommended fix, clearing the cache on `signOut`/`expire`, is in QA report
+  §8.4.
