@@ -93,6 +93,7 @@ describe("orderingToSorting", () => {
     ["status", "status", false],
     ["-status", "status", true],
     ["created_at", "created_at", false],
+    ["-created_at", "created_at", true],
   ])("reads %s", (ordering, id, desc) => {
     expect(orderingToSorting(ordering)).toEqual([{ id, desc }]);
   });
@@ -118,10 +119,19 @@ describe("sortingToOrdering", () => {
     expect(sortingToOrdering([])).toBeUndefined();
     expect(sortingToOrdering([{ id: "title", desc: false }])).toBeUndefined();
   });
+
+  it("reads only the first entry: the table is single-sort", () => {
+    expect(
+      sortingToOrdering([
+        { id: "due_date", desc: false },
+        { id: "created_at", desc: true },
+      ]),
+    ).toBe("due_date");
+  });
 });
 
 describe("SORT_LABEL", () => {
-  it("labels every sortable field from the one sort model (D67)", () => {
+  it("labels every sortable field (D67)", () => {
     expect(SORT_LABEL).toEqual({ due_date: "Due date", status: "Status", created_at: "Created" });
   });
 });

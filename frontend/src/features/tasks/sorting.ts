@@ -80,6 +80,7 @@ export function orderingToSorting(ordering: string | undefined): SortingState {
 /**
  * The ordering for the table's sort state (D84). Undefined for the default, so
  * the URL stays canonical (D48), and for anything the API does not accept.
+ * Reads only the first entry: the table is single-sort (`enableMultiSort: false`).
  */
 export function sortingToOrdering(sorting: SortingState): Ordering | undefined {
   const [first] = sorting;
