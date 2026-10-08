@@ -1,23 +1,25 @@
 import { useCreateStore, useSelector } from "@tanstack/react-store";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import clsx from "clsx";
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 
 import type { UserListSearch } from "../../app/search-params";
 import { ButtonLink } from "../../components/ButtonLink";
-import { Pagination } from "../../components/Pagination";
+import { useAppTable } from "../../components/table/app-table";
 import { ApiError } from "../../lib/api-error";
-import { DEFAULT_PAGE_SIZE, type PageSize } from "../../lib/pagination";
+import { DEFAULT_PAGE_SIZE, routePaginationChange, type PageSize } from "../../lib/pagination";
 import { DeleteUserDialog } from "./components/DeleteUserDialog";
 import { UserCard } from "./components/UserCard";
 import { UserFilters, type UserFilterPatch } from "./components/UserFilters";
-import { UserTable } from "./components/UserTable";
 import { useDeleteUser, useUsers } from "./hooks/useUsers";
-import type { UserFilters as Filters } from "./types";
+import type { UserDetail, UserFilters as Filters } from "./types";
 import { UserListProvider } from "./user-list-context";
+import { userColumns } from "./user-columns";
 import { initialUserListState, userListActions } from "./user-list-store";
 
 type SearchUpdate = (prev: UserListSearch) => UserListSearch;
+
+const NO_USERS: UserDetail[] = [];
 
 export function UserListPage() {
   // The URL is the list's only state (D45). Annotated because the router is
@@ -59,6 +61,19 @@ export function UserListPage() {
   function goToPage(next: number) {
     void navigate({ search: (prev: UserListSearch) => ({ ...prev, page: next }) });
   }
+
+  const pagination = useMemo(() => ({ pageIndex: page - 1, pageSize }), [page, pageSize]);
+  // The table owns no state: the URL's page and size go in, changes go back out
+  // as navigations (D83, D85).
+  const table = useAppTable({
+    columns: userColumns,
+    data: data?.results ?? NO_USERS,
+    rowCount: data?.count ?? 0,
+    enableSorting: false,
+    state: { pagination },
+    onPaginationChange: (updater) =>
+      routePaginationChange(updater, pagination, { goToPage, setPageSize }),
+  });
 
   // A page past the end is a 404; page 1 never is, so this cannot loop (D54).
   const pageOutOfRange = error instanceof ApiError && error.status === 404 && page > 1;
@@ -121,23 +136,18 @@ export function UserListPage() {
             aria-busy={isPlaceholderData}
             className={clsx("transition-opacity", isPlaceholderData && "opacity-60")}
           >
-            {/* The table collapses to stacked cards below md (spec §5.2). */}
-            <div className="hidden overflow-x-auto md:block">
-              <UserTable users={data.results} />
-            </div>
-            <div className="md:hidden">
-              {data.results.map((user) => (
-                <UserCard key={user.id} user={user} />
-              ))}
-            </div>
-
-            <Pagination
-              count={data.count}
-              page={page}
-              pageSize={pageSize}
-              onPageChange={goToPage}
-              onPageSizeChange={setPageSize}
-            />
+            <table.AppTable>
+              {/* The table collapses to stacked cards below md (spec §5.2). */}
+              <div className="hidden overflow-x-auto md:block">
+                <table.TableView />
+              </div>
+              <div className="md:hidden">
+                {table.getRowModel().rows.map((row) => (
+                  <UserCard key={row.id} user={row.original} />
+                ))}
+              </div>
+              <table.Pagination />
+            </table.AppTable>
           </div>
         )}
 
