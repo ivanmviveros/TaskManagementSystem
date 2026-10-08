@@ -13,6 +13,9 @@ interface TaskCardProps {
  * The below-`lg` presentation (D69) of a row. A separate component rather than a CSS
  * variant of the table, because a table that reflows into blocks loses its
  * header association and reads poorly to a screen reader (spec §11.6).
+ *
+ * Renders TaskTitleLink, which reads the `/shell/tasks` route's search, so the card
+ * must render under that route; its actions also need TaskActionsProvider.
  */
 export function TaskCard({ task, showAssignee }: TaskCardProps) {
   return (

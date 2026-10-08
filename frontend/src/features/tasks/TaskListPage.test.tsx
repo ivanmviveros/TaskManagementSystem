@@ -825,16 +825,19 @@ describe("the header click cycle (D84)", () => {
     await waitFor(() => expect(router.state.location.search).toEqual({ ordering: "due_date" }));
   });
 
-  it("starts a column that was not sorted ascending, whichever way the sorted one ran", async () => {
-    signedInAs(SUPERVISOR);
-    tasksRespondWith([task()]);
-    const { router } = await renderApp("/tasks?ordering=-status");
-    await screen.findByRole("table");
+  it.each(["status", "-status"])(
+    "starts a column that was not sorted ascending, whichever way the sorted one ran (from %s)",
+    async (ordering) => {
+      signedInAs(SUPERVISOR);
+      tasksRespondWith([task()]);
+      const { router } = await renderApp(`/tasks?ordering=${ordering}`);
+      await screen.findByRole("table");
 
-    await userEvent.setup().click(headerButton(/^due date$/i));
+      await userEvent.setup().click(headerButton(/^due date$/i));
 
-    await waitFor(() => expect(router.state.location.search).toEqual({ ordering: "due_date" }));
-  });
+      await waitFor(() => expect(router.state.location.search).toEqual({ ordering: "due_date" }));
+    },
+  );
 
   it("treats a shift-click like a plain click: one sort at a time", async () => {
     signedInAs(SUPERVISOR);
