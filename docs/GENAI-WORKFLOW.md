@@ -322,3 +322,17 @@ covered by a test shown to fail without its fix:
   (Back, Clear, a link); new tests break if any field's sync is removed (D82).
 - The table's own page moves read the raw page index, so the pager keeps its own count,
   clamped to the page count as the old pager's was (D85).
+
+The browser re-test of the QA matrix (QA report §8) found no regression. It did find two things
+the plan or the code got wrong, neither fixed on this branch:
+- The plan claimed its Step 2 task could be saved unchanged (Q1) and edited from two tabs (Q5).
+  That task, "Demo task 19997", is held by a deleted user, so against the running backend, which
+  is `main`'s without D94, both saves failed with DRF's raw `Invalid pk … - object does not
+  exist.` under the picker. This was confirmed with a read-only query (`user300`, `deleted_at`
+  set). The checks ran on a task with a live assignee instead.
+- Signing out never clears the TanStack Query cache, a pre-existing bug that the refactor kept
+  when it moved the session into a store (D86). After a Supervisor signs out, an Operator in the
+  same tab sees the Supervisor's cached "1–20 of 20001" task list and dashboard figures until a
+  refetch, with other users' task titles. On the branch, no request is even sent. It was
+  reproduced on the branch and on `main`. The recommended fix, clearing the cache on `signOut`/`expire`, is in QA
+  report §8.4.
