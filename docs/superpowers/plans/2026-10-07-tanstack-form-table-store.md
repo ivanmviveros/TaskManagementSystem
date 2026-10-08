@@ -3360,6 +3360,12 @@ export function TaskFilters({ filters, onChange, onClear }: TaskFiltersProps) {
     after.cancel();
     before.cancel();
     overdue.cancel();
+    // cancel() puts back the URL value from before any write still in flight,
+    // which that write's echo could then leave standing; Clear empties all four.
+    form.setFieldValue("status", NO_STATUSES, { dontRunListeners: true });
+    form.setFieldValue("due_date_after", "", { dontRunListeners: true });
+    form.setFieldValue("due_date_before", "", { dontRunListeners: true });
+    form.setFieldValue("overdue", false, { dontRunListeners: true });
     onClear();
   }
 
