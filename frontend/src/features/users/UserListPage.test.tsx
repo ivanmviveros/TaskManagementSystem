@@ -404,4 +404,21 @@ describe("UserListPage URL state", () => {
     expect(requested.map((url) => url.searchParams.get("page"))).toEqual(["4", "1"]);
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
+
+  it("pages and resizes through the table, writing both back to the URL (D85)", async () => {
+    usersRespondWith([operator()], 40); // two pages at 20
+    const { router } = await renderApp("/users");
+    await screen.findByRole("table");
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "Next page" }));
+    await waitFor(() => expect(router.state.location.search).toEqual({ page: 2 }));
+    await waitFor(() => expect(lastQuery().get("page")).toBe("2"));
+
+    // A new size goes back to page 1, so the page leaves the URL.
+    await user.selectOptions(screen.getByLabelText(/rows per page/i), "50");
+    await waitFor(() => expect(router.state.location.search).toEqual({ page_size: 50 }));
+    await waitFor(() => expect(lastQuery().get("page_size")).toBe("50"));
+    expect(lastQuery().get("page")).toBe("1");
+  });
 });
