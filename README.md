@@ -185,7 +185,7 @@ npm run lint
 npm run test
 ```
 
-396 tests pass. The test setup turns any unexpected `console.error` or `console.warn` into a test
+399 tests pass. The test setup turns any unexpected `console.error` or `console.warn` into a test
 failure, so "no console warnings" is enforced, not just reviewed.
 
 **Git hooks.** Install them once:
@@ -280,7 +280,7 @@ for reads. The layout is explained in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.m
 The headline decisions, with their numbers in [docs/TECHNICAL-DECISIONS.md](docs/TECHNICAL-DECISIONS.md).
 That document also gives:
 - the 48 conventions the engineer set in the `AGENTS.md` files before any code (A1–A48);
-- all 95 numbered decisions, with the reasoning behind each and whether it was the engineer's call
+- all 96 numbered decisions, with the reasoning behind each and whether it was the engineer's call
   or the AI agent's.
 
 - **Strict role separation (D13).** An Admin has no task access at all. An Operator sees only the
@@ -325,7 +325,7 @@ API.
 |---|---|
 | [SUMMARY.md](SUMMARY.md) | Project review guide: the brief's requirements mapped to code and docs |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Diagrams: containers, layers, data model with the history tables, flows, capability matrix, frontend |
-| [docs/TECHNICAL-DECISIONS.md](docs/TECHNICAL-DECISIONS.md) | The engineer's `AGENTS.md` conventions (A1–A48); every decision (D1–D94) with its reason and origin (engineer or AI); known limitations |
+| [docs/TECHNICAL-DECISIONS.md](docs/TECHNICAL-DECISIONS.md) | The engineer's `AGENTS.md` conventions (A1–A48); every decision (D1–D95) with its reason and origin (engineer or AI); known limitations |
 | [docs/GENAI-WORKFLOW.md](docs/GENAI-WORKFLOW.md) | How the project was built with an AI agent, and how its output was validated and corrected |
 | [docs/qa/2026-10-07-frontend-qa-report.md](docs/qa/2026-10-07-frontend-qa-report.md) | Browser QA of responsiveness, forms and navigation; test and coverage results; re-test after fixes |
 | [docs/superpowers/specs/](docs/superpowers/specs/) and [plans/](docs/superpowers/plans/) | The design spec and implementation plan of each iteration |
