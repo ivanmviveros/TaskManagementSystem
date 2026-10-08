@@ -797,6 +797,83 @@ describe("sort state in the table header (F6)", () => {
   });
 });
 
+describe("the header click cycle (D84)", () => {
+  /** A header's sort button, found by its plain label (the glyph is aria-hidden). */
+  function headerButton(name: RegExp) {
+    return within(screen.getByRole("table")).getByRole("button", { name });
+  }
+
+  it("flips an ascending column to descending", async () => {
+    signedInAs(SUPERVISOR);
+    tasksRespondWith([task()]);
+    const { router } = await renderApp("/tasks?ordering=due_date");
+    await screen.findByRole("table");
+
+    await userEvent.setup().click(headerButton(/^due date$/i));
+
+    await waitFor(() => expect(router.state.location.search).toEqual({ ordering: "-due_date" }));
+  });
+
+  it("flips a descending column to ascending", async () => {
+    signedInAs(SUPERVISOR);
+    tasksRespondWith([task()]);
+    const { router } = await renderApp("/tasks?ordering=-due_date");
+    await screen.findByRole("table");
+
+    await userEvent.setup().click(headerButton(/^due date$/i));
+
+    await waitFor(() => expect(router.state.location.search).toEqual({ ordering: "due_date" }));
+  });
+
+  it("starts a column that was not sorted ascending, whichever way the sorted one ran", async () => {
+    signedInAs(SUPERVISOR);
+    tasksRespondWith([task()]);
+    const { router } = await renderApp("/tasks?ordering=-status");
+    await screen.findByRole("table");
+
+    await userEvent.setup().click(headerButton(/^due date$/i));
+
+    await waitFor(() => expect(router.state.location.search).toEqual({ ordering: "due_date" }));
+  });
+
+  it("treats a shift-click like a plain click: one sort at a time", async () => {
+    signedInAs(SUPERVISOR);
+    tasksRespondWith([task()]);
+    const { router } = await renderApp("/tasks");
+    await screen.findByRole("table");
+    const user = userEvent.setup();
+
+    await user.keyboard("{Shift>}");
+    await user.click(headerButton(/^due date$/i));
+    await user.keyboard("{/Shift}");
+
+    await waitFor(() => expect(router.state.location.search).toEqual({ ordering: "due_date" }));
+    const table = screen.getByRole("table");
+    expect(within(table).getByRole("columnheader", { name: /due date/i })).toHaveAttribute(
+      "aria-sort",
+      "ascending",
+    );
+    // Not added to the default sort: Created is no longer sorted.
+    expect(within(table).getByRole("columnheader", { name: /created/i })).toHaveAttribute(
+      "aria-sort",
+      "none",
+    );
+  });
+
+  it("replaces the history entry and returns to page 1", async () => {
+    signedInAs(SUPERVISOR);
+    tasksPaged(60);
+    const { router } = await renderApp("/tasks?page=2");
+    await screen.findByRole("table");
+    const entries = router.history.length;
+
+    await userEvent.setup().click(headerButton(/^status$/i));
+
+    await waitFor(() => expect(router.state.location.search).toEqual({ ordering: "status" }));
+    expect(router.history.length).toBe(entries);
+  });
+});
+
 describe("sorting and layout below lg (F3, F8)", () => {
   it("offers a Sort by select, showing the default order", async () => {
     signedInAs(SUPERVISOR);
