@@ -4965,7 +4965,7 @@ made it. D79–D88 are reserved by the TanStack refactor design on its own branc
 with
 
 ```
-Every implementation decision in this project (D1–D93), why it was made, and who made it. The
+Every implementation decision in this project (D1–D94), why it was made, and who made it. The
 [README](../README.md) lists only the headline ones.
 ```
 
@@ -4979,7 +4979,7 @@ Of the 84 numbered decisions (D1–D78, D89–D93 and D8a), 10 are **Engineer**,
 with
 
 ```
-Of the 94 numbered decisions (D1–D93 and D8a), 10 are **Engineer**, 30
+Of the 95 numbered decisions (D1–D94 and D8a), 10 are **Engineer**, 31
 **Engineer + AI** and 54 **AI**.
 ```
 
@@ -4987,7 +4987,7 @@ In the frontend conventions table, replace A43's last cell `As written, plus the
 
 - [ ] **Step 3: `docs/TECHNICAL-DECISIONS.md` — the decision log**
 
-Insert immediately before `## Deliberate overrides of AGENTS.md` (after the "Structured logging (iteration 6)" table):
+Insert immediately before `### Fixes found in use` (after the "Structured logging (iteration 6)" table; D94, a fix made on this branch, stays last):
 
 ```markdown
 ### TanStack Form, Table and Store (iteration 7)
@@ -5106,7 +5106,7 @@ Replace the state table that follows "Each kind of state has exactly one home:" 
 ```
 
 Two more lines in the same file:
-- near the top, replace `(D1–D78 and D89–D93).` with `(D1–D93).`;
+- near the top, replace `(D1–D78 and D89–D93).` with `(D1–D94).`;
 - in the containers diagram, replace `        UI["React SPA<br/>TanStack Router + Query"]` with `        UI["React SPA<br/>TanStack Router, Query, Form, Table and Store"]`.
 
 - [ ] **Step 6: `frontend/README.md` — the layout**
@@ -5129,13 +5129,13 @@ and the `lib/` line with
 ```
 
 In the same file:
-- replace `all 84 numbered decisions` with `all 94 numbered decisions`;
-- in the "Documentation" table, replace `every decision (D1–D78 and D89–D93)` with `every decision (D1–D93)`;
+- replace `all 84 numbered decisions` with `all 95 numbered decisions`;
+- in the "Documentation" table, replace `every decision (D1–D78 and D89–D93)` with `every decision (D1–D94)`;
 - in "Tech stack", replace `| Frontend | React 19, TypeScript, Vite, TanStack Router and TanStack Query, Tailwind CSS |` with `| Frontend | React 19, TypeScript, Vite, TanStack Router, Query, Form, Table and Store, Tailwind CSS |`;
 - in "Running the tests and checks", replace `303 tests pass.` with the Step 1 count (`<N> tests pass.`).
 
 `SUMMARY.md`:
-- line 27: replace `decisions D1–D78 and D89–D93` with `decisions D1–D93`;
+- line 27: replace `decisions D1–D78 and D89–D93` with `decisions D1–D94`;
 - line 31: replace `of each of the first five iterations (iteration 6 went straight to tests and is recorded in the decision log)` with `of each iteration except the sixth (iteration 6 went straight to tests and is recorded in the decision log)`;
 - "Requirements checklist": replace `React 19, TanStack Router and Query` with `React 19, TanStack Router, Query, Form, Table and Store`;
 - "Frontend best practices", State bullet — the text is wrapped over two lines in the file:
@@ -5167,7 +5167,7 @@ In the same file:
   logging); the frontend figures are from the TanStack refactor (iteration 7).
   ```
 
-  Then set the Frontend tests row to the Step 1 counts and coverage; in the Static checks row replace `oxlint at its baseline of 5 warnings` with `oxlint at its baseline of 4 warnings`; set the Decisions row to `94: 10 Engineer, 30 Engineer + AI, 54 AI`; and in the Delivery row replace `6 iterations` with `7 iterations` and append `; 23 planned tasks in iteration 7`;
+  Then set the Frontend tests row to the Step 1 counts and coverage; in the Static checks row replace `oxlint at its baseline of 5 warnings` with `oxlint at its baseline of 4 warnings`; set the Decisions row to `95: 10 Engineer, 31 Engineer + AI, 54 AI`; and in the Delivery row replace `6 iterations` with `7 iterations` and append `; 23 planned tasks in iteration 7`;
 - "GenAI fluency", last bullet: replace `**The scale of the loop:** 6 iterations.` with `**The scale of the loop:** 7 iterations.`
 
 - [ ] **Step 8: `docs/GENAI-WORKFLOW.md`**
@@ -5175,7 +5175,7 @@ In the same file:
 In "How the output was validated", the current results are wrapped over two lines:
 
 ```
-Current results: backend **432 tests, 100% coverage** (gate 80%); frontend **303 tests**,
+Current results: backend **438 tests, 100% coverage** (gate 80%); frontend **303 tests**,
 94.75% statement coverage; typecheck clean; lint at its 5-warning baseline.
 ```
 

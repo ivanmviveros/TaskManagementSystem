@@ -75,6 +75,53 @@ def test_supervisor_assigning_to_an_admin_is_400_assignee_not_assignable(supervi
     assert response.data["code"] == "assignee_not_assignable"
 
 
+ASSIGNEE_GONE = "That user does not exist. Choose another assignee."
+
+
+def test_editing_a_task_held_by_a_deleted_user_keeps_them_as_assignee(supervisor_client):
+    """D94: the edit form re-sends the current assignee with every save, so a
+    deleted one must not block editing the rest of the task."""
+    held_by = OperatorFactory()
+    task = TaskFactory(assignee=held_by)
+    held_by.soft_delete()
+    response = supervisor_client.patch(
+        f"{URL}{task.pk}/", {"title": "Renamed", "assignee": str(held_by.pk)}, format="json"
+    )
+    assert response.status_code == 200
+    task.refresh_from_db()
+    assert task.title == "Renamed"
+    assert task.assignee_id == held_by.pk
+
+
+def test_assigning_a_deleted_user_is_400_on_the_assignee_field(supervisor_client):
+    gone = OperatorFactory()
+    gone.soft_delete()
+    task = TaskFactory()
+    response = supervisor_client.patch(
+        f"{URL}{task.pk}/", {"assignee": str(gone.pk)}, format="json"
+    )
+    assert response.status_code == 400
+    assert response.data["code"] == "validation_error"
+    assert response.data["errors"] == {"assignee": [ASSIGNEE_GONE]}
+
+
+def test_creating_a_task_for_a_deleted_user_is_400_on_the_assignee_field(supervisor_client):
+    gone = OperatorFactory()
+    gone.soft_delete()
+    response = supervisor_client.post(URL, {"title": "x", "assignee": str(gone.pk)}, format="json")
+    assert response.status_code == 400
+    assert response.data["errors"] == {"assignee": [ASSIGNEE_GONE]}
+
+
+@pytest.mark.parametrize("assignee", ["0199a0f0-0000-7000-8000-000000000000", "not-a-uuid", 7])
+def test_an_unknown_or_malformed_assignee_reads_as_a_sentence(supervisor_client, assignee):
+    """Never DRF's default 'Invalid pk "…" - object does not exist.', which the
+    SPA shows verbatim under the field."""
+    response = supervisor_client.post(URL, {"title": "x", "assignee": assignee}, format="json")
+    assert response.status_code == 400
+    assert response.data["errors"] == {"assignee": [ASSIGNEE_GONE]}
+
+
 def test_operator_updates_their_own_task(operator_client, operator):
     task = TaskFactory(assignee=operator, status=TaskStatus.PENDING)
     response = operator_client.patch(

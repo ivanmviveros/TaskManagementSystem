@@ -149,7 +149,7 @@ bash scripts/run-backend-tests.sh
 ```
 
 Every full run applies a coverage gate of 80%, through `--cov-fail-under=80` in `addopts`. The
-suite currently sits at **100%** of `apps/` with 432 tests. The tests use PostgreSQL, not SQLite,
+suite currently sits at **100%** of `apps/` with 438 tests. The tests use PostgreSQL, not SQLite,
 because the schema relies on partial indexes and a check constraint. To run against the Compose
 database from the host, use `POSTGRES_PORT=5442 uv run --directory backend pytest -q`.
 

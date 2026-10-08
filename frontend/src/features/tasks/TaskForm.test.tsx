@@ -584,6 +584,31 @@ describe("TaskForm", () => {
     expect(await screen.findByText(/an admin cannot be assigned tasks/i)).toBeInTheDocument();
   });
 
+  it("shows a validation error keyed on assignee under the picker, not in the alert (D94)", async () => {
+    signedInAs(SUPERVISOR);
+    assignableUsers();
+    server.use(
+      http.post(`${BASE}/tasks/`, () =>
+        HttpResponse.json(
+          {
+            detail: "Invalid input.",
+            code: "validation_error",
+            errors: { assignee: ["That user does not exist. Choose another assignee."] },
+          },
+          { status: 400 },
+        ),
+      ),
+    );
+    await renderApp("/tasks/new");
+    const user = userEvent.setup();
+    await user.type(await screen.findByLabelText(/title/i), "Doomed");
+    await user.click(screen.getByRole("button", { name: /create task/i }));
+    const picker = await screen.findByRole("combobox", { name: /assignee/i });
+    await waitFor(() => expect(picker).toHaveAttribute("aria-invalid", "true"));
+    expect(screen.getByText(/that user does not exist/i)).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
   it("surfaces a 409 invalid_status_transition as a form-level message", async () => {
     signedInAs(SUPERVISOR);
     assignableUsers();

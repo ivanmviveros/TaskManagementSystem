@@ -95,7 +95,7 @@ minute.
 | Pagination | ✅ | [`apps/core/pagination.py`](backend/apps/core/pagination.py): 20 per page by default, `page_size` up to 100 |
 | Filter by status and due date | ✅ | [`apps/tasks/filters.py`](backend/apps/tasks/filters.py): `status`, `due_date_after`, `due_date_before`, `overdue` |
 | PostgreSQL; schema design | ✅ | Postgres 16; [data model](docs/ARCHITECTURE.md#data-model) |
-| pytest unit tests for critical endpoints | ✅ | `backend/apps/*/tests/`: 432 tests (auth, permission matrix, tasks, notifications, logging) |
+| pytest unit tests for critical endpoints | ✅ | `backend/apps/*/tests/`: 438 tests (auth, permission matrix, tasks, notifications, logging) |
 | At least 80% coverage | ✅ | **100%**; the 80% gate is in `addopts` in [`backend/pyproject.toml`](backend/pyproject.toml) |
 | Dockerfile and docker-compose.yml | ✅ | [`backend/Dockerfile`](backend/Dockerfile), [`frontend/Dockerfile`](frontend/Dockerfile), [`docker-compose.yml`](docker-compose.yml) |
 | README with setup and key decisions | ✅ | [README.md](README.md); full log in [TECHNICAL-DECISIONS.md](docs/TECHNICAL-DECISIONS.md) |
@@ -243,7 +243,7 @@ since.
 
 | Metric | Value |
 |---|---|
-| Backend tests | **432 passed**; coverage **100%** (1180 of 1180 statements); gate 80% |
+| Backend tests | **438 passed**; coverage **100%** (1191 of 1191 statements); gate 80% |
 | Frontend tests | **303 passed** in 19 files; coverage 94.75% statements, 88.87% branches, 96.63% lines |
 | Static checks | ruff, ruff format and mypy clean; `tsc` clean; oxlint at its baseline of 5 warnings |
 | Engineer's conventions | 48 rules (A1–A48) in three `AGENTS.md` files, written before the first prompt |

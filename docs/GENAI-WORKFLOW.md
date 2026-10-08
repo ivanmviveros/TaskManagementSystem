@@ -125,7 +125,7 @@ No agent output was accepted on its own say-so. Each layer below caught real def
    - the frontend runs `tsc`, oxlint and Vitest, with a console guard that fails any test that
      logs an unexpected error or warning.
 
-Current results: backend **432 tests, 100% coverage** (gate 80%); frontend **303 tests**,
+Current results: backend **438 tests, 100% coverage** (gate 80%); frontend **303 tests**,
 94.75% statement coverage; typecheck clean; lint at its 5-warning baseline.
 
 ## How edge cases, authentication and validation were handled

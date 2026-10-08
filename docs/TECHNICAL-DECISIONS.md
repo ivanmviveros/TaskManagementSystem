@@ -134,7 +134,7 @@ numbered decisions built on it.
 | A32 | Celery with Redis for genuinely asynchronous work; services enqueue, views never do; explicit retry rules; no extra queues | §32 | `apps/notifications`; `on_commit` enqueue in services; `autoretry_for` transport errors only; no result backend, because nothing reads results |
 | A33 | Versioned `/api/v1/` routes; plural REST names; state transitions as `POST /{id}/<action>/` | §33, §34 | Every route is under `/api/v1/`; `POST /tasks/{id}/complete/` (D18) |
 | A34 | Generated OpenAPI documentation with `drf-yasg` **or** `drf-spectacular` | §35 | drf-spectacular (D4) |
-| A35 | pytest with pytest-django and pytest-cov; at least 80% coverage on the critical paths; test-first preferred | §36 | 432 tests at 100%, gate at 80%; test-first plans |
+| A35 | pytest with pytest-django and pytest-cov; at least 80% coverage on the critical paths; test-first preferred | §36 | 438 tests at 100%, gate at 80%; test-first plans |
 | A36 | Tests protect authorization, ownership, validation, transitions, constraints, transactions and concurrency, including negative cases | §37–§42 | The permission-matrix suite, constraint tests, `test_on_commit.py`, `test_concurrency.py` |
 | A37 | Tooling declared in `pyproject.toml`; Poetry or uv; pre-commit hooks; ruff; commands documented | §44a | uv with `uv.lock` (D5); `.pre-commit-config.yaml`; README, "Running the tests" |
 | A38 | No `utils.py`, `helpers.py` or `common.py` dumping grounds | §49 | Named modules in `apps/core` (D10) |
@@ -297,6 +297,12 @@ From the [QA report](qa/2026-10-07-frontend-qa-report.md); the engineer chose th
 | D91 | A well-formed incoming `X-Request-ID` is kept; anything else is replaced by a UUIDv7; the response echoes it | A caller's or proxy's id joins their logs to ours. Only letters, digits and `._:-`, up to 128 characters, are accepted, so a header cannot forge a log line. | AI |
 | D92 | One access line per request, from `RequestIdMiddleware`; Django's 4xx lines and runserver's line are dropped | Both duplicate the access line without a request id, and runserver's logs the full query string. Unhandled errors are still logged by Django, inside the request, with a traceback. | AI |
 | D93 | Events are logged as a name plus fields, and paths without their query string | Applies backend §28 (A30): fields can be filtered and aggregated, while values packed into a message cannot. A query string can hold search terms and email addresses. | Engineer + AI |
+
+### Fixes found in use
+
+| # | Decision | Why | Origin |
+|---|---|---|---|
+| D94 | Re-sending a task's current, soft-deleted assignee on update is no change; choosing any deleted, unknown or malformed assignee is a plain field error | The engineer reported a raw `Invalid pk "…" - object does not exist.` under the picker, and no task held by a deleted user could be edited: the form re-sends the assignee with every save, and the field looked it up among live users only. The field now resolves against every user, so the serializer can tell the current assignee from a new choice. A deleted user is worded like an unknown id, because deleted rows are invisible to the API (D20). | Engineer + AI |
 
 ## Deliberate overrides of AGENTS.md
 
