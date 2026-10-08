@@ -1,11 +1,11 @@
-import { focusManager } from "@tanstack/react-query";
-import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { describe, expect, it, vi } from "vitest";
 
 import { formatDueDate } from "../../lib/dates";
 import { server } from "../../test/msw-server";
+import { refetchOnFocus } from "../../test/refetch-on-focus";
 import { renderApp } from "../../test/render-app";
 import type { TaskDetail } from "./types";
 
@@ -209,26 +209,15 @@ describe("TaskForm", () => {
       }),
     );
     const patches = capturePatches();
-    await renderApp(`/tasks/${TASK_ID}/edit`);
+    const { queryClient } = await renderApp(`/tasks/${TASK_ID}/edit`);
     await screen.findByRole("button", { name: /save changes/i });
-    try {
-      // The test client's staleTime of 0 makes a focus event refetch the task.
-      act(() => {
-        focusManager.setFocused(false);
-        focusManager.setFocused(true);
-      });
-      await waitFor(() => expect(gets).toBe(2));
-      expect(screen.getByLabelText(/title/i)).toHaveValue("Review the brief");
-      const user = userEvent.setup();
-      await user.click(screen.getByRole("button", { name: /save changes/i }));
-      await waitFor(() => expect(patches.bodies).toHaveLength(1));
-      // The assertion that bites: `gets` counts started requests, so the title
-      // check above can run before the refetch lands.
-      expect(patches.bodies[0]).toMatchObject({ title: "Review the brief" });
-    } finally {
-      // Restores the shared singleton (see the D40 test below).
-      focusManager.setFocused(undefined);
-    }
+    await refetchOnFocus(queryClient);
+    expect(gets).toBe(2);
+    expect(screen.getByLabelText(/title/i)).toHaveValue("Review the brief");
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: /save changes/i }));
+    await waitFor(() => expect(patches.bodies).toHaveLength(1));
+    expect(patches.bodies[0]).toMatchObject({ title: "Review the brief" });
   });
 
   it("creates a task and invalidates the list", async () => {
@@ -714,29 +703,16 @@ describe("TaskForm", () => {
       }),
     );
     const patches = capturePatches();
-    await renderApp(`/tasks/${TASK_ID}/edit`);
+    const { queryClient } = await renderApp(`/tasks/${TASK_ID}/edit`);
     await screen.findByRole("combobox", { name: /status/i });
-    try {
-      // renderApp does not expose its QueryClient; the test client's default
-      // staleTime of 0 makes a focus event refetch the active detail query.
-      act(() => {
-        focusManager.setFocused(false);
-        focusManager.setFocused(true);
-      });
-      // The UI deliberately does not change on refetch, so count the GETs —
-      // otherwise this could pass without the refetch ever happening.
-      await waitFor(() => expect(gets).toBe(2));
-      const user = userEvent.setup();
-      await user.click(screen.getByRole("button", { name: /save changes/i }));
-      await waitFor(() => expect(patches.bodies).toHaveLength(1));
-      expect(patches.bodies[0]).not.toHaveProperty("status");
-    } finally {
-      // Restores the shared singleton. isFocused() then resolves to true, which
-      // fires one more focus refetch that may still be in flight when afterEach
-      // resets the MSW handlers. Other tests also end with refetches in flight;
-      // if this one ever flakes on onUnhandledRequest, look here first.
-      focusManager.setFocused(undefined);
-    }
+    // The UI deliberately does not change on refetch, so also count the GETs:
+    // otherwise this could pass without the refetch ever happening.
+    await refetchOnFocus(queryClient);
+    expect(gets).toBe(2);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: /save changes/i }));
+    await waitFor(() => expect(patches.bodies).toHaveLength(1));
+    expect(patches.bodies[0]).not.toHaveProperty("status");
   });
 });
 

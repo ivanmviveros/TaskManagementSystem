@@ -1,10 +1,10 @@
-import { focusManager } from "@tanstack/react-query";
-import { act, screen, waitFor } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { server } from "../../test/msw-server";
+import { refetchOnFocus } from "../../test/refetch-on-focus";
 import { renderApp } from "../../test/render-app";
 import type { UserDetail } from "./types";
 
@@ -300,23 +300,14 @@ describe("UserForm", () => {
         HttpResponse.json({ count: 0, next: null, previous: null, results: [] }),
       ),
     );
-    await renderApp(`/users/${TARGET.id}`);
+    const { queryClient } = await renderApp(`/users/${TARGET.id}`);
     await screen.findByRole("button", { name: /save changes/i });
-    try {
-      // The test client's staleTime of 0 makes a focus event refetch the user.
-      act(() => {
-        focusManager.setFocused(false);
-        focusManager.setFocused(true);
-      });
-      await waitFor(() => expect(gets).toBe(2));
-      expect(screen.getByLabelText(/first name/i)).toHaveValue("Omar");
-      const user = userEvent.setup();
-      await user.click(screen.getByRole("button", { name: /save changes/i }));
-      await waitFor(() => expect(body).not.toBeNull());
-      expect(body).toMatchObject({ first_name: "Omar", role: "OPERATOR" });
-    } finally {
-      // Restores the shared singleton (see the D40 test in TaskForm.test.tsx).
-      focusManager.setFocused(undefined);
-    }
+    await refetchOnFocus(queryClient);
+    expect(gets).toBe(2);
+    expect(screen.getByLabelText(/first name/i)).toHaveValue("Omar");
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: /save changes/i }));
+    await waitFor(() => expect(body).not.toBeNull());
+    expect(body).toMatchObject({ first_name: "Omar", role: "OPERATOR" });
   });
 });

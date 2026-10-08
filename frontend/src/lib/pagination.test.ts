@@ -82,5 +82,6 @@ describe("routePaginationChange (D85)", () => {
     const to = { goToPage: vi.fn(), setPageSize: vi.fn() };
     routePaginationChange((old) => ({ ...old, pageIndex: 0 }), current, to);
     expect(to.goToPage).toHaveBeenCalledWith(1);
+    expect(to.setPageSize).not.toHaveBeenCalled();
   });
 });

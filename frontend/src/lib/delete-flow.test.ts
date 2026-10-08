@@ -11,6 +11,7 @@ const ROW: Row = { id: "r1", title: "First" };
 const actions = (api: StoreApi<State>) => deleteFlowActions(api);
 const initial: State = { delete: IDLE_DELETE, other: 7 };
 const make = () => createStore(initial, actions);
+
 describe("deleteFlowActions", () => {
   it("starts idle", () => {
     expect(make().state.delete).toEqual({ pending: null, error: null });

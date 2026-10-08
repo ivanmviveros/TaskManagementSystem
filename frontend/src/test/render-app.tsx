@@ -58,5 +58,5 @@ export async function renderApp(initialPath = "/") {
   const router = holder.current;
   if (router === null) throw new Error("renderApp: AppAtPath did not create a router");
   // Spread, not wrapped: StatsPage.test.tsx calls unmount() on the result.
-  return { ...result, router };
+  return { ...result, router, queryClient };
 }

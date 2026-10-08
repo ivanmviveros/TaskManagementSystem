@@ -98,7 +98,10 @@ export function clearServerErrors(form: ServerErrorTarget): void {
   formMessageStore(form).setState(() => undefined);
 }
 
-/** The message setServerErrors left in an `onServer` slot, if any. */
+/**
+ * The message setServerErrors left in a field's `onServer` slot, if any. Read it from
+ * a field's error map only: the form-level message lives in `formMessageStore`.
+ */
 export function serverMessage(errorMap: { onServer?: unknown }): string | undefined {
   return typeof errorMap.onServer === "string" ? errorMap.onServer : undefined;
 }
