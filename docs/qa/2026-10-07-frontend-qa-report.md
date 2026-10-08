@@ -573,7 +573,7 @@ differ only by sub-pixel anti-aliasing (§8.6).
 
 The re-test did find one **pre-existing** defect that the refactor carried over unchanged: after
 a sign-out, the next user in the same tab is shown the previous user's cached query data (§8.4).
-It is not fixed on this branch.
+It is not fixed on this branch; it was fixed afterwards as D95 (§8.4).
 
 ### 8.1 Matrix
 
@@ -707,6 +707,14 @@ outside this branch's scope.
   sign-out and expiry in one place. The alternative is to key every query by the user id. Add a test that signs out
   user A and signs in user B, and asserts that B's first `/tasks` render makes a request and
   never shows A's rows.
+- **Fixed after this re-test (D95), on 2026-10-08.** A sign-in now empties the query cache
+  before it sets the new user. Clearing at sign-out was tried and rejected: the list is still
+  mounted until the guards redirect, and it refetched with no token. Two tests in
+  `AppShell.test.tsx` cover the fix. One checks that the next user never sees the previous
+  user's rows; the other checks that no request leaves after Sign out. Re-checked in the
+  browser by switching Operator, then Supervisor, then Operator in one tab, using only in-app
+  links. Each user's first dashboard and first list showed that user's own figures (727,
+  20001, 727), with no console errors or warnings.
 
 ### 8.5 Gates
 

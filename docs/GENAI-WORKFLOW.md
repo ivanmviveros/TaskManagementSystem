@@ -33,10 +33,17 @@ code directly:
   - raising the issues that started each new iteration.
   [TECHNICAL-DECISIONS.md](TECHNICAL-DECISIONS.md) records, decision by decision, which
   calls were the engineer's and which were the agent's (the **Origin** column).
-- **Evidence in the history:** 162 of the 178 commits carry the agent's `Co-Authored-By`
-  trailer. The other 16 are merges, the initial `AGENTS.md` commit, the prompt logs, a
-  `.gitignore` update and two small spec and plan edits. No commit without the trailer touches
-  application code.
+- **Evidence in the history:** as of `148002f`, 242 of the 264 commits on `main` carry the
+  agent's `Co-Authored-By` trailer. The other 22 are:
+  - 13 merges;
+  - the initial `AGENTS.md` commit;
+  - three prompt-log updates;
+  - a `.gitignore` update;
+  - two small spec and plan edits;
+  - one README and SUMMARY edit;
+  - `e01b9b2`, the engineer's change to the name lists the seed command draws random users from.
+
+  `e01b9b2` is the only commit without the trailer that touches application code.
 
 ## The prompts
 
@@ -126,8 +133,8 @@ No agent output was accepted on its own say-so. Each layer below caught real def
    - the frontend runs `tsc`, oxlint and Vitest, with a console guard that fails any test that
      logs an unexpected error or warning.
 
-Current results: backend **438 tests, 100% coverage** (gate 80%); frontend **396 tests**,
-97.22% statement coverage; typecheck clean; lint at its 4-warning baseline.
+Current results: backend **438 tests, 100% coverage** (gate 80%); frontend **399 tests**,
+97.23% statement coverage; typecheck clean; lint at its 4-warning baseline.
 
 ## How edge cases, authentication and validation were handled
 
@@ -338,5 +345,9 @@ things the plan or the code got wrong:
   same tab sees the Supervisor's cached "1–20 of 20001" task list and dashboard figures, with
   other users' task titles, until a reload: the cache is inside its 30 s `staleTime`. It
   reproduces on `main` too. Whether a background refetch goes out depends on how old the cache
-  is against that `staleTime`; either way the cached list is what the new user first sees. The recommended fix, clearing the cache on `signOut`/`expire`, is in QA report
-  §8.4.
+  is against that `staleTime`; either way the cached list is what the new user first sees.
+
+  It was fixed afterwards, test-first, as D95. QA report §8.4 had recommended clearing the
+  cache at sign-out. An experiment showed that this made the still-mounted task list refetch
+  with no token, which is a 401 and a failed refresh in a browser. A sign-in empties the cache
+  instead, and a second test fails if any request leaves after Sign out.

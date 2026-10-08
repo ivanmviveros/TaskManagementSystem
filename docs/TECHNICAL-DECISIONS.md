@@ -1,6 +1,6 @@
 # Technical decisions
 
-Every implementation decision in this project (D1–D94), why it was made, and who made it. The
+Every implementation decision in this project (D1–D95), why it was made, and who made it. The
 [README](../README.md) lists only the headline ones. Each decision's full design context lives in the
 spec of the iteration that introduced it ([Sources](#sources)).
 
@@ -31,7 +31,7 @@ substance. Examples are backend §49's ban on `utils.py` (D10) and frontend §8'
 backend business rules" (D39). The general engineering principles in root §2, such as "prefer
 framework mechanisms", do not count, or every decision would.
 
-Of the 95 numbered decisions (D1–D94 and D8a), 10 are **Engineer**, 31
+Of the 96 numbered decisions (D1–D95 and D8a), 10 are **Engineer**, 32
 **Engineer + AI** and 54 **AI**. The numbered log is mostly design detail. The choices that define the system are the
 engineer's, and they come from the two sources below, which predate every numbered decision:
 - the **conventions in `AGENTS.md`**: the layering, the security posture, the testing bar and the
@@ -322,6 +322,7 @@ through the table, and the form components in the filter panels.
 | # | Decision | Why | Origin |
 |---|---|---|---|
 | D94 | Re-sending a task's current, soft-deleted assignee on update is no change; choosing any deleted, unknown or malformed assignee is a plain field error | The engineer reported a raw `Invalid pk "…" - object does not exist.` under the picker, and no task held by a deleted user could be edited: the form re-sends the assignee with every save, and the field looked it up among live users only. The field now resolves against every user, so the serializer can tell the current assignee from a new choice. A deleted user is worded like an unknown id, because deleted rows are invisible to the API (D20). | Engineer + AI |
+| D95 | A sign-in empties the query cache before it sets the new user | The agent's QA re-test (QA report §8.4) found that the cache outlived the session: an Operator signing in after a Supervisor in the same tab was first shown the Supervisor's lists and dashboard figures. The session store calls an injected `clearServerState`, which is `queryClient.clear()` in the app, so the store needs no QueryClient import. The cache is emptied at sign-in, not at sign-out: sign-out runs while the pages are still mounted, and an experiment showed the emptied list refetching with no token. Every session after another one, including one that expired, starts with a sign-in, so this one place covers both. | Engineer + AI |
 
 ## Deliberate overrides of AGENTS.md
 

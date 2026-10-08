@@ -24,7 +24,7 @@ in the [README](README.md).
 |---|---|
 | [README.md](README.md) | Setup, demo credentials, how to run tests, API overview |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | All diagrams: containers, backend layers, data model (with history tables), flows, capability matrix, frontend |
-| [docs/TECHNICAL-DECISIONS.md](docs/TECHNICAL-DECISIONS.md) | The engineer's `AGENTS.md` conventions (A1–A48) and where each landed; decisions D1–D94 with reason and **origin** (Engineer, Engineer + AI, AI); overrides; accepted risks |
+| [docs/TECHNICAL-DECISIONS.md](docs/TECHNICAL-DECISIONS.md) | The engineer's `AGENTS.md` conventions (A1–A48) and where each landed; decisions D1–D95 with reason and **origin** (Engineer, Engineer + AI, AI); overrides; accepted risks |
 | [docs/GENAI-WORKFLOW.md](docs/GENAI-WORKFLOW.md) | The brief's GenAI section: prompt, output, validation, corrections, edge cases, performance |
 | [docs-external/PROMPT-LOGS.md](docs-external/PROMPT-LOGS.md) | Verbatim prompts, and an example of the code a prompt produced |
 | [docs/qa/2026-10-07-frontend-qa-report.md](docs/qa/2026-10-07-frontend-qa-report.md) | Browser QA (responsive, forms, navigation), test and coverage results, re-test of all 14 findings |
@@ -234,20 +234,22 @@ What to look for under each of the brief's evaluation criteria, with links to th
   - a jsdom-only focus test passed without testing anything, and a real browser exposed it;
   - a documented "no index on `created_by`" turned out to be false against the live schema.
 - **The scale of the loop:** 7 iterations. Before iteration 6, 107 planned tasks were each
-  reviewed twice, and 162 of 178 commits were co-authored by the agent.
+  reviewed twice. As of `148002f`, 242 of the 264 commits on `main` were co-authored by the
+  agent.
 
 ## 6. Key numbers
 
-These were measured on 2026-10-07. The backend figures include iteration 6 (structured
-logging); the frontend figures are from the TanStack refactor (iteration 7).
+The backend figures were measured on 2026-10-07 and include iteration 6 (structured logging)
+and D94. The frontend figures were measured on 2026-10-08 and include the TanStack refactor
+(iteration 7) and D95.
 
 | Metric | Value |
 |---|---|
 | Backend tests | **438 passed**; coverage **100%** (1191 of 1191 statements); gate 80% |
-| Frontend tests | **396 passed** in 25 files; coverage 97.22% statements, 91.46% branches, 98.57% lines |
+| Frontend tests | **399 passed** in 25 files; coverage 97.23% statements, 91.47% branches, 98.58% lines |
 | Static checks | ruff, ruff format and mypy clean; `tsc` clean; oxlint at its baseline of 4 warnings |
 | Engineer's conventions | 48 rules (A1–A48) in three `AGENTS.md` files, written before the first prompt |
-| Decisions | 95: 10 Engineer, 31 Engineer + AI, 54 AI |
+| Decisions | 96: 10 Engineer, 32 Engineer + AI, 54 AI |
 | Delivery | 7 iterations; 107 planned tasks in the first five; 178 commits before iteration 6; 23 planned tasks in iteration 7 |
 
 ## 7. Common questions

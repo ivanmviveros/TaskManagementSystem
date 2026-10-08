@@ -7,7 +7,7 @@ They began as copies of the [design spec](superpowers/specs/2026-10-05-task-mana
 diagrams. Since then, the data model was redrawn from the live schema, and the layering and frontend
 diagrams are new. Where this document and the spec differ, this document is current. The *why*
 behind each element is in [TECHNICAL-DECISIONS.md](TECHNICAL-DECISIONS.md), referenced by number
-(D1–D94).
+(D1–D95).
 
 ## Containers
 
@@ -482,7 +482,7 @@ Each kind of state has exactly one home:
 | Kind | Home | Examples |
 |---|---|---|
 | Server state | TanStack Query | task list, task detail, user list, stats |
-| Session | TanStack Store, one session store from `SessionProvider` (D86) | the signed-in user |
+| Session | TanStack Store, one session store from `SessionProvider` (D86) | the signed-in user; a sign-in empties the Query cache first, so no user sees the previous one's data (D95) |
 | List view state | the URL, owned by the router (D45) | filters, sort, page, page size |
 | Form drafts | TanStack Form (D79, D81) | the sign-in, task and user forms; the filter panels' fields, kept in step with the URL (D82) |
 | Table model | TanStack Table, controlled from the URL (D83–D85) | rows, sort display, page count |
