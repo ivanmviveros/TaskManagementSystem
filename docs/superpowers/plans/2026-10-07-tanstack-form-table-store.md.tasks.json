@@ -11,8 +11,8 @@
     { "id": 8, "subject": "Task 8: The app form: contexts, fields and form components (D79)", "status": "completed", "blockedBy": [7] },
     { "id": 9, "subject": "Task 9: LoginPage on the app form", "status": "completed", "blockedBy": [8] },
     { "id": 10, "subject": "Task 10: UserForm on the app form, with its snapshot (D79, D81)", "status": "completed", "blockedBy": [9] },
-    { "id": 11, "subject": "Task 11: The task form's values: snapshot and API payload (D32, D40, D81)", "status": "pending", "blockedBy": [10] },
-    { "id": 12, "subject": "Task 12: TaskForm on the app form (D79, D81)", "status": "pending", "blockedBy": [11] },
+    { "id": 11, "subject": "Task 11: The task form's values: snapshot and API payload (D32, D40, D81)", "status": "completed", "blockedBy": [10] },
+    { "id": 12, "subject": "Task 12: TaskForm on the app form (D79, D81)", "status": "completed", "blockedBy": [11] },
     { "id": 13, "subject": "Task 13: useUrlFieldSync (D82)", "status": "pending", "blockedBy": [12] },
     { "id": 14, "subject": "Task 14: TaskFilters on the app form (D82)", "status": "pending", "blockedBy": [13] },
     { "id": 15, "subject": "Task 15: UserFilters on the app form, and useSearchParamDraft retired (D82)", "status": "pending", "blockedBy": [14] },
@@ -25,5 +25,5 @@
     { "id": 22, "subject": "Task 22: Re-run the QA report matrix in the browser", "status": "pending", "blockedBy": [21] },
     { "id": 23, "subject": "Task 23: Persist insights to claude-insights", "status": "pending", "blockedBy": [22] }
   ],
-  "lastUpdated": "2026-10-08T00:07:01+00:00"
+  "lastUpdated": "2026-10-08T00:27:35+00:00"
 }
