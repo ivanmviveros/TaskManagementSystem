@@ -8,18 +8,16 @@ import { ButtonLink } from "../../components/ButtonLink";
 import { Pagination } from "../../components/Pagination";
 import { ApiError } from "../../lib/api-error";
 import { DEFAULT_PAGE_SIZE, type PageSize } from "../../lib/pagination";
-import { useSearchParamDraft } from "../../lib/useSearchParamDraft";
-import { ROLE_LABEL, ROLES, type Role } from "../auth/types";
 import { DeleteUserDialog } from "./components/DeleteUserDialog";
 import { UserCard } from "./components/UserCard";
+import { UserFilters, type UserFilterPatch } from "./components/UserFilters";
 import { UserTable } from "./components/UserTable";
 import { useDeleteUser, useUsers } from "./hooks/useUsers";
-import type { UserFilters } from "./types";
+import type { UserFilters as Filters } from "./types";
 import { UserListProvider } from "./user-list-context";
 import { initialUserListState, userListActions } from "./user-list-store";
 
 type SearchUpdate = (prev: UserListSearch) => UserListSearch;
-type UserFilterPatch = Partial<Pick<UserListSearch, "role" | "is_active" | "search">>;
 
 export function UserListPage() {
   // The URL is the list's only state (D45). Annotated because the router is
@@ -29,7 +27,7 @@ export function UserListPage() {
   const navigate = useNavigate({ from: "/users" });
   const page = search.page ?? 1;
   const pageSize: PageSize = search.page_size ?? DEFAULT_PAGE_SIZE;
-  const filters: UserFilters = {
+  const filters: Filters = {
     role: search.role,
     is_active: search.is_active,
     search: search.search,
@@ -53,12 +51,6 @@ export function UserListPage() {
   function applyFilters(patch: UserFilterPatch) {
     editSearch((prev) => ({ ...prev, ...patch, page: undefined }));
   }
-
-  // Typed text goes through a draft: the router's transition would revert a
-  // controlled input bound straight to the URL (D50).
-  const searchDraft = useSearchParamDraft(search.search ?? "", (value) =>
-    applyFilters({ search: value === "" ? undefined : value }),
-  );
 
   function setPageSize(next: PageSize) {
     editSearch((prev) => ({ ...prev, page_size: next, page: undefined }));
@@ -95,115 +87,70 @@ export function UserListPage() {
 
   return (
     <UserListProvider value={{ store }}>
-    <section>
-      <div className="mb-4 flex flex-wrap items-center gap-3">
-        <h1 className="text-xl font-semibold text-slate-900">Users</h1>
-        <ButtonLink to="/users/new" className="ml-auto">
-          New user
-        </ButtonLink>
-      </div>
+      <section>
+        <div className="mb-4 flex flex-wrap items-center gap-3">
+          <h1 className="text-xl font-semibold text-slate-900">Users</h1>
+          <ButtonLink to="/users/new" className="ml-auto">
+            New user
+          </ButtonLink>
+        </div>
 
-      <section aria-label="Filters" className="mb-4 rounded-lg bg-white p-4 shadow-sm">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
-          <div>
-            <label htmlFor="search" className="mb-1 block text-sm font-medium text-slate-700">
-              Search
-            </label>
-            <input
-              id="search"
-              type="search"
-              value={searchDraft.draft}
-              onChange={(event) => searchDraft.setDraft(event.target.value)}
-              className="rounded border border-slate-300 px-3 py-2 text-sm"
-            />
-          </div>
-          <div>
-            <label htmlFor="role-filter" className="mb-1 block text-sm font-medium text-slate-700">
-              Role
-            </label>
-            <select
-              id="role-filter"
-              value={search.role ?? ""}
-              onChange={(event) =>
-                applyFilters({ role: (event.target.value || undefined) as Role | undefined })
-              }
-              className="rounded border border-slate-300 px-3 py-2 text-sm"
-            >
-              <option value="">All roles</option>
-              {ROLES.map((role) => (
-                <option key={role} value={role}>
-                  {ROLE_LABEL[role]}
-                </option>
+        <UserFilters filters={search} onChange={applyFilters} />
+
+        {isPending && (
+          <p role="status" className="text-sm text-slate-500">
+            Loading users…
+          </p>
+        )}
+
+        {isError && !pageOutOfRange && (
+          <p role="alert" className="text-sm text-status-overdue">
+            {error instanceof ApiError ? error.message : "Could not load users."}
+          </p>
+        )}
+
+        {data !== undefined && data.results.length === 0 && (
+          <p className="rounded-lg bg-white p-6 text-center text-sm text-slate-500 shadow-sm">
+            No users match these filters.
+          </p>
+        )}
+
+        {data !== undefined && data.results.length > 0 && (
+          // The previous page stays while the next loads (D53).
+          <div
+            aria-busy={isPlaceholderData}
+            className={clsx("transition-opacity", isPlaceholderData && "opacity-60")}
+          >
+            {/* The table collapses to stacked cards below md (spec §5.2). */}
+            <div className="hidden overflow-x-auto md:block">
+              <UserTable users={data.results} />
+            </div>
+            <div className="md:hidden">
+              {data.results.map((user) => (
+                <UserCard key={user.id} user={user} />
               ))}
-            </select>
-          </div>
-          <label className="flex items-center gap-1.5 text-sm text-slate-700">
-            <input
-              type="checkbox"
-              checked={search.is_active === false}
-              onChange={(event) =>
-                applyFilters({ is_active: event.target.checked ? false : undefined })
-              }
+            </div>
+
+            <Pagination
+              count={data.count}
+              page={page}
+              pageSize={pageSize}
+              onPageChange={goToPage}
+              onPageSizeChange={setPageSize}
             />
-            Inactive only
-          </label>
-        </div>
-      </section>
-
-      {isPending && (
-        <p role="status" className="text-sm text-slate-500">
-          Loading users…
-        </p>
-      )}
-
-      {isError && !pageOutOfRange && (
-        <p role="alert" className="text-sm text-status-overdue">
-          {error instanceof ApiError ? error.message : "Could not load users."}
-        </p>
-      )}
-
-      {data !== undefined && data.results.length === 0 && (
-        <p className="rounded-lg bg-white p-6 text-center text-sm text-slate-500 shadow-sm">
-          No users match these filters.
-        </p>
-      )}
-
-      {data !== undefined && data.results.length > 0 && (
-        // The previous page stays while the next loads (D53).
-        <div
-          aria-busy={isPlaceholderData}
-          className={clsx("transition-opacity", isPlaceholderData && "opacity-60")}
-        >
-          {/* The table collapses to stacked cards below md (spec §5.2). */}
-          <div className="hidden overflow-x-auto md:block">
-            <UserTable users={data.results} />
           </div>
-          <div className="md:hidden">
-            {data.results.map((user) => (
-              <UserCard key={user.id} user={user} />
-            ))}
-          </div>
+        )}
 
-          <Pagination
-            count={data.count}
-            page={page}
-            pageSize={pageSize}
-            onPageChange={goToPage}
-            onPageSizeChange={setPageSize}
+        {pendingDelete !== null && (
+          <DeleteUserDialog
+            user={pendingDelete}
+            error={deleteError}
+            isDeleting={remove.isPending}
+            onConfirm={() => void confirmDelete()}
+            onCancel={store.actions.cancelDelete}
           />
-        </div>
-      )}
-
-      {pendingDelete !== null && (
-        <DeleteUserDialog
-          user={pendingDelete}
-          error={deleteError}
-          isDeleting={remove.isPending}
-          onConfirm={() => void confirmDelete()}
-          onCancel={store.actions.cancelDelete}
-        />
-      )}
-    </section>
+        )}
+      </section>
     </UserListProvider>
   );
 }
