@@ -10,9 +10,8 @@ export type UserListState = { delete: DeleteFlow<UserDetail> };
 /** Frozen: every store created from it shares this one object. */
 export const initialUserListState: UserListState = Object.freeze({ delete: IDLE_DELETE });
 
-export const userListActions = (api: StoreApi<UserListState>) =>
-  deleteFlowActions(api);
+export const userListActions = (api: StoreApi<UserListState>) => deleteFlowActions(api);
 
-/** For unit tests. The page creates its own with useCreateStore (spec §4.0). */
+/** Names the store's type. The page creates its own with useCreateStore (spec §4.0). */
 export const createUserListStore = () => createStore(initialUserListState, userListActions);
 export type UserListStore = ReturnType<typeof createUserListStore>;

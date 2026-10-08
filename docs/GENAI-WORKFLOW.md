@@ -337,6 +337,6 @@ things the plan or the code got wrong:
   when it moved the session into a store (D86). After a Supervisor signs out, an Operator in the
   same tab sees the Supervisor's cached "1–20 of 20001" task list and dashboard figures, with
   other users' task titles, until a reload: the cache is inside its 30 s `staleTime`. It
-  reproduces on `main` too (there a background refetch does go out, but the cached list stays
-  on screen). The recommended fix, clearing the cache on `signOut`/`expire`, is in QA report
+  reproduces on `main` too. Whether a background refetch goes out depends on how old the cache
+  is against that `staleTime`; either way the cached list is what the new user first sees. The recommended fix, clearing the cache on `signOut`/`expire`, is in QA report
   §8.4.
