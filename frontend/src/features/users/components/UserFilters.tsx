@@ -41,6 +41,7 @@ export function UserFilters({ filters, onChange }: UserFiltersProps) {
     commit: (value: string) => onChange({ search: value === "" ? undefined : value }),
     write: (value) => form.setFieldValue("search", value, { dontRunListeners: true }),
   });
+  // Selects and checkboxes write at once.
   const role = useUrlFieldSync({
     committed: committed.role,
     commit: (value: Role | "") => onChange({ role: value === "" ? undefined : value }),

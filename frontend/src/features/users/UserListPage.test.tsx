@@ -360,13 +360,7 @@ describe("UserListPage URL state", () => {
   });
 
   it("follows a URL change made elsewhere while the filters stay mounted", async () => {
-    // Two pages at 20 a page, so page 2 exists.
-    server.use(
-      http.get(`${BASE}/users/`, ({ request }) => {
-        requested.push(new URL(request.url));
-        return HttpResponse.json({ count: 40, next: null, previous: null, results: [operator()] });
-      }),
-    );
+    usersRespondWith([operator()], 40); // two pages at 20
     const { router } = await renderApp("/users?role=OPERATOR&is_active=false&search=omar");
     await screen.findByRole("table");
     expect(screen.getByLabelText(/^role$/i)).toHaveValue("OPERATOR");
@@ -387,7 +381,7 @@ describe("UserListPage URL state", () => {
     // edit: a write that ran the listeners would send them back to the URL,
     // which returns the list to page 1. Outlive the 300 ms search debounce.
     await act(() => new Promise((resolve) => setTimeout(resolve, 400)));
-    expect(router.state.location.search).toMatchObject({ page: 2 });
+    expect(router.state.location.search).toMatchObject({ role: "ADMIN", search: "ada", page: 2 });
   });
 
   it("lands on page 1, without an error, when the URL's page no longer exists", async () => {
