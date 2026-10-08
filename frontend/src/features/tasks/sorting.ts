@@ -1,3 +1,5 @@
+import type { SortingState } from "@tanstack/react-table";
+
 /**
  * The task list's one sort model (D67). The table header, the below-lg select
  * and URL validation all read this, so they cannot disagree about which
@@ -59,4 +61,29 @@ export function nextOrdering(current: string | undefined, field: SortField): Ord
   const next: Ordering =
     active.field === field && active.direction === "ascending" ? `-${field}` : field;
   return next === DEFAULT_ORDERING ? undefined : next;
+}
+
+/** Each sortable column's header label, from the same list (D67). */
+export const SORT_LABEL = Object.fromEntries(
+  SORT_FIELDS.map(({ field, label }) => [field, label]),
+) as Record<SortField, string>;
+
+/**
+ * The table's sort state for an ordering (D84). None, or anything unknown, is
+ * shown as the default, as an active sort (D48).
+ */
+export function orderingToSorting(ordering: string | undefined): SortingState {
+  const { field, direction } = parseOrdering(ordering);
+  return [{ id: field, desc: direction === "descending" }];
+}
+
+/**
+ * The ordering for the table's sort state (D84). Undefined for the default, so
+ * the URL stays canonical (D48), and for anything the API does not accept.
+ */
+export function sortingToOrdering(sorting: SortingState): Ordering | undefined {
+  const [first] = sorting;
+  if (first === undefined) return undefined;
+  const ordering = first.desc ? `-${first.id}` : first.id;
+  return isOrdering(ordering) && ordering !== DEFAULT_ORDERING ? ordering : undefined;
 }
