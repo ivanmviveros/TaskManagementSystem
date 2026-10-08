@@ -598,7 +598,7 @@ describe("TaskListPage URL state", () => {
     expect(requested.some((url) => url.searchParams.has("due_date_after"))).toBe(false);
   });
 
-  it("Clear filters empties every filter input",async () => {
+  it("Clear filters empties every filter input", async () => {
     signedInAs(SUPERVISOR);
     tasksPaged(5);
     const status = encodeURIComponent(JSON.stringify(["PENDING", "IN_PROGRESS"]));
@@ -608,24 +608,42 @@ describe("TaskListPage URL state", () => {
     );
     await screen.findByRole("table");
     expect(screen.getByRole("checkbox", { name: /pending/i })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: /in progress/i })).toBeChecked();
     expect(screen.getByLabelText(/due after/i)).toHaveValue("2026-10-01");
+    expect(screen.getByLabelText(/due before/i)).toHaveValue("2026-10-31");
+    expect(screen.getByRole("checkbox", { name: /overdue only/i })).toBeChecked();
 
     await userEvent.setup().click(screen.getByRole("button", { name: /clear filters/i }));
 
-    await waitFor(() => expect(screen.getByRole("checkbox", { name: /pending/i })).not.toBeChecked());
-    await waitFor(() =>
-      expect(screen.getByRole("checkbox", { name: /in progress/i })).not.toBeChecked(),
-    );
-    await waitFor(() => expect(screen.getByLabelText(/due after/i)).toHaveValue(""));
-    await waitFor(() => expect(screen.getByLabelText(/due before/i)).toHaveValue(""));
-    await waitFor(() =>
-      expect(screen.getByRole("checkbox", { name: /overdue only/i })).not.toBeChecked(),
-    );
+    await waitFor(() => {
+      expect(screen.getByRole("checkbox", { name: /pending/i })).not.toBeChecked();
+      expect(screen.getByRole("checkbox", { name: /in progress/i })).not.toBeChecked();
+      expect(screen.getByLabelText(/due after/i)).toHaveValue("");
+      expect(screen.getByLabelText(/due before/i)).toHaveValue("");
+      expect(screen.getByRole("checkbox", { name: /overdue only/i })).not.toBeChecked();
+    });
+  });
+
+  it("leaves a box unchecked when Clear filters follows its uncheck before the URL catches up", async () => {
+    signedInAs(SUPERVISOR);
+    tasksPaged(5);
+    const { router } = await renderApp("/tasks?overdue=true");
+    await screen.findByRole("table");
+    const overdue = screen.getByRole("checkbox", { name: /overdue only/i });
+    expect(overdue).toBeChecked();
+
+    // Both clicks land before the first navigation commits.
+    fireEvent.click(overdue);
+    fireEvent.click(screen.getByRole("button", { name: /clear filters/i }));
+
+    await waitFor(() => expect(router.state.location.search).toEqual({}));
+    await act(() => new Promise((resolve) => setTimeout(resolve, 50)));
+    expect(screen.getByRole("checkbox", { name: /overdue only/i })).not.toBeChecked();
   });
 
   it("follows a URL change made elsewhere while the panel stays mounted", async () => {
     signedInAs(SUPERVISOR);
-    tasksPaged(5);
+    tasksPaged(60); // three pages at 20
     const status = encodeURIComponent(JSON.stringify(["PENDING"]));
     const { router } = await renderApp(
       `/tasks?status=${status}&due_date_after=2026-10-01T00:00:00.000Z` +
@@ -643,19 +661,24 @@ describe("TaskListPage URL state", () => {
           due_date_after: "2026-10-05T00:00:00.000Z",
           due_date_before: "2026-10-20T23:59:59.000Z",
           overdue: true,
+          page: 2,
         },
       }),
     );
 
-    await waitFor(() => expect(screen.getByRole("checkbox", { name: /pending/i })).not.toBeChecked());
-    await waitFor(() =>
-      expect(screen.getByRole("checkbox", { name: /in progress/i })).toBeChecked(),
-    );
-    await waitFor(() => expect(screen.getByLabelText(/due after/i)).toHaveValue("2026-10-05"));
-    await waitFor(() => expect(screen.getByLabelText(/due before/i)).toHaveValue("2026-10-20"));
-    await waitFor(() =>
-      expect(screen.getByRole("checkbox", { name: /overdue only/i })).toBeChecked(),
-    );
+    await waitFor(() => {
+      expect(screen.getByRole("checkbox", { name: /pending/i })).not.toBeChecked();
+      expect(screen.getByRole("checkbox", { name: /in progress/i })).toBeChecked();
+      expect(screen.getByLabelText(/due after/i)).toHaveValue("2026-10-05");
+      expect(screen.getByLabelText(/due before/i)).toHaveValue("2026-10-20");
+      expect(screen.getByRole("checkbox", { name: /overdue only/i })).toBeChecked();
+    });
+
+    // Putting the URL's values into the fields must not read as the user's
+    // edit: a write that ran the listeners would send them back to the URL,
+    // which returns the list to page 1. Outlive the 300 ms date debounce.
+    await act(() => new Promise((resolve) => setTimeout(resolve, 400)));
+    expect(router.state.location.search).toMatchObject({ page: 2 });
   });
 
   it("lands on page 1, without an error, when the URL's page no longer exists", async () => {

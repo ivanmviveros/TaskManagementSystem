@@ -94,6 +94,15 @@ export function TaskFilters({ filters, onChange, onClear }: TaskFiltersProps) {
     after.cancel();
     before.cancel();
     overdue.cancel();
+    // cancel() puts back the URL's value from before any write still in
+    // flight. Clear empties every filter, so put the cleared values straight
+    // in: otherwise a box unchecked just before Clear would be put back to
+    // checked, and the cleared URL would then match the queued uncheck as its
+    // own echo and leave it that way.
+    form.setFieldValue("status", NO_STATUSES, { dontRunListeners: true });
+    form.setFieldValue("due_date_after", "", { dontRunListeners: true });
+    form.setFieldValue("due_date_before", "", { dontRunListeners: true });
+    form.setFieldValue("overdue", false, { dontRunListeners: true });
     onClear();
   }
 
