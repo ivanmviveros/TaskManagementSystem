@@ -598,6 +598,66 @@ describe("TaskListPage URL state", () => {
     expect(requested.some((url) => url.searchParams.has("due_date_after"))).toBe(false);
   });
 
+  it("Clear filters empties every filter input",async () => {
+    signedInAs(SUPERVISOR);
+    tasksPaged(5);
+    const status = encodeURIComponent(JSON.stringify(["PENDING", "IN_PROGRESS"]));
+    await renderApp(
+      `/tasks?status=${status}&due_date_after=2026-10-01T00:00:00.000Z` +
+        "&due_date_before=2026-10-31T23:59:59.000Z&overdue=true",
+    );
+    await screen.findByRole("table");
+    expect(screen.getByRole("checkbox", { name: /pending/i })).toBeChecked();
+    expect(screen.getByLabelText(/due after/i)).toHaveValue("2026-10-01");
+
+    await userEvent.setup().click(screen.getByRole("button", { name: /clear filters/i }));
+
+    await waitFor(() => expect(screen.getByRole("checkbox", { name: /pending/i })).not.toBeChecked());
+    await waitFor(() =>
+      expect(screen.getByRole("checkbox", { name: /in progress/i })).not.toBeChecked(),
+    );
+    await waitFor(() => expect(screen.getByLabelText(/due after/i)).toHaveValue(""));
+    await waitFor(() => expect(screen.getByLabelText(/due before/i)).toHaveValue(""));
+    await waitFor(() =>
+      expect(screen.getByRole("checkbox", { name: /overdue only/i })).not.toBeChecked(),
+    );
+  });
+
+  it("follows a URL change made elsewhere while the panel stays mounted", async () => {
+    signedInAs(SUPERVISOR);
+    tasksPaged(5);
+    const status = encodeURIComponent(JSON.stringify(["PENDING"]));
+    const { router } = await renderApp(
+      `/tasks?status=${status}&due_date_after=2026-10-01T00:00:00.000Z` +
+        "&due_date_before=2026-10-31T23:59:59.000Z",
+    );
+    await screen.findByRole("table");
+    expect(screen.getByRole("checkbox", { name: /pending/i })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: /overdue only/i })).not.toBeChecked();
+
+    await act(() =>
+      router.navigate({
+        to: "/tasks",
+        search: {
+          status: ["IN_PROGRESS"],
+          due_date_after: "2026-10-05T00:00:00.000Z",
+          due_date_before: "2026-10-20T23:59:59.000Z",
+          overdue: true,
+        },
+      }),
+    );
+
+    await waitFor(() => expect(screen.getByRole("checkbox", { name: /pending/i })).not.toBeChecked());
+    await waitFor(() =>
+      expect(screen.getByRole("checkbox", { name: /in progress/i })).toBeChecked(),
+    );
+    await waitFor(() => expect(screen.getByLabelText(/due after/i)).toHaveValue("2026-10-05"));
+    await waitFor(() => expect(screen.getByLabelText(/due before/i)).toHaveValue("2026-10-20"));
+    await waitFor(() =>
+      expect(screen.getByRole("checkbox", { name: /overdue only/i })).toBeChecked(),
+    );
+  });
+
   it("lands on page 1, without an error, when the URL's page no longer exists", async () => {
     signedInAs(SUPERVISOR);
     tasksPaged(30); // two pages at 20
