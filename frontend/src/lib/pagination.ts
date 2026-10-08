@@ -1,3 +1,5 @@
+import { functionalUpdate, type PaginationState, type Updater } from "@tanstack/react-table";
+
 /**
  * What the pager offers. The backend's DefaultPageNumberPagination has
  * page_size = 20 and max_page_size = 100, and still enforces the cap — these
@@ -28,4 +30,23 @@ export function pageWindow(current: number, total: number): PageItem[] {
   if (end < total - 1) items.push("gap");
   items.push(total);
   return items;
+}
+
+/**
+ * Turns the table's proposed pagination into a navigation (D85). A page-size
+ * change replaces history and returns to page 1 (D47): the page index Table
+ * computes to keep the top row in view is ignored. A page move pushes, so Back
+ * returns to the previous page.
+ */
+export function routePaginationChange(
+  updater: Updater<PaginationState>,
+  current: PaginationState,
+  to: { goToPage: (page: number) => void; setPageSize: (size: PageSize) => void },
+): void {
+  const next = functionalUpdate(updater, current);
+  if (next.pageSize !== current.pageSize) {
+    if (isPageSize(next.pageSize)) to.setPageSize(next.pageSize);
+    return;
+  }
+  if (next.pageIndex !== current.pageIndex) to.goToPage(next.pageIndex + 1);
 }
